@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-lubritec-blue: #003366;
+  --color-lubritec-red: #E30613;
+  --color-lubritec-light: #F8FAFC;
+  --color-lubritec-dark: #0F172A;
+}
+
+@layer base {
+  body {
+    @apply antialiased bg-lubritec-light text-lubritec-dark;
+  }
+}
+
+.tracking-tight {
+  letter-spacing: -0.02em;
+}
+
+.lubritec-gradient {
+  background: linear-gradient(135deg, #003366 0%, #004080 100%);
+}
