@@ -36,12 +36,23 @@ db.exec(`
   -- Ensure existing tables are correct
   CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    contact_name TEXT,
+    cnpj TEXT,
     phone TEXT NOT NULL,
-    last_purchase_date DATE,
-    vehicle_plate TEXT,
-    vehicle_model TEXT,
-    avg_mileage_per_day INTEGER DEFAULT 50
+    last_order_date DATE,
+    frequent_product TEXT,
+    avg_purchase_interval_days INTEGER DEFAULT 30
+  );
+
+  CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    company TEXT,
+    phone TEXT NOT NULL,
+    email TEXT,
+    status TEXT DEFAULT 'Lead inativo',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
@@ -120,6 +131,40 @@ async function startServer() {
     res.json({ id: info.lastInsertRowid });
   });
 
+  app.get('/api/customers', (req, res) => {
+    const customers = db.prepare('SELECT * FROM customers ORDER BY company_name ASC').all();
+    res.json(customers);
+  });
+
+  // Leads Routes
+  app.get('/api/leads', (req, res) => {
+    const leads = db.prepare('SELECT * FROM leads ORDER BY created_at DESC').all();
+    res.json(leads);
+  });
+
+  app.post('/api/leads', (req, res) => {
+    const { name, company, phone, email, status } = req.body;
+    const info = db.prepare('INSERT INTO leads (name, company, phone, email, status) VALUES (?, ?, ?, ?, ?)').run(
+      name, 
+      company || '', 
+      phone, 
+      email || '', 
+      status || 'Lead inativo'
+    );
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  app.patch('/api/leads/:id', (req, res) => {
+    const { status } = req.body;
+    db.prepare('UPDATE leads SET status = ? WHERE id = ?').run(status, req.params.id);
+    res.json({ success: true });
+  });
+
+  app.delete('/api/leads/:id', (req, res) => {
+    db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  });
+
   app.post('/api/upload-customers', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).send('No file uploaded.');
     
@@ -129,11 +174,18 @@ async function startServer() {
         skip_empty_lines: true
       });
 
-      const insert = db.prepare('INSERT INTO customers (name, phone, last_purchase_date, vehicle_plate, vehicle_model) VALUES (?, ?, ?, ?, ?)');
+      const insert = db.prepare('INSERT INTO customers (company_name, contact_name, cnpj, phone, last_order_date, frequent_product) VALUES (?, ?, ?, ?, ?, ?)');
       
       const transaction = db.transaction((customers) => {
         for (const customer of customers) {
-          insert.run(customer.name, customer.phone, customer.last_purchase_date, customer.vehicle_plate, customer.vehicle_model);
+          insert.run(
+            customer.company_name || customer.name, 
+            customer.contact_name || '', 
+            customer.cnpj || '', 
+            customer.phone, 
+            customer.last_order_date || customer.last_purchase_date, 
+            customer.frequent_product || ''
+          );
         }
       });
 

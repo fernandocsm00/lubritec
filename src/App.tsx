@@ -15,7 +15,11 @@ import {
   FileUp,
   Search,
   ChevronRight,
-  Database
+  Database,
+  Filter,
+  Download,
+  MoreVertical,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -46,6 +50,16 @@ interface Template {
   id: number;
   name: string;
   content: string;
+  created_at: string;
+}
+
+interface Lead {
+  id: number;
+  name: string;
+  company: string;
+  phone: string;
+  email: string;
+  status: string;
   created_at: string;
 }
 
@@ -111,6 +125,8 @@ export default function App() {
         return <Templates />;
       case 'inbox':
         return <Inbox />;
+      case 'leads':
+        return <Leads />;
       case 'customers':
         return <Customers />;
       case 'settings':
@@ -167,6 +183,13 @@ export default function App() {
             collapsed={!isSidebarOpen}
           />
           <NavItem 
+            icon={<TrendingUp size={20} />} 
+            label="Leads" 
+            active={activeTab === 'leads'} 
+            onClick={() => setActiveTab('leads')}
+            collapsed={!isSidebarOpen}
+          />
+          <NavItem 
             icon={<Users size={20} />} 
             label="Clientes" 
             active={activeTab === 'customers'} 
@@ -200,6 +223,7 @@ export default function App() {
               {activeTab === 'dashboard' ? 'Painel de Controle' : 
                activeTab === 'campaigns' ? 'Campanhas de Disparo' :
                activeTab === 'inbox' ? 'Conversas Ativas' :
+               activeTab === 'leads' ? 'Pipeline de Leads' :
                activeTab === 'customers' ? 'Base de Clientes' : 'Configurações'}
             </h1>
             <p className="text-slate-500 mt-1 font-medium">LubriConnect — Inteligência em Reativação Lubritec.</p>
@@ -709,7 +733,7 @@ function Templates() {
                     type="text" 
                     value={newTemplate.name}
                     onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
-                    placeholder="Ex: Alerta de Troca de Óleo"
+                    placeholder="Ex: Reativação de Revendedores"
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium"
                   />
                 </div>
@@ -717,7 +741,7 @@ function Templates() {
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">Conteúdo da Mensagem</label>
                   <div className="mb-3 flex flex-wrap gap-2">
-                    {['nome', 'veiculo', 'placa', 'data_ultima_troca', 'proxima_troca'].map(v => (
+                    {['empresa', 'contato', 'cnpj', 'ultimo_pedido', 'produto_frequente'].map(v => (
                       <button 
                         key={v}
                         type="button"
@@ -733,7 +757,7 @@ function Templates() {
                     rows={6}
                     value={newTemplate.content}
                     onChange={(e) => setNewTemplate({ ...newTemplate, content: e.target.value })}
-                    placeholder="Olá {{nome}}, notamos que seu {{veiculo}}..."
+                    placeholder="Olá {{contato}} da {{empresa}}, notamos que seu estoque de {{produto_frequente}} pode estar baixo..."
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium resize-none"
                   />
                 </div>
@@ -781,10 +805,10 @@ function Inbox() {
           {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className={`p-4 border-b border-[#F5F5F4] hover:bg-[#F5F5F4]/50 cursor-pointer transition-colors ${i === 1 ? 'bg-emerald-50 border-l-4 border-l-emerald-500' : ''}`}>
               <div className="flex justify-between items-start mb-1">
-                <span className="font-bold text-sm">João Silva</span>
+                <span className="font-bold text-sm">{i === 1 ? 'Auto Posto Central' : 'Lubrificantes Silva'}</span>
                 <span className="text-[10px] text-[#A8A29E]">12:45</span>
               </div>
-              <p className="text-xs text-[#78716C] truncate">Olá, gostaria de agendar uma troca de óleo...</p>
+              <p className="text-xs text-[#78716C] truncate">Olá, gostaríamos de repor o estoque de Mobil Super...</p>
             </div>
           ))}
         </div>
@@ -796,7 +820,7 @@ function Inbox() {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-[#D6D3D1] rounded-full"></div>
             <div>
-              <h3 className="font-bold text-sm">João Silva</h3>
+              <h3 className="font-bold text-sm">Auto Posto Central</h3>
               <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">Online</span>
             </div>
           </div>
@@ -810,12 +834,12 @@ function Inbox() {
         <div className="flex-1 p-6 overflow-y-auto space-y-4">
           <div className="flex justify-start">
             <div className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm max-w-md">
-              <p className="text-sm">Olá! Vi a mensagem sobre a promoção de troca de óleo. Ainda está valendo?</p>
+              <p className="text-sm">Olá! Recebemos o alerta sobre a reposição de óleos. Qual a melhor condição para 10 caixas do Mobil 20W50?</p>
             </div>
           </div>
           <div className="flex justify-end">
             <div className="bg-emerald-500 text-white p-4 rounded-2xl rounded-tr-none shadow-md max-w-md">
-              <p className="text-sm">Olá, João! Sim, está valendo até o final desta semana. Gostaria de agendar para qual dia?</p>
+              <p className="text-sm">Olá! Para essa quantidade conseguimos manter a tabela do mês passado com entrega para amanhã. Podemos fechar?</p>
             </div>
           </div>
         </div>
@@ -840,6 +864,24 @@ function Inbox() {
 function Customers() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchCustomers = async () => {
+    try {
+      const res = await fetch('/api/customers');
+      const data = await res.json();
+      setCustomers(data);
+    } catch (err) {
+      console.error('Error fetching customers:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -856,6 +898,7 @@ function Customers() {
       });
       const data = await res.json();
       setUploadResult(data);
+      fetchCustomers();
     } catch (err) {
       console.error('Error uploading file:', err);
     } finally {
@@ -867,8 +910,8 @@ function Customers() {
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-lubritec-blue">Base de Clientes</h2>
-          <p className="text-sm text-slate-500 mt-1">Gerencie sua lista de contatos para reativação.</p>
+          <h2 className="text-xl font-bold tracking-tight text-lubritec-blue">Base de Clientes B2B</h2>
+          <p className="text-sm text-slate-500 mt-1">Gerencie sua lista de revendedores e parceiros.</p>
         </div>
         <div className="flex gap-3">
           <label className="bg-lubritec-blue text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-blue-900 transition-all cursor-pointer shadow-lg shadow-lubritec-blue/20">
@@ -892,19 +935,64 @@ function Customers() {
         </motion.div>
       )}
 
-      <div className="text-center py-20 border-2 border-dashed border-slate-100 rounded-3xl">
-        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
-          <Users size={40} className="text-slate-300" />
+      {isLoading ? (
+        <div className="text-center py-20">
+          <div className="animate-spin w-8 h-8 border-4 border-lubritec-blue border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-slate-500">Carregando base de clientes...</p>
         </div>
-        <h3 className="font-extrabold text-xl text-slate-800">Nenhum cliente importado</h3>
-        <p className="text-slate-500 max-w-xs mx-auto mt-2 font-medium">
-          Importe sua planilha CSV com os dados dos clientes para iniciar as campanhas de reativação inteligente.
-        </p>
-        <button className="mt-8 text-lubritec-red font-bold flex items-center gap-2 mx-auto hover:underline">
-          <FileUp size={18} />
-          Baixar Modelo de Planilha
-        </button>
-      </div>
+      ) : customers.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Empresa / Contato</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">CNPJ</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Telefone</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Último Pedido</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Produto Frequente</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {customers.map((customer) => (
+                <tr key={customer.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-lubritec-dark">{customer.company_name}</span>
+                      <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                        {customer.contact_name || 'Sem contato'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-600 font-medium">{customer.cnpj || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-slate-600 font-medium">{customer.phone}</td>
+                  <td className="px-6 py-4 text-sm text-slate-600 font-medium">
+                    {customer.last_order_date ? new Date(customer.last_order_date).toLocaleDateString() : '-'}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="px-2 py-1 bg-blue-50 text-lubritec-blue text-[10px] font-bold rounded-full uppercase tracking-wider">
+                      {customer.frequent_product || 'N/A'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-center py-20 border-2 border-dashed border-slate-100 rounded-3xl">
+          <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Users size={40} className="text-slate-300" />
+          </div>
+          <h3 className="font-extrabold text-xl text-slate-800">Nenhum cliente importado</h3>
+          <p className="text-slate-500 max-w-xs mx-auto mt-2 font-medium">
+            Importe sua planilha CSV com os dados dos revendedores para iniciar as campanhas de reativação B2B.
+          </p>
+          <button className="mt-8 text-lubritec-red font-bold flex items-center gap-2 mx-auto hover:underline">
+            <FileUp size={18} />
+            Baixar Modelo de Planilha B2B
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1153,6 +1241,332 @@ function SettingsPage() {
           Os disparos serão pausados automaticamente fora deste intervalo para evitar denúncias.
         </p>
       </div>
+    </div>
+  );
+}
+
+function Leads() {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [newLead, setNewLead] = useState({ name: '', company: '', phone: '', email: '', status: 'Lead inativo' });
+
+  const stages = [
+    'Lead inativo',
+    'Lead contatado',
+    'Lead FUP',
+    'Lead qualificado',
+    'Enviado ao comercial'
+  ];
+
+  const fetchLeads = async () => {
+    try {
+      const res = await fetch('/api/leads');
+      const data = await res.json();
+      setLeads(data);
+    } catch (err) {
+      console.error('Error fetching leads:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeads();
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLead),
+      });
+      setIsModalOpen(false);
+      setNewLead({ name: '', company: '', phone: '', email: '', status: 'Lead inativo' });
+      fetchLeads();
+    } catch (err) {
+      console.error('Error creating lead:', err);
+    }
+  };
+
+  const updateStatus = async (id: number, status: string) => {
+    try {
+      await fetch(`/api/leads/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      fetchLeads();
+    } catch (err) {
+      console.error('Error updating lead status:', err);
+    }
+  };
+
+  const deleteLead = async (id: number) => {
+    if (!confirm('Tem certeza que deseja excluir este lead?')) return;
+    try {
+      await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+      fetchLeads();
+    } catch (err) {
+      console.error('Error deleting lead:', err);
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['ID', 'Nome', 'Empresa', 'Telefone', 'Email', 'Status', 'Criado em'];
+    const rows = leads.map(l => [
+      l.id,
+      l.name,
+      l.company,
+      l.phone,
+      l.email,
+      l.status,
+      new Date(l.created_at).toLocaleString()
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(c => `"${c}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `leads_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const filteredLeads = leads.filter(l => 
+    l.name.toLowerCase().includes(filter.toLowerCase()) || 
+    l.company.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex gap-4 items-center">
+          <div className="relative w-80">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Buscar leads..." 
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-lubritec-blue/20"
+            />
+          </div>
+          <button className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:bg-slate-50 transition-all">
+            <Filter size={20} />
+          </button>
+        </div>
+        <div className="flex gap-3">
+          <button 
+            onClick={exportToCSV}
+            className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
+          >
+            <Download size={20} />
+            Exportar CSV
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-lubritec-red text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-700 transition-all shadow-lg shadow-lubritec-red/20"
+          >
+            <Plus size={20} />
+            Novo Lead
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-20">
+          <div className="animate-spin w-8 h-8 border-4 border-lubritec-blue border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-slate-500">Carregando pipeline...</p>
+        </div>
+      ) : (
+        <div className="flex gap-4 overflow-x-auto pb-6 -mx-8 px-8 h-[calc(100vh-280px)]">
+          {stages.map(stage => (
+            <div key={stage} className="flex-shrink-0 w-80 flex flex-col">
+              <div className="flex items-center justify-between mb-4 px-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-sm text-lubritec-blue uppercase tracking-wider">{stage}</h3>
+                  <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {filteredLeads.filter(l => l.status === stage).length}
+                  </span>
+                </div>
+                <button className="text-slate-300 hover:text-slate-500">
+                  <Plus size={16} />
+                </button>
+              </div>
+              
+              <div className="flex-1 bg-slate-50/50 rounded-3xl p-3 space-y-3 overflow-y-auto border border-slate-100">
+                {filteredLeads.filter(l => l.status === stage).map(lead => (
+                  <motion.div 
+                    layoutId={lead.id.toString()}
+                    key={lead.id} 
+                    className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-all group"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-bold text-lubritec-dark text-sm leading-tight">{lead.name}</h4>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => deleteLead(lead.id)}
+                          className="p-1 text-slate-300 hover:text-lubritec-red"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400 font-medium mb-3">{lead.company}</p>
+                    
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="px-2 py-0.5 bg-slate-50 text-slate-500 text-[10px] font-bold rounded-md border border-slate-100">
+                        {lead.phone}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-3 border-t border-slate-50">
+                      <span className="text-[9px] text-slate-300 font-bold uppercase">
+                        {new Date(lead.created_at).toLocaleDateString()}
+                      </span>
+                      <div className="flex gap-1">
+                        {stages.indexOf(stage) > 0 && (
+                          <button 
+                            onClick={() => updateStatus(lead.id, stages[stages.indexOf(stage) - 1])}
+                            className="p-1.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-slate-100 transition-colors"
+                          >
+                            <ChevronRight size={14} className="rotate-180" />
+                          </button>
+                        )}
+                        {stages.indexOf(stage) < stages.length - 1 && (
+                          <button 
+                            onClick={() => updateStatus(lead.id, stages[stages.indexOf(stage) + 1])}
+                            className="p-1.5 bg-lubritec-blue/5 text-lubritec-blue rounded-lg hover:bg-lubritec-blue/10 transition-colors"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+                {filteredLeads.filter(l => l.status === stage).length === 0 && (
+                  <div className="h-24 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center">
+                    <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Vazio</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal Novo Lead */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsModalOpen(false)}
+              className="absolute inset-0 bg-lubritec-dark/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl"
+            >
+              <h2 className="text-2xl font-extrabold text-lubritec-blue mb-6">Cadastrar Novo Lead</h2>
+              <form onSubmit={handleCreate} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">Nome Completo</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={newLead.name}
+                      onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
+                      placeholder="Ex: João Silva"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">Empresa</label>
+                    <input 
+                      type="text" 
+                      value={newLead.company}
+                      onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
+                      placeholder="Ex: Auto Posto"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">Telefone (WhatsApp)</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={newLead.phone}
+                      onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                      placeholder="Ex: 11999999999"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">E-mail</label>
+                    <input 
+                      type="email" 
+                      value={newLead.email}
+                      onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                      placeholder="Ex: joao@empresa.com"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">Etapa Inicial</label>
+                  <select 
+                    value={newLead.status}
+                    onChange={(e) => setNewLead({ ...newLead, status: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:border-lubritec-blue focus:outline-none transition-all font-medium"
+                  >
+                    {stages.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 px-6 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 px-6 py-4 bg-lubritec-red text-white font-bold rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-lubritec-red/20"
+                  >
+                    Cadastrar Lead
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
