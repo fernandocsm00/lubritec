@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lubritec-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lubritec
+      POSTGRES_PASSWORD: lubritec_dev
+      POSTGRES_DB: lubritec
+    ports:
+      - '5432:5432'
+    volumes:
+      - lubritec-pg-data:/var/lib/postgresql/data
+
+volumes:
+  lubritec-pg-data:
