@@ -1,0 +1,34 @@
+# deps
+node_modules/
+
+# build
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# dbs
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# editor
+.vscode/
+.idea/
+.DS_Store
+
+# coverage
+coverage/
+.nyc_output/
+
+# test
+*.tsbuildinfo
