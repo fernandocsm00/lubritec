@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { users, authTokens } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql, asc } from 'drizzle-orm';
 import { generateRawToken, hashToken } from '../lib/tokens';
 import { HttpError } from '../middleware/errorHandler';
 import type { Role } from '@shared/types';
@@ -36,4 +36,21 @@ export async function inviteUser(input: { email: string; name: string; role: Rol
     .returning();
 
   return { tokenId: t.id, rawToken, user };
+}
+
+export async function listUsers() {
+  const rows = await db
+    .select()
+    .from(users)
+    .orderBy(sql`${users.role} = 'admin' DESC`, asc(users.name));
+  return rows.map((u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    is_active: u.isActive,
+    last_login_at: u.lastLoginAt?.toISOString() ?? null,
+    created_at: u.createdAt.toISOString(),
+    has_password: u.passwordHash !== null,
+  }));
 }

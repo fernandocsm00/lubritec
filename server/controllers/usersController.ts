@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { inviteUser } from '../services/usersService';
+import { inviteUser, listUsers } from '../services/usersService';
 import { sendInviteEmail } from '../lib/mailer';
 
 const inviteSchema = z.object({
@@ -34,6 +34,15 @@ export async function inviteHandler(req: Request, res: Response, next: NextFunct
       name: result.user.name,
       role: result.user.role,
     });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const list = await listUsers();
+    res.json({ users: list });
   } catch (e) {
     next(e);
   }
