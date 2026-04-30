@@ -123,8 +123,22 @@ npm run db:down
 
 Veja `docs/superpowers/specs/2026-04-29-fundacao-design.md`.
 
+## Admin / RBAC
+
+Tela em `/admin` (visível só para `role=admin`) com:
+- Lista de usuários (admin primeiro, depois alfabética).
+- Convidar novo usuário (envia magic link).
+- Editar nome / role; ativar/desativar.
+- Reenviar convite pra usuário com cadastro pendente.
+
+Self-protection: o admin logado não pode alterar a própria role nem se desativar (UI desabilita + backend rejeita 409).
+
+Revogação de sessão: ao mudar `role` ou `is_active` de outro usuário, todas as sessões dele são revogadas. Próxima chamada a `/api/auth/refresh` retorna 401 e desloga o usuário.
+
+Pegadinha conhecida: não há invariante "último admin". Admin único pode desativar o admin secundário e depois ficar trancado se desativar a si mesmo via SQL — recuperação manual via banco.
+
 ## Próximos sub-projetos
-1. Admin/RBAC — gestão de usuários e permissões
+1. ✅ Admin/RBAC — gestão de usuários e permissões
 2. Cadastros — leads completos + import CSV
 3. Inside Sales — pipeline kanban / CRM
 4. WhatsApp + Filas — atendimento multi-fila
