@@ -13,7 +13,7 @@ async function ensureSchemaAndMigrationsTable() {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA_NAME}`);
   // search_path is set by pool.on('connect') so this lands in SCHEMA_NAME.
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS _migrations (
+    CREATE TABLE IF NOT EXISTS "${SCHEMA_NAME}"._migrations (
       filename TEXT PRIMARY KEY,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -22,7 +22,7 @@ async function ensureSchemaAndMigrationsTable() {
 
 async function appliedSet(): Promise<Set<string>> {
   const { rows } = await pool.query<{ filename: string }>(
-    'SELECT filename FROM _migrations',
+    `SELECT filename FROM "${SCHEMA_NAME}"._migrations`,
   );
   return new Set(rows.map((r) => r.filename));
 }
@@ -45,9 +45,10 @@ async function run() {
     try {
       await client.query('BEGIN');
       await client.query(sql);
-      await client.query('INSERT INTO _migrations (filename) VALUES ($1)', [
-        filename,
-      ]);
+      await client.query(
+        `INSERT INTO "${SCHEMA_NAME}"._migrations (filename) VALUES ($1)`,
+        [filename],
+      );
       await client.query('COMMIT');
       console.log(`→ ${filename} (applied)`);
     } catch (err) {

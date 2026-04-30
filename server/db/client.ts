@@ -14,7 +14,9 @@ const dbSchema = isTest
   : (process.env.DB_SCHEMA ?? 'lubritec');
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL not set');
+  throw new Error(
+    isTest ? 'TEST_DATABASE_URL not set' : 'DATABASE_URL not set',
+  );
 }
 
 if (!/^[a-z_][a-z0-9_]*$/.test(dbSchema)) {
@@ -28,7 +30,8 @@ export const pool = new Pool({ connectionString });
 // Set search_path on every new connection so unqualified table names resolve to our schema.
 pool.on('connect', (client) => {
   client.query(`SET search_path TO ${dbSchema}, public`).catch((err) => {
-    console.error('Failed to set search_path:', err);
+    console.error('Fatal: failed to set search_path on new connection. Destroying connection.', err);
+    client.release(err);
   });
 });
 
