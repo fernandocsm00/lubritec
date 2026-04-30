@@ -7,19 +7,19 @@ export function ProtectedRoute() {
   const { status, accessToken } = useAuthStore();
   const location = useLocation();
 
-  // Tenta hidratar via cookie de refresh na primeira render
+  // Tenta hidratar via cookie de refresh na primeira render.
+  // Guarda contra StrictMode double-invoke lendo status ao vivo do store.
   useEffect(() => {
-    if (status === 'idle') {
-      useAuthStore.setState({ status: 'authenticating' });
-      fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data) useAuthStore.getState().setAuth(data.user, data.accessToken);
-          else useAuthStore.getState().clear();
-        })
-        .catch(() => useAuthStore.getState().clear());
-    }
-  }, [status]);
+    if (useAuthStore.getState().status !== 'idle') return;
+    useAuthStore.setState({ status: 'authenticating' });
+    fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) useAuthStore.getState().setAuth(data.user, data.accessToken);
+        else useAuthStore.getState().clear();
+      })
+      .catch(() => useAuthStore.getState().clear());
+  }, []);
 
   // Re-fetch /me quando autenticado para garantir dados atualizados
   useMe(status === 'authenticated' && !!accessToken);
