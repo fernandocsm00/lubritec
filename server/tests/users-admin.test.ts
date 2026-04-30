@@ -171,9 +171,56 @@ describe('PATCH /api/users/:id', () => {
 });
 
 describe('POST /api/users/:id/resend-invite', () => {
-  it.todo('admin resends invite — old token invalidated, new token created');
-  it.todo('returns 409 if user already activated');
-  it.todo('returns 404 for nonexistent user');
+  it('admin resends invite — old token invalidated, new token created', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const { accessToken: adminToken } = await loginAs('admin@b.com');
+
+    const inviteRes = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'novo@b.com', name: 'Novo', role: 'comercial' });
+    expect(inviteRes.status).toBe(201);
+    const newUserId = inviteRes.body.id;
+    const tokensBefore = await db
+      .select()
+      .from(authTokens)
+      .where(eq(authTokens.userId, newUserId));
+    expect(tokensBefore).toHaveLength(1);
+    const oldTokenId = tokensBefore[0].id;
+
+    const resendRes = await request(app)
+      .post(`/api/users/${newUserId}/resend-invite`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(resendRes.status).toBe(200);
+    expect(resendRes.body.ok).toBe(true);
+
+    const tokensAfter = await db
+      .select()
+      .from(authTokens)
+      .where(eq(authTokens.userId, newUserId));
+    expect(tokensAfter).toHaveLength(1);
+    expect(tokensAfter[0].id).not.toBe(oldTokenId);
+  });
+
+  it('returns 409 if user already activated', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const activated = await createUser({ email: 'done@b.com', password: 'pw12345', role: 'comercial' });
+    const { accessToken } = await loginAs('admin@b.com');
+    const res = await request(app)
+      .post(`/api/users/${activated.id}/resend-invite`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already activated/i);
+  });
+
+  it('returns 404 for nonexistent user', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const { accessToken } = await loginAs('admin@b.com');
+    const res = await request(app)
+      .post('/api/users/00000000-0000-0000-0000-000000000000/resend-invite')
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('refresh after deactivation', () => {

@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { users, authTokens, sessions } from '../db/schema';
-import { eq, sql, asc } from 'drizzle-orm';
+import { eq, and, sql, asc } from 'drizzle-orm';
 import { generateRawToken, hashToken } from '../lib/tokens';
 import { HttpError } from '../middleware/errorHandler';
 import type { Role } from '@shared/types';
@@ -53,6 +53,34 @@ export async function listUsers() {
     created_at: u.createdAt.toISOString(),
     has_password: u.passwordHash !== null,
   }));
+}
+
+export async function resendInvite(userId: string) {
+  return db.transaction(async (tx) => {
+    const [user] = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+    if (user.passwordHash !== null) {
+      throw new HttpError(409, 'User already activated');
+    }
+    await tx
+      .delete(authTokens)
+      .where(and(eq(authTokens.userId, userId), eq(authTokens.purpose, 'invite')));
+    const rawToken = generateRawToken();
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const [t] = await tx
+      .insert(authTokens)
+      .values({
+        userId: user.id,
+        tokenHash,
+        purpose: 'invite',
+        expiresAt,
+      })
+      .returning();
+    return { user, tokenId: t.id, rawToken };
+  });
 }
 
 export async function updateUser(input: {

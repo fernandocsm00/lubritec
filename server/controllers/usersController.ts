@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { inviteUser, listUsers, updateUser } from '../services/usersService';
+import { inviteUser, listUsers, updateUser, resendInvite } from '../services/usersService';
 import { sendInviteEmail } from '../lib/mailer';
 
 const inviteSchema = z.object({
@@ -60,6 +60,17 @@ export async function updateHandler(req: Request, res: Response, next: NextFunct
       is_active: body.is_active,
     });
     res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function resendInviteHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = userIdParamsSchema.parse(req.params);
+    const result = await resendInvite(id);
+    await sendInviteEmail(result.user.email, result.user.name, result.tokenId, result.rawToken);
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
