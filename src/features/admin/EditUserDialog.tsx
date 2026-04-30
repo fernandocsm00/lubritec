@@ -29,11 +29,11 @@ import {
 } from '@/components/ui/select';
 import { useUpdateUser } from './api';
 import { translateError } from './translateError';
-import type { AdminUser } from '@shared/types';
+import { ROLES, type AdminUser } from '@shared/types';
 
 const schema = z.object({
   name: z.string().min(2, 'Nome muito curto'),
-  role: z.enum(['admin', 'comercial', 'recepcao']),
+  role: z.enum(ROLES),
 });
 
 type FormData = z.infer<typeof schema>;

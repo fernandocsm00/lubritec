@@ -2,17 +2,18 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { inviteUser, listUsers, updateUser, resendInvite } from '../services/usersService';
 import { sendInviteEmail } from '../lib/mailer';
+import { ROLES } from '../../shared/types';
 
 const inviteSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
-  role: z.enum(['admin', 'comercial', 'recepcao']),
+  role: z.enum(ROLES),
 });
 
 export const updateUserSchema = z
   .object({
     name: z.string().min(2).max(100).optional(),
-    role: z.enum(['admin', 'comercial', 'recepcao']).optional(),
+    role: z.enum(ROLES).optional(),
     is_active: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {

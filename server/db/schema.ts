@@ -9,6 +9,7 @@ import {
   inet,
   index,
 } from 'drizzle-orm/pg-core';
+import { ROLES } from '../../shared/types';
 
 export const users = pgTable(
   'users',
@@ -17,7 +18,7 @@ export const users = pgTable(
     email: text('email').notNull().unique(),
     name: text('name').notNull(),
     passwordHash: text('password_hash'),
-    role: text('role', { enum: ['admin', 'comercial', 'recepcao'] }).notNull(),
+    role: text('role', { enum: ROLES }).notNull(),
     isActive: boolean('is_active').notNull().default(true),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -81,5 +82,4 @@ export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
-export type Role = 'admin' | 'comercial' | 'recepcao';
 export type AuthTokenPurpose = 'invite' | 'password_reset';

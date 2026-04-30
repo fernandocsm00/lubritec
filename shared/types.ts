@@ -1,4 +1,5 @@
-export type Role = 'admin' | 'comercial' | 'recepcao';
+export const ROLES = ['admin', 'comercial', 'recepcao'] as const;
+export type Role = (typeof ROLES)[number];
 
 export interface PublicUser {
   id: string;

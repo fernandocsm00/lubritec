@@ -29,11 +29,12 @@ import {
 } from '@/components/ui/select';
 import { useInviteUser } from './api';
 import { translateError } from './translateError';
+import { ROLES } from '@shared/types';
 
 const schema = z.object({
   name: z.string().min(2, 'Nome muito curto'),
   email: z.string().email('Email inválido'),
-  role: z.enum(['admin', 'comercial', 'recepcao']),
+  role: z.enum(ROLES),
 });
 
 type FormData = z.infer<typeof schema>;
