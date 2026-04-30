@@ -19,3 +19,14 @@ export interface ApiError {
   error: string;
   code?: string;
 }
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  has_password: boolean;
+}
