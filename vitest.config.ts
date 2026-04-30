@@ -7,6 +7,9 @@ export default defineConfig({
     globals: false,
     setupFiles: ['./server/tests/setup.ts'],
     include: ['server/tests/**/*.test.ts'],
+    // Tests share a single Postgres test DB and truncate in beforeEach;
+    // running test files in parallel causes truncates/inserts to collide.
+    fileParallelism: false,
   },
   resolve: {
     alias: {
