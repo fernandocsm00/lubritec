@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,7 +8,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
@@ -27,38 +27,52 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useInviteUser } from './api';
+import { useUpdateUser } from './api';
 import { translateError } from './translateError';
+import type { AdminUser } from '@shared/types';
 
 const schema = z.object({
   name: z.string().min(2, 'Nome muito curto'),
-  email: z.string().email('Email inválido'),
   role: z.enum(['admin', 'comercial', 'recepcao']),
 });
 
 type FormData = z.infer<typeof schema>;
 
-export function InviteUserDialog({
+export function EditUserDialog({
+  user,
+  isSelf,
   open,
   onOpenChange,
 }: {
+  user: AdminUser;
+  isSelf: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const invite = useInviteUser();
+  const update = useUpdateUser();
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', email: '', role: 'comercial' },
+    defaultValues: { name: user.name, role: user.role },
   });
 
+  useEffect(() => {
+    if (open) form.reset({ name: user.name, role: user.role });
+  }, [open, user.name, user.role, form]);
+
   async function onSubmit(values: FormData) {
+    const diff: { name?: string; role?: typeof user.role } = {};
+    if (values.name !== user.name) diff.name = values.name;
+    if (!isSelf && values.role !== user.role) diff.role = values.role;
+    if (Object.keys(diff).length === 0) {
+      onOpenChange(false);
+      return;
+    }
     try {
-      await invite.mutateAsync(values);
-      toast.success(`Convite enviado para ${values.email}`);
-      form.reset();
+      await update.mutateAsync({ id: user.id, ...diff });
+      toast.success('Usuário atualizado.');
       onOpenChange(false);
     } catch (e) {
-      const msg = e instanceof Error ? translateError(e.message) : 'Erro ao convidar.';
+      const msg = e instanceof Error ? translateError(e.message) : 'Erro ao atualizar.';
       toast.error(msg);
     }
   }
@@ -67,13 +81,15 @@ export function InviteUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Convidar usuário</DialogTitle>
-          <DialogDescription>
-            Um email com o link de cadastro será enviado.
-          </DialogDescription>
+          <DialogTitle>Editar usuário</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <Input value={user.email} disabled />
+              <p className="text-xs text-muted-foreground">Email não pode ser alterado.</p>
+            </FormItem>
             <FormField
               control={form.control}
               name="name"
@@ -81,20 +97,7 @@ export function InviteUserDialog({
                 <FormItem>
                   <FormLabel>Nome</FormLabel>
                   <FormControl>
-                    <Input {...field} autoComplete="name" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input {...field} type="email" autoComplete="email" />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -106,7 +109,11 @@ export function InviteUserDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Role</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value}
+                    disabled={isSelf}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue />
@@ -118,6 +125,11 @@ export function InviteUserDialog({
                       <SelectItem value="recepcao">Recepção</SelectItem>
                     </SelectContent>
                   </Select>
+                  {isSelf && (
+                    <p className="text-xs text-muted-foreground">
+                      Você não pode alterar sua própria role.
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -127,12 +139,12 @@ export function InviteUserDialog({
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                disabled={invite.isPending}
+                disabled={update.isPending}
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={invite.isPending}>
-                {invite.isPending ? 'Enviando…' : 'Enviar convite'}
+              <Button type="submit" disabled={update.isPending}>
+                {update.isPending ? 'Salvando…' : 'Salvar'}
               </Button>
             </DialogFooter>
           </form>
