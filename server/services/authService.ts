@@ -73,6 +73,10 @@ export async function refreshAccess(rawRefresh: string) {
   }
   const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
   if (!user || !user.isActive) {
+    await db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(sessions.id, session.id));
     throw new HttpError(401, 'User no longer valid');
   }
   const accessToken = signAccessToken({ userId: user.id, role: user.role });

@@ -234,5 +234,31 @@ describe('POST /api/users/:id/resend-invite', () => {
 });
 
 describe('refresh after deactivation', () => {
-  it.todo('refresh returns 401 and revokes session when user is inactive');
+  it('refresh returns 401 and revokes session when user is inactive', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const target = await createUser({ email: 't@b.com', password: 'pw12345', role: 'comercial' });
+
+    const targetAgent = request.agent(app);
+    await targetAgent.post('/api/auth/login').send({ email: 't@b.com', password: 'pw12345' });
+
+    const { accessToken: adminToken } = await loginAs('admin@b.com');
+    await request(app)
+      .patch(`/api/users/${target.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_active: false });
+
+    // Reativa o registro mas mantém sessão revogada — força a verificação
+    // do path defensivo no refreshAccess. Simulamos um estado inconsistente:
+    // session ainda válida (revokedAt=null) mas user inativo.
+    await db.update(sessions).set({ revokedAt: null }).where(eq(sessions.userId, target.id));
+
+    const res = await targetAgent.post('/api/auth/refresh');
+    expect(res.status).toBe(401);
+
+    const targetSessionsAfter = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, target.id));
+    expect(targetSessionsAfter.every((s) => s.revokedAt !== null)).toBe(true);
+  });
 });
