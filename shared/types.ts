@@ -15,11 +15,6 @@ export interface LoginResponse {
   user: PublicUser;
 }
 
-export interface ApiError {
-  error: string;
-  code?: string;
-}
-
 export interface AdminUser {
   id: string;
   email: string;
