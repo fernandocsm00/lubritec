@@ -1,5 +1,9 @@
 import nodemailer from 'nodemailer';
 
+if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  throw new Error('SMTP_HOST, SMTP_USER, and SMTP_PASS must be set');
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 2525),
@@ -7,6 +11,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 15_000,
 });
 
 const FROM = process.env.SMTP_FROM || 'LubriConnect <no-reply@lubritec.local>';
