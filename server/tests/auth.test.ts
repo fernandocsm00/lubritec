@@ -88,3 +88,11 @@ describe('POST /api/users (invite)', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('unknown /api routes', () => {
+  it('returns 404 instead of falling through to SPA', async () => {
+    const res = await request(app).get('/api/does-not-exist');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+});

@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { createApp } from './app';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -13,6 +12,7 @@ async function start() {
   const PORT = Number(process.env.PORT || 3000);
 
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -31,4 +31,7 @@ async function start() {
   });
 }
 
-start();
+start().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
