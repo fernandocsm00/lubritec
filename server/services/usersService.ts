@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { users, authTokens } from '../db/schema';
+import { users, authTokens, sessions } from '../db/schema';
 import { eq, sql, asc } from 'drizzle-orm';
 import { generateRawToken, hashToken } from '../lib/tokens';
 import { HttpError } from '../middleware/errorHandler';
@@ -53,4 +53,56 @@ export async function listUsers() {
     created_at: u.createdAt.toISOString(),
     has_password: u.passwordHash !== null,
   }));
+}
+
+export async function updateUser(input: {
+  id: string;
+  actorId: string;
+  name?: string;
+  role?: Role;
+  is_active?: boolean;
+}) {
+  const isSelf = input.id === input.actorId;
+  const touchesProtected = input.role !== undefined || input.is_active !== undefined;
+  if (isSelf && touchesProtected) {
+    throw new HttpError(409, 'Cannot modify your own role or status');
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(users).where(eq(users.id, input.id)).limit(1);
+    if (!existing) {
+      throw new HttpError(404, 'User not found');
+    }
+    const patch: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.role !== undefined) patch.role = input.role;
+    if (input.is_active !== undefined) patch.isActive = input.is_active;
+    const [updated] = await tx
+      .update(users)
+      .set(patch)
+      .where(eq(users.id, input.id))
+      .returning();
+
+    const shouldRevoke =
+      (input.role !== undefined && input.role !== existing.role) ||
+      (input.is_active !== undefined && input.is_active !== existing.isActive);
+    if (shouldRevoke) {
+      await tx
+        .update(sessions)
+        .set({ revokedAt: new Date() })
+        .where(eq(sessions.userId, input.id));
+    }
+    return updated;
+  });
+
+  return {
+    id: result.id,
+    email: result.email,
+    name: result.name,
+    role: result.role,
+    is_active: result.isActive,
+    last_login_at: result.lastLoginAt?.toISOString() ?? null,
+    created_at: result.createdAt.toISOString(),
+    has_password: result.passwordHash !== null,
+  };
 }

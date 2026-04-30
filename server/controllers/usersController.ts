@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { inviteUser, listUsers } from '../services/usersService';
+import { inviteUser, listUsers, updateUser } from '../services/usersService';
 import { sendInviteEmail } from '../lib/mailer';
 
 const inviteSchema = z.object({
@@ -11,7 +11,7 @@ const inviteSchema = z.object({
 
 export const updateUserSchema = z
   .object({
-    name: z.string().min(2).max(100).optional(),
+    name: z.string().min(1).max(100).optional(),
     role: z.enum(['admin', 'comercial', 'recepcao']).optional(),
     is_active: z.boolean().optional(),
   })
@@ -43,6 +43,23 @@ export async function listHandler(_req: Request, res: Response, next: NextFuncti
   try {
     const list = await listUsers();
     res.json({ users: list });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = userIdParamsSchema.parse(req.params);
+    const body = updateUserSchema.parse(req.body);
+    const updated = await updateUser({
+      id,
+      actorId: req.user!.userId,
+      name: body.name,
+      role: body.role,
+      is_active: body.is_active,
+    });
+    res.json(updated);
   } catch (e) {
     next(e);
   }
