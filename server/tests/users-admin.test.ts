@@ -221,6 +221,16 @@ describe('POST /api/users/:id/resend-invite', () => {
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(404);
   });
+
+  it('returns 403 for non-admin', async () => {
+    const target = await createUser({ email: 'pending@b.com', name: 'Pending', role: 'comercial' });
+    await createUser({ email: 'com@b.com', password: 'pw12345', role: 'comercial' });
+    const { accessToken } = await loginAs('com@b.com');
+    const res = await request(app)
+      .post(`/api/users/${target.id}/resend-invite`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('refresh after deactivation', () => {
