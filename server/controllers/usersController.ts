@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { inviteUser, listUsers, updateUser, resendInvite } from '../services/usersService';
 import { sendInviteEmail } from '../lib/mailer';
 import { ROLES } from '../../shared/types';
+import type { AuthedRequest } from '../middleware/authGuard';
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -55,7 +56,7 @@ export async function updateHandler(req: Request, res: Response, next: NextFunct
     const body = updateUserSchema.parse(req.body);
     const updated = await updateUser({
       id,
-      actorId: req.user!.userId,
+      actorId: (req as AuthedRequest).user.userId,
       name: body.name,
       role: body.role,
       is_active: body.is_active,

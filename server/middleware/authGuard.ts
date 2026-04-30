@@ -10,6 +10,8 @@ declare global {
   }
 }
 
+export type AuthedRequest = Request & { user: { userId: string; role: Role } };
+
 export function authGuard(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {

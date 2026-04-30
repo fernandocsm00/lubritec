@@ -10,6 +10,7 @@ import {
   resetPassword,
 } from '../services/authService';
 import { sendResetEmail } from '../lib/mailer';
+import type { AuthedRequest } from '../middleware/authGuard';
 
 const REFRESH_COOKIE = 'lubritec_refresh';
 const REFRESH_COOKIE_OPTS = {
@@ -65,7 +66,7 @@ export async function logoutHandler(req: Request, res: Response, next: NextFunct
 
 export async function meHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const me = await getMe(req.user!.userId);
+    const me = await getMe((req as AuthedRequest).user.userId);
     res.json(me);
   } catch (e) {
     next(e);
