@@ -134,7 +134,7 @@ describe('refresh after deactivation', () => {
 - [ ] **Step 3: Rodar testes (devem passar como skipped/todo)**
 
 Run: `npm run test -- users-admin`
-Expected: 12 todos pendentes, 0 falhas, 0 sucessos.
+Expected: 16 todos pendentes (4 GET + 8 PATCH + 3 resend + 1 refresh), 0 falhas, 0 sucessos.
 
 - [ ] **Step 4: Commit**
 
