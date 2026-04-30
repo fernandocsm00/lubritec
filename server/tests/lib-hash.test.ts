@@ -16,4 +16,9 @@ describe('hash', () => {
     expect(sha256('abc')).toBe(a);
     expect(sha256('different')).not.toBe(a);
   });
+
+  it('returns false (does not throw) for malformed hashes', async () => {
+    expect(await verifyPassword('x', 'not-a-real-hash')).toBe(false);
+    expect(await verifyPassword('', '')).toBe(false);
+  });
 });

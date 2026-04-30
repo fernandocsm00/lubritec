@@ -7,7 +7,19 @@ if (!process.env.TEST_DATABASE_URL) {
 }
 process.env.NODE_ENV = 'test';
 
-const dbReady = !process.env.TEST_DATABASE_URL.includes('[YOUR-DB-PASSWORD]');
+function isDbConfigured(connectionString: string): boolean {
+  try {
+    const url = new URL(connectionString);
+    const password = decodeURIComponent(url.password);
+    if (password.startsWith('[') && password.endsWith(']')) return false;
+    if (!password) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const dbReady = isDbConfigured(process.env.TEST_DATABASE_URL);
 
 beforeEach(async () => {
   if (!dbReady) return;
