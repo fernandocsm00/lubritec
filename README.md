@@ -4,64 +4,120 @@ SaaS de qualificação de leads e atendimento WhatsApp da Lubritec.
 
 ## Stack
 - React 19 + Vite + Tailwind + shadcn/ui (frontend)
-- Express + TypeScript (backend)
-- PostgreSQL 16 + Drizzle ORM (banco)
+- Express + TypeScript (backend, mesma porta do frontend via Vite middleware)
+- PostgreSQL 16 + Drizzle ORM (banco; isolamento por **schema**, não por database)
 - argon2 + JWT + magic link (auth)
 - TanStack Query, Zustand, React Hook Form, Zod (frontend state/forms)
 - Vitest + Supertest (testes)
 
 ## Pré-requisitos
 - Node 20+
-- Docker (para Postgres local)
+- Acesso ao projeto Supabase **OU** Docker (para Postgres local de fallback)
 
 ## Setup
 
+### 1. Instalar dependências
+
 ```bash
-# 1. Instalar dependências
 npm install
+```
 
-# 2. Configurar variáveis de ambiente
+### 2. Configurar variáveis de ambiente
+
+```bash
 cp .env.example .env
-# Edite .env e gere um JWT_SECRET:
-#   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
 
-# 3. Subir Postgres local
-npm run db:up
+Edite `.env` e preencha:
 
-# 4. Criar database de teste (apenas na 1a vez)
-docker exec -it lubritec-pg psql -U lubritec -c "CREATE DATABASE lubritec_test;"
+- **`DATABASE_URL`** e **`TEST_DATABASE_URL`** — apontam para o **mesmo** banco. O isolamento é por schema (`DB_SCHEMA=lubritec`, `TEST_DB_SCHEMA=lubritec_test`), não por database separada.
+  - Padrão (time): pegue a senha do Supabase em https://supabase.com/dashboard/project/cmighponfvaagzbhqici/settings/database e substitua `[YOUR-DB-PASSWORD]` (URL-encoded) nas duas linhas.
+  - Alternativa local: use Docker (instruções em "Postgres local" abaixo).
+- **`JWT_SECRET`** — gere um valor aleatório:
 
-# 5. Rodar migrations (dev e teste)
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+  ```
+
+- **`SMTP_*`** — em dev, use Mailtrap (https://mailtrap.io) e cole as credenciais da inbox de sandbox.
+
+`APP_URL=http://localhost:3000` é o correto para o setup unificado (Express serve o front via Vite middleware na mesma porta). Não altere para `:5173` — links de magic-link viram quebrados.
+
+### 3. Aplicar migrations (dev e teste)
+
+```bash
 npm run migrate
 NODE_ENV=test npm run migrate
+```
 
-# 6. Criar admin inicial (vai pedir senha temporária)
+Cada comando cria seu schema (`lubritec` ou `lubritec_test`) caso não exista, e aplica as migrations 001–006 dentro do schema correspondente. Os dois comandos são necessários porque os testes truncam tabelas no schema de teste.
+
+### 4. Criar admin inicial
+
+```bash
 npm run seed
+```
 
-# 7. (Opcional) Importar customers do SQLite legado
-# Coloque lubritec.db na raiz do projeto antes de rodar:
+O script pede uma senha temporária (mínimo 8 caracteres) e cria o usuário `fernando@agenciaimperium.com.br` com role `admin`. Idempotente — rodar de novo não duplica.
+
+### 5. (Opcional) Importar customers do SQLite legado
+
+Coloque o arquivo `lubritec.db` na raiz do projeto e rode:
+
+```bash
 npm run import:legacy
+```
 
-# 8. Subir o servidor
+Se `lubritec.db` não existir, o script encerra sem erro.
+
+### 6. Subir o servidor
+
+```bash
 npm run dev
 ```
 
-Acesse http://localhost:3000 e faça login com `fernando@agenciaimperium.com.br` + a senha definida no seed.
+Acesse **http://localhost:3000** e faça login com `fernando@agenciaimperium.com.br` + a senha definida no seed.
+
+## Postgres local (alternativa ao Supabase)
+
+Se preferir não usar o Supabase em dev:
+
+```bash
+npm run db:up
+```
+
+Isso sobe o container `lubritec-pg` (Postgres 16) com:
+- usuário `lubritec`, senha `lubritec_dev`, database `lubritec`, porta `5432`
+
+No `.env`, troque os dois URLs para apontar local:
+
+```
+DATABASE_URL=postgresql://lubritec:lubritec_dev@localhost:5432/lubritec
+TEST_DATABASE_URL=postgresql://lubritec:lubritec_dev@localhost:5432/lubritec
+```
+
+Os dois URLs continuam iguais — schemas isolam dev de teste dentro do mesmo banco.
+
+Para parar:
+
+```bash
+npm run db:down
+```
 
 ## Scripts
 
 | Comando | Descrição |
 |---|---|
 | `npm run dev` | Sobe servidor (Express + Vite middleware) em http://localhost:3000 |
-| `npm run build` | Build de produção |
+| `npm run build` | Build de produção (Vite + tsc do backend) |
 | `npm run lint` | Type-check de frontend e backend |
-| `npm run test` | Roda testes (vitest) |
+| `npm run test` | Roda testes (vitest, schema `lubritec_test`) |
 | `npm run test:watch` | Testes em modo watch |
-| `npm run migrate` | Aplica migrations pendentes |
+| `npm run migrate` | Aplica migrations no schema definido por `NODE_ENV` (`lubritec` ou `lubritec_test`) |
 | `npm run seed` | Cria admin inicial |
 | `npm run import:legacy` | Importa `customers` do `lubritec.db` antigo para `leads` |
-| `npm run db:up` | Sobe Postgres via docker-compose |
-| `npm run db:down` | Para o Postgres |
+| `npm run db:up` | Sobe Postgres local via docker-compose (alternativa ao Supabase) |
+| `npm run db:down` | Para o Postgres local |
 
 ## Estrutura
 
