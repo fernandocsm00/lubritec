@@ -144,7 +144,7 @@ describe('PATCH /api/users/:id', () => {
     const res = await request(app)
       .patch('/api/users/00000000-0000-0000-0000-000000000000')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ name: 'X' });
+      .send({ name: 'NewName' });
     expect(res.status).toBe(404);
   });
 
@@ -154,7 +154,7 @@ describe('PATCH /api/users/:id', () => {
     const res = await request(app)
       .patch('/api/users/not-a-uuid')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ name: 'X' });
+      .send({ name: 'NewName' });
     expect(res.status).toBe(400);
   });
 

@@ -11,7 +11,7 @@ const inviteSchema = z.object({
 
 export const updateUserSchema = z
   .object({
-    name: z.string().min(1).max(100).optional(),
+    name: z.string().min(2).max(100).optional(),
     role: z.enum(['admin', 'comercial', 'recepcao']).optional(),
     is_active: z.boolean().optional(),
   })
