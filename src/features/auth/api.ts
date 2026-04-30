@@ -30,7 +30,8 @@ export function useMe(enabled: boolean) {
       return me;
     },
     enabled,
-    staleTime: 5 * 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 }
 
