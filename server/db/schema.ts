@@ -66,7 +66,7 @@ export const leads = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
-    phone: text('phone').notNull(),
+    phone: text('phone').notNull().unique(),
     vehiclePlate: text('vehicle_plate'),
     vehicleModel: text('vehicle_model'),
     lastPurchaseDate: date('last_purchase_date'),
@@ -74,9 +74,6 @@ export const leads = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => ({
-    phoneIdx: index('idx_leads_phone').on(t.phone),
-  }),
 );
 
 export type User = typeof users.$inferSelect;
