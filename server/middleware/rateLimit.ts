@@ -7,6 +7,13 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 
+// Test-only helper: clear all rate-limit state. Used by tests so per-test
+// re-runs don't share buckets across test cases (which would cause the
+// 6th login from the same IP to receive a 429 and break integration tests).
+export function __resetRateLimitBuckets() {
+  buckets.clear();
+}
+
 export function rateLimit(opts: { windowMs: number; max: number; keyFn?: (req: Request) => string }) {
   const keyFn = opts.keyFn ?? ((req: Request) => req.ip || 'unknown');
   return (req: Request, res: Response, next: NextFunction) => {
