@@ -31,7 +31,9 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const doFetch = async (token: string | null): Promise<Response> => {
     const headers = new Headers(init.headers);
-    headers.set('Content-Type', 'application/json');
+    if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
     if (token) headers.set('Authorization', `Bearer ${token}`);
     return fetch(`${BASE}${path}`, { ...init, headers, credentials: 'include' });
   };
