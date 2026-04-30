@@ -9,6 +9,20 @@ const inviteSchema = z.object({
   role: z.enum(['admin', 'comercial', 'recepcao']),
 });
 
+export const updateUserSchema = z
+  .object({
+    name: z.string().min(2).max(100).optional(),
+    role: z.enum(['admin', 'comercial', 'recepcao']).optional(),
+    is_active: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field required',
+  });
+
+export const userIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
 export async function inviteHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const body = inviteSchema.parse(req.body);
