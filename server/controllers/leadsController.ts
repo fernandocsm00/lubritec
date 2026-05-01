@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { LEAD_STATUSES, LEAD_SOURCES } from '../../shared/types';
 import { createLead, listLeads, updateLead, deleteLead } from '../services/leadsService';
+import { importLeadsFromCsv } from '../services/leadsImport';
 
 const phoneInput = z
   .string()
@@ -87,6 +88,18 @@ export async function deleteHandler(req: Request, res: Response, next: NextFunct
     const { id } = idParams.parse(req.params);
     await deleteLead(id);
     res.status(204).end();
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function importHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Invalid file type' });
+    }
+    const report = await importLeadsFromCsv(req.file.buffer);
+    res.json(report);
   } catch (e) {
     next(e);
   }

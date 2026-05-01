@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createApp } from '../app';
 import { createUser, createLead } from './helpers';
 
 const app = createApp();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function loginAs(email: string, password = 'pw12345') {
   const res = await request(app).post('/api/auth/login').send({ email, password });
@@ -139,5 +144,46 @@ describe('DELETE /api/leads/:id', () => {
       .delete('/api/leads/00000000-0000-0000-0000-000000000000')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/leads/import', () => {
+  it('401 sem token', async () => {
+    const res = await request(app)
+      .post('/api/leads/import')
+      .attach('file', path.resolve(__dirname, 'fixtures/leads-sample.csv'));
+    expect(res.status).toBe(401);
+  });
+
+  it('importa fixture, retorna relatório', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .post('/api/leads/import')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', path.resolve(__dirname, 'fixtures/leads-sample.csv'));
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(2);
+    expect(res.body.rejected).toHaveLength(1);
+    expect(res.body.rejected[0].line).toBe(4);
+  });
+
+  it('400 quando header obrigatório falta', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .post('/api/leads/import')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', Buffer.from('nome\nA\n'), 'bad.csv');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Missing required column/);
+  });
+
+  it('400 quando mime inválido', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .post('/api/leads/import')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', Buffer.from('whatever'), { filename: 'bad.png', contentType: 'image/png' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid file type/);
   });
 });
