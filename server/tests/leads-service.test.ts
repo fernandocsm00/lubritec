@@ -217,4 +217,13 @@ describe('parseLeadsCsv', () => {
     expect(rows).toHaveLength(1);
     expect(rejected).toEqual([]);
   });
+
+  it('aceita arquivo com BOM UTF-8 (Excel)', async () => {
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const csv = Buffer.concat([bom, Buffer.from('name,phone\nAlice,11999990060\n')]);
+    const { rows, missingHeaders } = await parseLeadsCsv(csv);
+    expect(missingHeaders).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('Alice');
+  });
 });

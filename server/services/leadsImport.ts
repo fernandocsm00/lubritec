@@ -65,6 +65,9 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   rejected: { line: number; reason: string }[];
   missingHeaders: string[];
 }> {
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    buf = buf.subarray(3);
+  }
   const delimiter = detectDelimiter(buf);
   const records = parse(buf, { delimiter, columns: false, skip_empty_lines: true, trim: true });
   if (records.length === 0) return { rows: [], rejected: [], missingHeaders: [...REQUIRED] };
