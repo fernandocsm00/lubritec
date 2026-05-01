@@ -4,6 +4,9 @@ import { QueueTabs } from '@/features/whatsapp/QueueTabs';
 import { FilterBar, statusChipsToFilters } from '@/features/whatsapp/FilterBar';
 import { ConversationList } from '@/features/whatsapp/ConversationList';
 import { Thread } from '@/features/whatsapp/Thread';
+import { ChatHeader } from '@/features/whatsapp/ChatHeader';
+import { LeadSidebar } from '@/features/whatsapp/LeadSidebar';
+import { useConversations } from '@/features/whatsapp/api';
 import { useAuthStore } from '@/features/auth/store';
 import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
 
@@ -27,6 +30,9 @@ export default function WhatsappPage() {
     q: q || undefined,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [queue, statusKeys.join(','), origins.join(','), assignment, q]);
+
+  const { data: convsData } = useConversations(filters);
+  const selectedConv = convsData?.items.find((c) => c.id === selectedConvId) ?? null;
 
   function patch(updates: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
@@ -71,8 +77,11 @@ export default function WhatsappPage() {
       </aside>
 
       <main className="flex flex-col bg-muted/10">
-        {selectedConvId ? (
-          <Thread conversationId={selectedConvId} />
+        {selectedConv ? (
+          <>
+            <ChatHeader conv={selectedConv} currentUserId={currentUserId} />
+            <Thread conversationId={selectedConv.id} />
+          </>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Selecione uma conversa
@@ -80,7 +89,9 @@ export default function WhatsappPage() {
         )}
       </main>
 
-      <aside className="border-l border-border bg-background" />
+      <aside className="border-l border-border bg-background overflow-y-auto">
+        {selectedConv && <LeadSidebar conversationId={selectedConv.id} filters={filters} />}
+      </aside>
     </div>
   );
 }
