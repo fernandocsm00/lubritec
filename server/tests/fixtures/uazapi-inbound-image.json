@@ -1,0 +1,12 @@
+{
+  "event": "message.received",
+  "instance_id": "lubritec-prod",
+  "message": {
+    "id": "WXYZ-9876-MNOP",
+    "from": "5511987654321",
+    "type": "image",
+    "media_url": "https://uazapi-cdn.example.com/media/abc123.jpg",
+    "mimetype": "image/jpeg",
+    "timestamp": "2026-05-01T14:35:00Z"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "event": "message.received",
+  "instance_id": "lubritec-prod",
+  "message": {
+    "id": "ABCD-1234-EFGH",
+    "from": "5511987654321",
+    "type": "text",
+    "text": "Oi, quero saber o preço da troca de óleo do meu Civic 2018",
+    "timestamp": "2026-05-01T14:30:00Z"
+  }
+}
