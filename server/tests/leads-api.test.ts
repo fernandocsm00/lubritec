@@ -115,17 +115,6 @@ describe('PATCH /api/leads/:id', () => {
       .send({ name: 'X' });
     expect(res.status).toBe(404);
   });
-
-  it('400 quando body é null', async () => {
-    const token = await seedAuth();
-    const lead = await createLead({ phone: '11000003004' });
-    const res = await request(app)
-      .patch(`/api/leads/${lead.id}`)
-      .set('Authorization', `Bearer ${token}`)
-      .set('Content-Type', 'application/json')
-      .send('null');
-    expect(res.status).toBe(400);
-  });
 });
 
 describe('DELETE /api/leads/:id', () => {

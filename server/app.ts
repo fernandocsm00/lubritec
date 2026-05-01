@@ -15,7 +15,7 @@ export function createApp() {
     throw new Error('APP_URL must be set in production');
   }
   app.use(cors({ origin: corsOrigin, credentials: true }));
-  app.use(express.json({ strict: false }));
+  app.use(express.json());
   app.use(cookieParser());
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
