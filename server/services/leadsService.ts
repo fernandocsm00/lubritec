@@ -2,7 +2,7 @@ import { db } from '../db/client';
 import { leads } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead } from '@shared/types';
+import type { PublicLead, LeadStatus } from '@shared/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,4 +63,39 @@ export async function createLead(input: {
     })
     .returning();
   return toPublic(row);
+}
+
+// ---------------------------------------------------------------------------
+// updateLead
+// ---------------------------------------------------------------------------
+
+export async function updateLead(input: {
+  id: string;
+  name?: string;
+  email?: string | null;
+  notes?: string | null;
+  vehiclePlate?: string | null;
+  vehicleModel?: string | null;
+  lastPurchaseDate?: string | null;
+  avgMileagePerDay?: number | null;
+  status?: LeadStatus;
+}): Promise<PublicLead> {
+  const { id, ...rest } = input;
+  const patch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(rest)) {
+    if (v !== undefined) patch[k] = v;
+  }
+  patch.updatedAt = new Date();
+  const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
+  if (!row) throw new HttpError(404, 'Lead not found');
+  return toPublic(row);
+}
+
+// ---------------------------------------------------------------------------
+// deleteLead
+// ---------------------------------------------------------------------------
+
+export async function deleteLead(id: string): Promise<void> {
+  const [row] = await db.delete(leads).where(eq(leads.id, id)).returning({ id: leads.id });
+  if (!row) throw new HttpError(404, 'Lead not found');
 }
