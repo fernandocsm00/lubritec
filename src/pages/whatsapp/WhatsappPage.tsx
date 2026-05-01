@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QueueTabs } from '@/features/whatsapp/QueueTabs';
 import { FilterBar, statusChipsToFilters } from '@/features/whatsapp/FilterBar';
+import { ConversationList } from '@/features/whatsapp/ConversationList';
+import { useAuthStore } from '@/features/auth/store';
 import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
 
 export default function WhatsappPage() {
@@ -14,6 +16,7 @@ export default function WhatsappPage() {
     .split(',').filter(Boolean) as OriginKind[]);
   const q = searchParams.get('q') ?? '';
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? '');
 
   const filters: ConversationFilters = useMemo(() => ({
     queue,
@@ -58,10 +61,12 @@ export default function WhatsappPage() {
           origins={origins}
           onOriginsChange={(o) => patch({ origin: o.join(',') })}
         />
-        <div className="flex-1 overflow-hidden flex items-center justify-center text-muted-foreground text-sm">
-          (lista — Task 14)
-          <pre className="hidden">{JSON.stringify(filters)}</pre>
-        </div>
+        <ConversationList
+          filters={filters}
+          selectedId={selectedConvId}
+          currentUserId={currentUserId}
+          onSelect={(c) => setSelectedConvId(c.id)}
+        />
       </aside>
 
       <main className="flex flex-col bg-muted/20">
