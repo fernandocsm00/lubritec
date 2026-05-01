@@ -7,6 +7,7 @@ import type {
   ConversationCounts,
   ConversationFilters,
   PublicMessage,
+  ConversationQueue,
 } from '@shared/types';
 
 const PAGE_SIZE = 50;
@@ -224,4 +225,72 @@ export async function listMessages(
   }));
 
   return { items, hasMore };
+}
+
+// ---------------------------------------------------------------------------
+// Action helpers
+// ---------------------------------------------------------------------------
+
+async function loadAndReturn(
+  id: string,
+  currentUserId: string,
+): Promise<PublicConversation> {
+  return getConversationById(id, currentUserId);
+}
+
+export async function claimConversation(
+  id: string,
+  userId: string,
+): Promise<PublicConversation> {
+  const [updated] = await db
+    .update(conversations)
+    .set({
+      assignedTo: userId,
+      status: 'em_atendimento',
+      updatedAt: new Date(),
+    })
+    .where(eq(conversations.id, id))
+    .returning({ id: conversations.id });
+  if (!updated) throw new HttpError(404, 'Conversation not found');
+  return loadAndReturn(id, userId);
+}
+
+export async function changeQueue(
+  id: string,
+  queue: ConversationQueue,
+  currentUserId: string,
+): Promise<PublicConversation> {
+  const [updated] = await db
+    .update(conversations)
+    .set({ queue, updatedAt: new Date() })
+    .where(eq(conversations.id, id))
+    .returning({ id: conversations.id });
+  if (!updated) throw new HttpError(404, 'Conversation not found');
+  return loadAndReturn(id, currentUserId);
+}
+
+export async function closeConversation(
+  id: string,
+  currentUserId: string,
+): Promise<PublicConversation> {
+  const [updated] = await db
+    .update(conversations)
+    .set({ status: 'encerrada', updatedAt: new Date() })
+    .where(eq(conversations.id, id))
+    .returning({ id: conversations.id });
+  if (!updated) throw new HttpError(404, 'Conversation not found');
+  return loadAndReturn(id, currentUserId);
+}
+
+export async function markRead(
+  id: string,
+  currentUserId: string,
+): Promise<PublicConversation> {
+  const [updated] = await db
+    .update(conversations)
+    .set({ unreadCount: 0, updatedAt: new Date() })
+    .where(eq(conversations.id, id))
+    .returning({ id: conversations.id });
+  if (!updated) throw new HttpError(404, 'Conversation not found');
+  return loadAndReturn(id, currentUserId);
 }

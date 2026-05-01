@@ -10,6 +10,10 @@ import {
   getConversationCounts,
   getConversationById,
   listMessages,
+  claimConversation,
+  changeQueue,
+  closeConversation,
+  markRead,
 } from '../services/conversationsService';
 
 const csvOf = <T extends string>(values: readonly T[]) =>
@@ -66,5 +70,36 @@ export async function listMessagesHandler(req: Request, res: Response, next: Nex
     const { before } = messagesQuery.parse(req.query);
     const result = await listMessages(id, before ? new Date(before) : undefined);
     res.json(result);
+  } catch (e) { next(e); }
+}
+
+const queueBody = z.object({ queue: z.enum(CONVERSATION_QUEUES) });
+
+export async function claimHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    res.json(await claimConversation(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+export async function queueHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const { queue } = queueBody.parse(req.body);
+    res.json(await changeQueue(id, queue, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+export async function closeHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    res.json(await closeConversation(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+export async function readHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    res.json(await markRead(id, req.user!.userId));
   } catch (e) { next(e); }
 }
