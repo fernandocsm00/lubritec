@@ -137,9 +137,17 @@ Revogação de sessão: ao mudar `role` ou `is_active` de outro usuário, todas 
 
 Pegadinha conhecida: não há invariante "último admin". Admin único pode desativar o admin secundário e depois ficar trancado se desativar a si mesmo via SQL — recuperação manual via banco.
 
+## Cadastros
+
+Tela em `/cadastros` (qualquer usuário autenticado) com:
+- Lista server-paginada (50/page) com search (nome/telefone/placa) + filtros (status, origem) + ordenação clicável.
+- Criar/editar/excluir lead. Telefone é normalizado (só dígitos) e não editável após criação.
+- Importação CSV com headers em PT ou EN, delimitador `,` ou `;`, máximo 5MB. Linhas válidas são inseridas/atualizadas em uma transação; inválidas voltam num relatório com motivo.
+- Upsert seletivo no import: se o phone já existe, só preenche colunas vazias — nunca sobrescreve dados existentes. Status e source de leads existentes ficam intocados.
+
 ## Próximos sub-projetos
 1. ✅ Admin/RBAC — gestão de usuários e permissões
-2. Cadastros — leads completos + import CSV
+2. ✅ Cadastros — leads completos + import CSV
 3. Inside Sales — pipeline kanban / CRM
 4. WhatsApp + Filas — atendimento multi-fila
 5. Dashboard de Funil — métricas e conversão
