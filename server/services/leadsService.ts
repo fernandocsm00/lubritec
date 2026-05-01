@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { leads } from '../db/schema';
+import { leads, type NewLead } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus } from '@shared/types';
@@ -78,14 +78,20 @@ export async function updateLead(input: {
   vehicleModel?: string | null;
   lastPurchaseDate?: string | null;
   avgMileagePerDay?: number | null;
+  // source is intentionally immutable after creation
   status?: LeadStatus;
 }): Promise<PublicLead> {
   const { id, ...rest } = input;
-  const patch: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(rest)) {
-    if (v !== undefined) patch[k] = v;
-  }
-  patch.updatedAt = new Date();
+  // updatedAt is always refreshed, even for no-op patches, to signal "touched"
+  const patch: Partial<NewLead> = { updatedAt: new Date() };
+  if (rest.name !== undefined) patch.name = rest.name;
+  if (rest.email !== undefined) patch.email = rest.email;
+  if (rest.notes !== undefined) patch.notes = rest.notes;
+  if (rest.vehiclePlate !== undefined) patch.vehiclePlate = rest.vehiclePlate;
+  if (rest.vehicleModel !== undefined) patch.vehicleModel = rest.vehicleModel;
+  if (rest.lastPurchaseDate !== undefined) patch.lastPurchaseDate = rest.lastPurchaseDate;
+  if (rest.avgMileagePerDay !== undefined) patch.avgMileagePerDay = rest.avgMileagePerDay;
+  if (rest.status !== undefined) patch.status = rest.status;
   const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
   if (!row) throw new HttpError(404, 'Lead not found');
   return toPublic(row);

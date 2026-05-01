@@ -63,6 +63,12 @@ describe('updateLead', () => {
       updateLead({ id: '00000000-0000-0000-0000-000000000000', name: 'X' }),
     ).rejects.toMatchObject({ status: 404 });
   });
+
+  it('null limpa campo opcional', async () => {
+    const seed = await seedLead({ name: 'Nina', phone: '11999993333', email: 'nina@x.com' });
+    const updated = await updateLead({ id: seed.id, email: null });
+    expect(updated.email).toBeNull();
+  });
 });
 
 describe('deleteLead', () => {
