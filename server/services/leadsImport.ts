@@ -1,4 +1,9 @@
 import { parse } from 'csv-parse/sync';
+import { db } from '../db/client';
+import { leads, type NewLead } from '../db/schema';
+import { eq } from 'drizzle-orm';
+import { HttpError } from '../middleware/errorHandler';
+import type { ImportReport } from '@shared/types';
 
 const HEADER_ALIASES: Record<string, string> = {
   name: 'name',
@@ -141,4 +146,70 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   }
 
   return { rows, rejected, missingHeaders: [] };
+}
+
+export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
+  const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
+  if (missingHeaders.length > 0) {
+    throw new HttpError(400, `Missing required column: ${missingHeaders.join(', ')}`);
+  }
+  let inserted = 0;
+  let updated = 0;
+
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      const [existing] = await tx
+        .select()
+        .from(leads)
+        .where(eq(leads.phone, row.phone))
+        .limit(1);
+
+      if (!existing) {
+        await tx.insert(leads).values({
+          name: row.name,
+          phone: row.phone,
+          email: row.email,
+          notes: row.notes,
+          vehiclePlate: row.vehiclePlate,
+          vehicleModel: row.vehicleModel,
+          lastPurchaseDate: row.lastPurchaseDate,
+          avgMileagePerDay: row.avgMileagePerDay,
+          source: 'csv',
+          status: 'frio',
+        });
+        inserted++;
+        continue;
+      }
+
+      const patch: Partial<NewLead> = {};
+      if (row.email != null && (existing.email == null || existing.email === '')) {
+        patch.email = row.email;
+      }
+      if (row.notes != null && (existing.notes == null || existing.notes === '')) {
+        patch.notes = row.notes;
+      }
+      if (row.vehiclePlate != null && (existing.vehiclePlate == null || existing.vehiclePlate === '')) {
+        patch.vehiclePlate = row.vehiclePlate;
+      }
+      if (row.vehicleModel != null && (existing.vehicleModel == null || existing.vehicleModel === '')) {
+        patch.vehicleModel = row.vehicleModel;
+      }
+      if (row.lastPurchaseDate && existing.lastPurchaseDate == null) {
+        patch.lastPurchaseDate = row.lastPurchaseDate;
+      }
+      if (row.avgMileagePerDay != null && existing.avgMileagePerDay == null) {
+        patch.avgMileagePerDay = row.avgMileagePerDay;
+      }
+      // name is intentionally NOT in the patch — never overwrite an existing name on import.
+      // source is intentionally NOT in the patch — preserves manual/whatsapp source on existing rows.
+
+      if (Object.keys(patch).length > 0) {
+        patch.updatedAt = new Date();
+        await tx.update(leads).set(patch).where(eq(leads.id, existing.id));
+      }
+      updated++;
+    }
+  });
+
+  return { inserted, updated, skipped: 0, rejected };
 }

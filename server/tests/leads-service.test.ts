@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createLead, updateLead, deleteLead, listLeads } from '../services/leadsService';
-import { parseLeadsCsv } from '../services/leadsImport';
+import { parseLeadsCsv, importLeadsFromCsv } from '../services/leadsImport';
 import { createLead as seedLead } from './helpers';
 
 describe('createLead', () => {
@@ -225,5 +225,51 @@ describe('parseLeadsCsv', () => {
     expect(missingHeaders).toEqual([]);
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe('Alice');
+  });
+});
+
+describe('importLeadsFromCsv', () => {
+  it('insere linhas novas com source=csv e status=frio', async () => {
+    const csv = `name,phone\nA,11888880001\nB,11888880002\n`;
+    const report = await importLeadsFromCsv(Buffer.from(csv));
+    expect(report.inserted).toBe(2);
+    expect(report.updated).toBe(0);
+    expect(report.skipped).toBe(0);
+    expect(report.rejected).toEqual([]);
+    const list = await listLeads({ source: 'csv' });
+    expect(list.total).toBe(2);
+    expect(list.items[0].status).toBe('frio');
+  });
+
+  it('upsert seletivo: preenche só campos vazios, nunca sobrescreve', async () => {
+    await seedLead({
+      name: 'Maria Original',
+      phone: '11888880010',
+      email: 'maria@x.com',
+      notes: null,
+      source: 'manual',
+    });
+    const csv = `name,phone,email,notes\nMaria CSV,11888880010,csv@x.com,nota nova\n`;
+    const report = await importLeadsFromCsv(Buffer.from(csv));
+    expect(report.inserted).toBe(0);
+    expect(report.updated).toBe(1);
+    const list = await listLeads({ q: '11888880010' });
+    expect(list.items[0].name).toBe('Maria Original');
+    expect(list.items[0].email).toBe('maria@x.com');
+    expect(list.items[0].notes).toBe('nota nova');
+    expect(list.items[0].source).toBe('manual');
+  });
+
+  it('linhas inválidas viram rejected, não abortam', async () => {
+    const csv = `name,phone\nA,11888880020\n,11888880021\nB,11888880022\n`;
+    const report = await importLeadsFromCsv(Buffer.from(csv));
+    expect(report.inserted).toBe(2);
+    expect(report.rejected).toHaveLength(1);
+    expect(report.rejected[0].line).toBe(3);
+  });
+
+  it('retorna missingHeaders quando faltam obrigatórias (sem persistir)', async () => {
+    const csv = `nome\nA\n`;
+    await expect(importLeadsFromCsv(Buffer.from(csv))).rejects.toMatchObject({ status: 400 });
   });
 });
