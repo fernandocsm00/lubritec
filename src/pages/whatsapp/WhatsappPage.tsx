@@ -1,52 +1,78 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QueueTabs } from '@/features/whatsapp/QueueTabs';
-import type { ConversationQueue } from '@/features/whatsapp/types';
+import { FilterBar, statusChipsToFilters } from '@/features/whatsapp/FilterBar';
+import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
 
 export default function WhatsappPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queue = (searchParams.get('queue') as ConversationQueue) || 'recepcao';
+  const statusKeys = (searchParams.get('statusChips') ?? 'aguardando,em_atendimento')
+    .split(',').filter(Boolean);
+  const assignment = (searchParams.get('assignment') as 'mine' | 'unassigned' | 'all') ?? 'all';
+  const origins: OriginKind[] = ((searchParams.get('origin') ?? 'organic,campaign')
+    .split(',').filter(Boolean) as OriginKind[]);
+  const q = searchParams.get('q') ?? '';
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
 
-  function handleQueueChange(q: ConversationQueue) {
+  const filters: ConversationFilters = useMemo(() => ({
+    queue,
+    ...statusChipsToFilters(statusKeys),
+    origin: origins,
+    assignment,
+    q: q || undefined,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [queue, statusKeys.join(','), origins.join(','), assignment, q]);
+
+  function patch(updates: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
-    next.set('queue', q);
+    for (const [k, v] of Object.entries(updates)) {
+      if (v === null || v === '') next.delete(k);
+      else next.set(k, v);
+    }
     setSearchParams(next, { replace: true });
-    setSelectedConvId(null);
   }
 
   return (
     <div className="grid h-[calc(100vh-4rem)]" style={{ gridTemplateColumns: '380px 1fr 340px' }}>
-      {/* Coluna 1 — lista */}
       <aside className="flex flex-col border-r border-border bg-background">
         <div className="px-4 py-3 border-b border-border">
           <h2 className="text-base font-semibold">Inbox</h2>
         </div>
-        <QueueTabs active={queue} onChange={handleQueueChange} />
+        <QueueTabs
+          active={queue}
+          onChange={(q) => { patch({ queue: q }); setSelectedConvId(null); }}
+        />
+        <FilterBar
+          q={q}
+          onQChange={(v) => patch({ q: v || null })}
+          statusKeys={statusKeys}
+          onStatusToggle={(k) => {
+            const next = statusKeys.includes(k)
+              ? statusKeys.filter((x) => x !== k)
+              : [...statusKeys, k];
+            patch({ statusChips: next.join(',') || null });
+          }}
+          assignment={assignment}
+          onAssignmentChange={(a) => patch({ assignment: a === 'all' ? null : a })}
+          origins={origins}
+          onOriginsChange={(o) => patch({ origin: o.join(',') })}
+        />
         <div className="flex-1 overflow-hidden flex items-center justify-center text-muted-foreground text-sm">
-          (lista de conversas — Task 14)
+          (lista — Task 14)
+          <pre className="hidden">{JSON.stringify(filters)}</pre>
         </div>
       </aside>
 
-      {/* Coluna 2 — thread */}
       <main className="flex flex-col bg-muted/20">
-        {selectedConvId ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            (thread — Task 15)
-          </div>
-        ) : (
+        {selectedConvId ? null : (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Selecione uma conversa
           </div>
         )}
       </main>
 
-      {/* Coluna 3 — sidebar lead */}
-      <aside className="border-l border-border bg-background">
-        {selectedConvId ? (
-          <div className="p-4 text-sm text-muted-foreground">(sidebar do lead — Task 18)</div>
-        ) : null}
-      </aside>
+      <aside className="border-l border-border bg-background" />
     </div>
   );
 }
