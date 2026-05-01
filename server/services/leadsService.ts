@@ -45,6 +45,8 @@ export async function createLead(input: {
   avgMileagePerDay?: number | null;
 }): Promise<PublicLead> {
   const phone = normalizePhone(input.phone);
+  if (phone.length < 8) throw new HttpError(400, 'Phone must have at least 8 digits');
+  // Best-effort guard — the unique index on phone is the authoritative constraint
   const [existing] = await db.select().from(leads).where(eq(leads.phone, phone)).limit(1);
   if (existing) throw new HttpError(409, 'Phone already in use');
   const [row] = await db

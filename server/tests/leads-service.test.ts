@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createLead } from '../services/leadsService';
-import { HttpError } from '../middleware/errorHandler';
+import { createLead as seedLead } from './helpers';
 
 describe('createLead', () => {
   it('cria lead com defaults frio/manual', async () => {
