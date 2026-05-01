@@ -83,4 +83,5 @@ export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
+export type NewLead = typeof leads.$inferInsert;
 export type AuthTokenPurpose = 'invite' | 'password_reset';
