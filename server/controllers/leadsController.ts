@@ -45,7 +45,7 @@ const listQuery = z.object({
   source: z.enum(LEAD_SOURCES).optional(),
   sort: z.enum(['name', 'created_at', 'last_purchase_date']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
-  page: z.coerce.number().int().min(1).optional(),
+  page: z.coerce.number().int().min(1).max(100000).optional(),
 });
 
 export async function listHandler(req: Request, res: Response, next: NextFunction) {
@@ -70,7 +70,7 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
 
 export async function updateHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    if ('phone' in req.body) {
+    if (req.body && typeof req.body === 'object' && 'phone' in req.body) {
       return res.status(400).json({ error: 'Phone cannot be edited' });
     }
     const { id } = idParams.parse(req.params);
