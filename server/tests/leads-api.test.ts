@@ -1,0 +1,135 @@
+import { describe, it, expect } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../app';
+import { createUser, createLead } from './helpers';
+
+const app = createApp();
+
+async function loginAs(email: string, password = 'pw12345') {
+  const res = await request(app).post('/api/auth/login').send({ email, password });
+  return res.body.accessToken as string;
+}
+
+async function seedAuth() {
+  await createUser({ email: 'r@x.com', password: 'pw12345', role: 'recepcao' });
+  return loginAs('r@x.com');
+}
+
+describe('GET /api/leads', () => {
+  it('401 sem token', async () => {
+    const res = await request(app).get('/api/leads');
+    expect(res.status).toBe(401);
+  });
+
+  it('200 com lista paginada', async () => {
+    const token = await seedAuth();
+    await createLead({ name: 'A', phone: '11000001001' });
+    const res = await request(app).get('/api/leads').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toBeInstanceOf(Array);
+    expect(res.body.total).toBeGreaterThan(0);
+    expect(res.body.pageSize).toBe(50);
+  });
+});
+
+describe('POST /api/leads', () => {
+  it('401 sem token', async () => {
+    const res = await request(app).post('/api/leads').send({ name: 'X', phone: '11000002001' });
+    expect(res.status).toBe(401);
+  });
+
+  it('cria lead 200 com defaults', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .post('/api/leads')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Pedro', phone: '11000002002' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('frio');
+    expect(res.body.source).toBe('manual');
+  });
+
+  it('400 quando phone tem menos de 8 dígitos após normalização', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .post('/api/leads')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Curto', phone: '(11) 12' });
+    expect(res.status).toBe(400);
+  });
+
+  it('409 quando phone duplicado', async () => {
+    const token = await seedAuth();
+    await createLead({ phone: '11000002003' });
+    const res = await request(app)
+      .post('/api/leads')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Dup', phone: '11000002003' });
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('PATCH /api/leads/:id', () => {
+  it('401 sem token', async () => {
+    const lead = await createLead({ phone: '11000003001' });
+    const res = await request(app).patch(`/api/leads/${lead.id}`).send({ name: 'X' });
+    expect(res.status).toBe(401);
+  });
+
+  it('200 atualiza campos permitidos', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000003002', name: 'Old' });
+    const res = await request(app)
+      .patch(`/api/leads/${lead.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'New', status: 'quente' });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('New');
+    expect(res.body.status).toBe('quente');
+  });
+
+  it('400 quando phone está no body', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000003003' });
+    const res = await request(app)
+      .patch(`/api/leads/${lead.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ phone: '11000003999' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Phone cannot be edited');
+  });
+
+  it('404 quando id não existe', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .patch('/api/leads/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'X' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/leads/:id', () => {
+  it('401 sem token', async () => {
+    const lead = await createLead({ phone: '11000004001' });
+    const res = await request(app).delete(`/api/leads/${lead.id}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('204 ao deletar', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000004002' });
+    const res = await request(app)
+      .delete(`/api/leads/${lead.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(204);
+  });
+
+  it('404 quando id não existe', async () => {
+    const token = await seedAuth();
+    const res = await request(app)
+      .delete('/api/leads/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+});

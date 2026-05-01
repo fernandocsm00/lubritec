@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
+import leadRoutes from './routes/leads';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -20,6 +21,7 @@ export function createApp() {
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/leads', leadRoutes);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
