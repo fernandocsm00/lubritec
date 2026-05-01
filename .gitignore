@@ -33,3 +33,6 @@ coverage/
 
 # test
 *.tsbuildinfo
+
+# brainstorming visual companion
+.superpowers/
