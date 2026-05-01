@@ -9,6 +9,7 @@ import {
   queueHandler,
   closeHandler,
   readHandler,
+  sendMessageHandler,
 } from '../controllers/conversationsController';
 
 const router = Router();
@@ -21,5 +22,6 @@ router.post('/:id/claim', authGuard, claimHandler);
 router.post('/:id/queue', authGuard, queueHandler);
 router.post('/:id/close', authGuard, closeHandler);
 router.post('/:id/read', authGuard, readHandler);
+router.post('/:id/messages', authGuard, sendMessageHandler);
 
 export default router;

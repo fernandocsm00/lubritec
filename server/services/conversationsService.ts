@@ -8,6 +8,7 @@ import type {
   ConversationFilters,
   PublicMessage,
   ConversationQueue,
+  MessageKind,
 } from '@shared/types';
 
 const PAGE_SIZE = 50;
@@ -293,4 +294,88 @@ export async function markRead(
     .returning({ id: conversations.id });
   if (!updated) throw new HttpError(404, 'Conversation not found');
   return loadAndReturn(id, currentUserId);
+}
+
+// ---------------------------------------------------------------------------
+// Send message
+// ---------------------------------------------------------------------------
+
+import { uazapiClient } from './uazapiClient';
+
+export interface SendInput {
+  conversationId: string;
+  userId: string;
+  kind: MessageKind;
+  body?: string | null;
+  mediaUrl?: string | null;
+  mediaMime?: string | null;
+}
+
+export async function sendMessage(input: SendInput): Promise<PublicMessage> {
+  const [conv] = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, input.conversationId))
+    .limit(1);
+  if (!conv) throw new HttpError(404, 'Conversation not found');
+
+  // Chama UazAPI primeiro — só persiste se sucesso.
+  let uazapiResp;
+  try {
+    uazapiResp = await uazapiClient.sendMessage({
+      to: conv.phone,
+      kind: input.kind,
+      text: input.body ?? undefined,
+      mediaUrl: input.mediaUrl ?? undefined,
+      mediaMime: input.mediaMime ?? undefined,
+    });
+  } catch {
+    throw new HttpError(502, 'WhatsApp gateway unavailable');
+  }
+
+  const sentAt = new Date();
+
+  const [msg] = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(messages)
+      .values({
+        conversationId: conv.id,
+        direction: 'out',
+        kind: input.kind,
+        body: input.body ?? null,
+        mediaUrl: input.mediaUrl ?? null,
+        mediaMime: input.mediaMime ?? null,
+        sentByUserId: input.userId,
+        uazapiMsgId: uazapiResp.messageId,
+        rawPayload: uazapiResp.rawPayload as object,
+        sentAt,
+      })
+      .returning();
+
+    await tx
+      .update(conversations)
+      .set({
+        lastMessageAt: sentAt,
+        assignedTo: conv.assignedTo ?? input.userId,
+        status: conv.assignedTo ? conv.status : 'em_atendimento',
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, conv.id));
+
+    return [inserted];
+  });
+
+  // Carrega o autor para o retorno público.
+  const [sender] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+  return {
+    id: msg.id,
+    conversationId: msg.conversationId,
+    direction: msg.direction,
+    kind: msg.kind,
+    body: msg.body,
+    mediaUrl: msg.mediaUrl,
+    mediaMime: msg.mediaMime,
+    sentByUser: sender ? { id: sender.id, name: sender.name } : null,
+    sentAt: msg.sentAt.toISOString(),
+  };
 }

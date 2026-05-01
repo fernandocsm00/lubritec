@@ -4,6 +4,7 @@ import {
   CONVERSATION_QUEUES,
   CONVERSATION_STATUSES,
   ORIGIN_KINDS,
+  MESSAGE_KINDS,
 } from '../../shared/types';
 import {
   listConversations,
@@ -14,6 +15,7 @@ import {
   changeQueue,
   closeConversation,
   markRead,
+  sendMessage,
 } from '../services/conversationsService';
 
 const csvOf = <T extends string>(values: readonly T[]) =>
@@ -101,5 +103,37 @@ export async function readHandler(req: Request, res: Response, next: NextFunctio
   try {
     const { id } = idParams.parse(req.params);
     res.json(await markRead(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+const sendBody = z
+  .object({
+    kind: z.enum(MESSAGE_KINDS),
+    body: z.string().max(4000).optional(),
+    mediaUrl: z.string().url().optional(),
+    mediaMime: z.string().max(120).optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.kind === 'text' && !d.body) {
+      ctx.addIssue({ code: 'custom', message: 'body is required for kind=text', path: ['body'] });
+    }
+    if (d.kind !== 'text' && !d.mediaUrl) {
+      ctx.addIssue({ code: 'custom', message: 'mediaUrl is required for media kinds', path: ['mediaUrl'] });
+    }
+  });
+
+export async function sendMessageHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const data = sendBody.parse(req.body);
+    const msg = await sendMessage({
+      conversationId: id,
+      userId: req.user!.userId,
+      kind: data.kind,
+      body: data.body ?? null,
+      mediaUrl: data.mediaUrl ?? null,
+      mediaMime: data.mediaMime ?? null,
+    });
+    res.json(msg);
   } catch (e) { next(e); }
 }
