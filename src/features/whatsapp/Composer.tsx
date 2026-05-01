@@ -1,10 +1,11 @@
 import { useState, type KeyboardEvent } from 'react';
-import { Send, Paperclip } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { EmojiPicker } from './EmojiPicker';
 import { TemplatePicker } from './TemplatePicker';
+import { MediaUpload } from './MediaUpload';
 import { useSendMessage } from './api';
 
 interface Props { conversationId: string }
@@ -13,7 +14,7 @@ export function Composer({ conversationId }: Props) {
   const [text, setText] = useState('');
   const send = useSendMessage(conversationId);
 
-  async function doSend() {
+  async function sendText() {
     const body = text.trim();
     if (!body || send.isPending) return;
     try {
@@ -24,10 +25,24 @@ export function Composer({ conversationId }: Props) {
     }
   }
 
+  async function sendMedia(input: { kind: 'image' | 'document' | 'video' | 'audio'; mediaUrl: string; mediaMime?: string; caption?: string }) {
+    try {
+      await send.mutateAsync({
+        kind: input.kind,
+        mediaUrl: input.mediaUrl,
+        mediaMime: input.mediaMime,
+        body: input.caption,
+      });
+      toast.success('Mídia enviada.');
+    } catch {
+      toast.error('Falha ao enviar mídia.');
+    }
+  }
+
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      doSend();
+      sendText();
     }
   }
 
@@ -35,9 +50,14 @@ export function Composer({ conversationId }: Props) {
     <div className="border-t border-border bg-background px-3 py-2 flex items-end gap-2">
       <TemplatePicker onPick={(body) => setText((t) => t + body)} />
       <EmojiPicker onPick={(e) => setText((t) => t + e)} />
-      <Button type="button" variant="ghost" size="icon" disabled title="Anexar (Task 17)">
-        <Paperclip className="h-5 w-5" />
-      </Button>
+      <MediaUpload
+        onPick={(input) => sendMedia({
+          kind: input.kind as 'image' | 'document' | 'video' | 'audio',
+          mediaUrl: input.mediaUrl,
+          mediaMime: input.mediaMime,
+          caption: input.caption,
+        })}
+      />
       <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -49,7 +69,7 @@ export function Composer({ conversationId }: Props) {
       <Button
         type="button"
         size="icon"
-        onClick={doSend}
+        onClick={sendText}
         disabled={!text.trim() || send.isPending}
         className="rounded-full"
       >
