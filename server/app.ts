@@ -6,6 +6,7 @@ import userRoutes from './routes/users';
 import leadRoutes from './routes/leads';
 import whatsappRoutes from './routes/whatsapp';
 import conversationRoutes from './routes/conversations';
+import messageTemplateRoutes from './routes/messageTemplates';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -26,6 +27,7 @@ export function createApp() {
   app.use('/api/leads', leadRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
   app.use('/api/conversations', conversationRoutes);
+  app.use('/api/message-templates', messageTemplateRoutes);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
