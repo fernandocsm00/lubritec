@@ -24,7 +24,7 @@ Gateway: **UazAPI** (mesmo do CRM_ORION). Webhook recebe mensagens entrantes; RE
 
 ## Schema
 
-Migration `007_whatsapp.sql`:
+Migration `009_whatsapp.sql` (próximo número disponível — 007 e 008 já existem):
 
 ```sql
 -- Enums
