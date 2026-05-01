@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createLead, updateLead, deleteLead, listLeads } from '../services/leadsService';
+import { parseLeadsCsv } from '../services/leadsImport';
 import { createLead as seedLead } from './helpers';
 
 describe('createLead', () => {
@@ -150,5 +151,70 @@ describe('listLeads', () => {
     const res = await listLeads({});
     expect(res.items[0].id).toBe(b.id);
     expect(res.items[1].id).toBe(a.id);
+  });
+});
+
+describe('parseLeadsCsv', () => {
+  it('aceita header EN com vírgula', async () => {
+    const csv = `name,phone,email\nAlice,11999990001,a@x.com\nBob,11999990002,\n`;
+    const { rows, rejected, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
+    expect(missingHeaders).toEqual([]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ name: 'Alice', phone: '11999990001', email: 'a@x.com' });
+    expect(rows[1].email).toBeNull();
+    expect(rejected).toEqual([]);
+  });
+
+  it('aceita header PT com ponto-e-vírgula', async () => {
+    const csv = `nome;telefone;placa\nMaria;(11) 99999-0003;ABC1D23\n`;
+    const { rows, rejected, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
+    expect(missingHeaders).toEqual([]);
+    expect(rows[0]).toMatchObject({
+      name: 'Maria',
+      phone: '11999990003',
+      vehiclePlate: 'ABC1D23',
+    });
+    expect(rejected).toEqual([]);
+  });
+
+  it('rejeita linha com phone vazio', async () => {
+    const csv = `name,phone\nA,11999990010\nB,\n`;
+    const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rows).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].line).toBe(3);
+    expect(rejected[0].reason).toMatch(/phone/i);
+  });
+
+  it('rejeita linha com email inválido', async () => {
+    const csv = `name,phone,email\nA,11999990020,bad-email\n`;
+    const { rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatch(/email/i);
+  });
+
+  it('rejeita avg_mileage_per_day não numérico', async () => {
+    const csv = `name,phone,km_dia\nA,11999990030,abc\n`;
+    const { rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rejected).toHaveLength(1);
+  });
+
+  it('aceita data DD/MM/YYYY e converte para ISO', async () => {
+    const csv = `name,phone,ultima_compra\nA,11999990040,15/03/2025\n`;
+    const { rows } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rows[0].lastPurchaseDate).toBe('2025-03-15');
+  });
+
+  it('reporta missingHeaders quando faltam name ou phone', async () => {
+    const csv = `nome,email\nA,a@x.com\n`;
+    const { missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
+    expect(missingHeaders).toContain('phone');
+  });
+
+  it('ignora colunas extras', async () => {
+    const csv = `name,phone,foo,bar\nA,11999990050,x,y\n`;
+    const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rows).toHaveLength(1);
+    expect(rejected).toEqual([]);
   });
 });
