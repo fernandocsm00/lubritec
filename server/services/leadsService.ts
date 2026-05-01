@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
-import { eq, and, or, ilike, desc, asc, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource } from '@shared/types';
 
@@ -112,11 +112,11 @@ export async function deleteLead(id: string): Promise<void> {
 
 const PAGE_SIZE = 50;
 type SortKey = 'name' | 'created_at' | 'last_purchase_date';
-const SORT_COLUMNS = {
+const SORT_COLUMNS: Record<SortKey, AnyColumn> = {
   name: leads.name,
   created_at: leads.createdAt,
   last_purchase_date: leads.lastPurchaseDate,
-} as const;
+};
 
 export async function listLeads(params: {
   q?: string;
@@ -135,10 +135,14 @@ export async function listLeads(params: {
   if (params.status) conditions.push(eq(leads.status, params.status));
   if (params.source) conditions.push(eq(leads.source, params.source));
   if (params.q) {
-    const pat = `%${params.q}%`;
-    conditions.push(
-      or(ilike(leads.name, pat), ilike(leads.phone, pat), ilike(leads.vehiclePlate, pat))!,
+    const escaped = params.q.replace(/[%_\\]/g, '\\$&');
+    const pat = `%${escaped}%`;
+    const searchExpr = or(
+      ilike(leads.name, pat),
+      ilike(leads.phone, pat),
+      ilike(leads.vehiclePlate, pat),
     );
+    if (searchExpr) conditions.push(searchExpr);
   }
   const where = conditions.length ? and(...conditions) : undefined;
 
