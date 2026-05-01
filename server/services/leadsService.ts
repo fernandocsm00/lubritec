@@ -1,8 +1,8 @@
 import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, asc, sql } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource } from '@shared/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,4 +104,56 @@ export async function updateLead(input: {
 export async function deleteLead(id: string): Promise<void> {
   const [row] = await db.delete(leads).where(eq(leads.id, id)).returning({ id: leads.id });
   if (!row) throw new HttpError(404, 'Lead not found');
+}
+
+// ---------------------------------------------------------------------------
+// listLeads
+// ---------------------------------------------------------------------------
+
+const PAGE_SIZE = 50;
+type SortKey = 'name' | 'created_at' | 'last_purchase_date';
+const SORT_COLUMNS = {
+  name: leads.name,
+  created_at: leads.createdAt,
+  last_purchase_date: leads.lastPurchaseDate,
+} as const;
+
+export async function listLeads(params: {
+  q?: string;
+  status?: LeadStatus;
+  source?: LeadSource;
+  sort?: SortKey;
+  order?: 'asc' | 'desc';
+  page?: number;
+}): Promise<{ items: PublicLead[]; total: number; page: number; pageSize: number }> {
+  const page = Math.max(1, params.page ?? 1);
+  const sortKey: SortKey = params.sort ?? 'created_at';
+  const orderFn = params.order === 'asc' ? asc : desc;
+  const sortCol = SORT_COLUMNS[sortKey];
+
+  const conditions = [];
+  if (params.status) conditions.push(eq(leads.status, params.status));
+  if (params.source) conditions.push(eq(leads.source, params.source));
+  if (params.q) {
+    const pat = `%${params.q}%`;
+    conditions.push(
+      or(ilike(leads.name, pat), ilike(leads.phone, pat), ilike(leads.vehiclePlate, pat))!,
+    );
+  }
+  const where = conditions.length ? and(...conditions) : undefined;
+
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(leads)
+    .where(where);
+
+  const rows = await db
+    .select()
+    .from(leads)
+    .where(where)
+    .orderBy(orderFn(sortCol))
+    .limit(PAGE_SIZE)
+    .offset((page - 1) * PAGE_SIZE);
+
+  return { items: rows.map(toPublic), total, page, pageSize: PAGE_SIZE };
 }
