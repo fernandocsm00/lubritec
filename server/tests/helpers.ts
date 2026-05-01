@@ -3,6 +3,8 @@ import { users, leads } from '../db/schema';
 import { hashPassword } from '../lib/hash';
 import type { Role, LeadStatus, LeadSource } from '@shared/types';
 
+let _phoneSeq = 0;
+
 export async function createUser(opts: {
   email?: string;
   name?: string;
@@ -40,7 +42,7 @@ export async function createLead(opts: {
     .insert(leads)
     .values({
       name: opts.name ?? 'Lead Test',
-      phone: opts.phone ?? `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      phone: opts.phone ?? `5511${String(++_phoneSeq).padStart(8, '0')}`,
       email: opts.email ?? null,
       notes: opts.notes ?? null,
       vehiclePlate: opts.vehiclePlate ?? null,
