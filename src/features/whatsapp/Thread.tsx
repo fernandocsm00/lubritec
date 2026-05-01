@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMessages, useMarkRead } from './api';
 import { MessageBubble } from './MessageBubble';
 import { DayDivider } from './DayDivider';
+import { Composer } from './Composer';
 import { dayLabel } from './helpers';
 import type { PublicMessage } from './types';
 
@@ -40,14 +41,17 @@ export function Thread({ conversationId }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-12 py-4">
-      {blocks.map((b, i) => (
-        <div key={i}>
-          <DayDivider label={b.dayLabel} />
-          {b.messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
-        </div>
-      ))}
-      <div ref={bottomRef} />
-    </div>
+    <>
+      <div className="flex-1 overflow-y-auto px-12 py-4">
+        {blocks.map((b, i) => (
+          <div key={i}>
+            <DayDivider label={b.dayLabel} />
+            {b.messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+      <Composer conversationId={conversationId} />
+    </>
   );
 }
