@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createLead, updateLead, deleteLead, listLeads } from '../services/leadsService';
 import { parseLeadsCsv, importLeadsFromCsv } from '../services/leadsImport';
 import { createLead as seedLead } from './helpers';
+import { db } from '../db/client';
 
 describe('createLead', () => {
   it('cria lead com defaults frio/manual', async () => {
@@ -22,6 +23,32 @@ describe('createLead', () => {
     await expect(createLead({ name: 'B', phone: '11999996666' })).rejects.toMatchObject({
       status: 409,
     });
+  });
+
+  it('mapeia unique_violation 23505 do DB para HttpError 409 (race catch branch)', async () => {
+    // Simulate the race: the pre-check select finds no row (returns []) but the
+    // DB insert then throws a Postgres unique_violation because another request
+    // committed the same phone between the select and the insert.
+    // We spy on db.select so it always returns an empty array, letting the
+    // insert attempt proceed — at which point the real DB constraint fires.
+    const selectSpy = vi.spyOn(db, 'select').mockReturnValueOnce({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve([]),
+        }),
+      }),
+    } as never);
+
+    // Seed the phone directly so the real insert will trip the unique constraint.
+    await seedLead({ name: 'First', phone: '11000099999' });
+
+    // Now createLead skips the pre-check (mocked select returns []) but the
+    // real insert hits the unique constraint → catch branch fires → 409.
+    await expect(
+      createLead({ name: 'Second', phone: '11000099999' }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    selectSpy.mockRestore();
   });
 
   it('aceita campos opcionais', async () => {

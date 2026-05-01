@@ -49,20 +49,41 @@ export async function createLead(input: {
   // Best-effort guard — the unique index on phone is the authoritative constraint
   const [existing] = await db.select().from(leads).where(eq(leads.phone, phone)).limit(1);
   if (existing) throw new HttpError(409, 'Phone already in use');
-  const [row] = await db
-    .insert(leads)
-    .values({
-      name: input.name,
-      phone,
-      email: input.email ?? null,
-      notes: input.notes ?? null,
-      vehiclePlate: input.vehiclePlate ?? null,
-      vehicleModel: input.vehicleModel ?? null,
-      lastPurchaseDate: input.lastPurchaseDate ?? null,
-      avgMileagePerDay: input.avgMileagePerDay ?? null,
-    })
-    .returning();
-  return toPublic(row);
+  // Race fix: if two requests pass the pre-check concurrently, the second insert
+  // trips the unique constraint on phone (leads_phone_key). Translate the pg
+  // unique_violation (23505) to the same 409 the pre-check would have thrown,
+  // so the client never sees a 500 for this case.
+  try {
+    const [row] = await db
+      .insert(leads)
+      .values({
+        name: input.name,
+        phone,
+        email: input.email ?? null,
+        notes: input.notes ?? null,
+        vehiclePlate: input.vehiclePlate ?? null,
+        vehicleModel: input.vehicleModel ?? null,
+        lastPurchaseDate: input.lastPurchaseDate ?? null,
+        avgMileagePerDay: input.avgMileagePerDay ?? null,
+      })
+      .returning();
+    return toPublic(row);
+  } catch (err) {
+    // Drizzle wraps the underlying pg error in a DrizzleQueryError; the original
+    // pg error is available as `err.cause`. Check both levels for safety.
+    const pgErr = (
+      (err as { cause?: unknown })?.cause ?? err
+    ) as { code?: string; constraint?: string };
+    // Only convert to 409 when it's specifically the phone unique-violation;
+    // the constraint is named leads_phone_key (migration 007).
+    if (
+      pgErr?.code === '23505' &&
+      (pgErr.constraint === undefined || pgErr.constraint.includes('phone'))
+    ) {
+      throw new HttpError(409, 'Phone already in use');
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
