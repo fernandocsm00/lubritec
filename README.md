@@ -145,9 +145,34 @@ Tela em `/cadastros` (qualquer usuário autenticado) com:
 - Importação CSV com headers em PT ou EN, delimitador `,` ou `;`, máximo 5MB. Linhas válidas são inseridas/atualizadas em uma transação; inválidas voltam num relatório com motivo.
 - Upsert seletivo no import: se o phone já existe, só preenche colunas vazias — nunca sobrescreve dados existentes. Status e source de leads existentes ficam intocados.
 
+## WhatsApp Inbox
+
+Tela em `/whatsapp` (qualquer usuário autenticado) com:
+
+- 3 colunas: lista de conversas (filtrada por fila + chips) | thread | sidebar do lead.
+- **Filas:** IA / Recepção / Comercial. Conversa nova entra em **Recepção**. Movimentação manual via "Mover ▾".
+- **Status (filtros):** Aguardando / Em atendimento / Encerradas / Expiradas 24h / Sem retorno.
+- **Atribuição manual:** botão "Pegar conversa" vira o operador dono. Auto-claim na primeira mensagem outbound.
+- **Composer:** texto + emoji + templates de resposta + anexar mídia (via URL pública na v1).
+- **Polling:** TanStack Query 5s (lista) / 2.5s (thread aberta) / 5s (contadores).
+
+Configurar no `.env`:
+
+```
+UAZAPI_BASE_URL=https://api.uazapi.com
+UAZAPI_TOKEN=...
+UAZAPI_INSTANCE_ID=...
+UAZAPI_WEBHOOK_SECRET=...    # gere com: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+NO_RESPONSE_DAYS=7
+```
+
+Configure o webhook no painel do UazAPI apontando pra `https://<seu-host>/api/whatsapp/webhook` com header `X-Webhook-Token: <UAZAPI_WEBHOOK_SECRET>`.
+
 ## Próximos sub-projetos
 1. ✅ Admin/RBAC — gestão de usuários e permissões
 2. ✅ Cadastros — leads completos + import CSV
 3. Inside Sales — pipeline kanban / CRM
-4. WhatsApp + Filas — atendimento multi-fila
-5. Dashboard de Funil — métricas e conversão
+4. ✅ WhatsApp Inbox — conversas com filas + composer
+5. Disparo em massa de campanhas
+6. IA de pré-qualificação
+7. Dashboard de Funil — métricas e conversão
