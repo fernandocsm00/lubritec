@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
-import { CONVERSATION_QUEUES } from '@shared/types';
 import type { ConversationFilters, PublicConversation } from './types';
 
 interface Props {
@@ -24,9 +23,6 @@ const QUEUE_LABEL: Record<PublicConversation['queue'], string> = {
   recepcao: 'Recepção',
   comercial: 'Comercial',
 };
-
-// Suppress unused import warning — CONVERSATION_QUEUES is imported for parity with ChatHeader
-void CONVERSATION_QUEUES;
 
 export function LeadSidebar({ conversationId, filters }: Props) {
   // Reaproveita a lista para evitar request extra — encontra a conv selecionada lá.
