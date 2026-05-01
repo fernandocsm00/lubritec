@@ -9,7 +9,7 @@ import {
   inet,
   index,
 } from 'drizzle-orm/pg-core';
-import { ROLES } from '../../shared/types';
+import { ROLES, LEAD_STATUSES, LEAD_SOURCES } from '../../shared/types';
 
 export const users = pgTable(
   'users',
@@ -62,20 +62,21 @@ export const sessions = pgTable(
   }),
 );
 
-export const leads = pgTable(
-  'leads',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: text('name').notNull(),
-    phone: text('phone').notNull().unique(),
-    vehiclePlate: text('vehicle_plate'),
-    vehicleModel: text('vehicle_model'),
-    lastPurchaseDate: date('last_purchase_date'),
-    avgMileagePerDay: integer('avg_mileage_per_day').default(50),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-);
+export const leads = pgTable('leads', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  phone: text('phone').notNull().unique(),
+  email: text('email'),
+  notes: text('notes'),
+  vehiclePlate: text('vehicle_plate'),
+  vehicleModel: text('vehicle_model'),
+  lastPurchaseDate: date('last_purchase_date'),
+  avgMileagePerDay: integer('avg_mileage_per_day').default(50),
+  status: text('status', { enum: LEAD_STATUSES }).notNull().default('frio'),
+  source: text('source', { enum: LEAD_SOURCES }).notNull().default('manual'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
