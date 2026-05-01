@@ -4,6 +4,7 @@ import {
   listHandler,
   countsHandler,
   getHandler,
+  listMessagesHandler,
 } from '../controllers/conversationsController';
 
 const router = Router();
@@ -12,5 +13,6 @@ const router = Router();
 router.get('/counts', authGuard, countsHandler);
 router.get('/', authGuard, listHandler);
 router.get('/:id', authGuard, getHandler);
+router.get('/:id/messages', authGuard, listMessagesHandler);
 
 export default router;

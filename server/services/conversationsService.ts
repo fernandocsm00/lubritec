@@ -1,11 +1,12 @@
 import { db } from '../db/client';
 import { conversations, messages, leads, users } from '../db/schema';
-import { eq, and, or, ilike, desc, sql, isNull, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicConversation,
   ConversationCounts,
   ConversationFilters,
+  PublicMessage,
 } from '@shared/types';
 
 const PAGE_SIZE = 50;
@@ -182,4 +183,45 @@ export async function getConversationById(
   }
   if (!found) throw new HttpError(404, 'Conversation not found');
   return found;
+}
+
+const MESSAGE_PAGE_SIZE = 50;
+
+export async function listMessages(
+  conversationId: string,
+  before?: Date,
+): Promise<{ items: PublicMessage[]; hasMore: boolean }> {
+  // Confirma que a conversa existe
+  const conv = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!conv.length) throw new HttpError(404, 'Conversation not found');
+
+  const conds: SQL[] = [eq(messages.conversationId, conversationId)];
+  if (before) conds.push(lt(messages.sentAt, before));
+
+  const rows = await db
+    .select({ msg: messages, sender: users })
+    .from(messages)
+    .leftJoin(users, eq(messages.sentByUserId, users.id))
+    .where(and(...conds))
+    .orderBy(desc(messages.sentAt))
+    .limit(MESSAGE_PAGE_SIZE + 1);
+
+  const hasMore = rows.length > MESSAGE_PAGE_SIZE;
+  const items = rows.slice(0, MESSAGE_PAGE_SIZE).map<PublicMessage>((r) => ({
+    id: r.msg.id,
+    conversationId: r.msg.conversationId,
+    direction: r.msg.direction,
+    kind: r.msg.kind,
+    body: r.msg.body,
+    mediaUrl: r.msg.mediaUrl,
+    mediaMime: r.msg.mediaMime,
+    sentByUser: r.sender ? { id: r.sender.id, name: r.sender.name } : null,
+    sentAt: r.msg.sentAt.toISOString(),
+  }));
+
+  return { items, hasMore };
 }

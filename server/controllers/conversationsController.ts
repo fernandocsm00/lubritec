@@ -9,6 +9,7 @@ import {
   listConversations,
   getConversationCounts,
   getConversationById,
+  listMessages,
 } from '../services/conversationsService';
 
 const csvOf = <T extends string>(values: readonly T[]) =>
@@ -52,5 +53,18 @@ export async function getHandler(req: Request, res: Response, next: NextFunction
   try {
     const { id } = idParams.parse(req.params);
     res.json(await getConversationById(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+const messagesQuery = z.object({
+  before: z.string().datetime().optional(),
+});
+
+export async function listMessagesHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const { before } = messagesQuery.parse(req.query);
+    const result = await listMessages(id, before ? new Date(before) : undefined);
+    res.json(result);
   } catch (e) { next(e); }
 }
