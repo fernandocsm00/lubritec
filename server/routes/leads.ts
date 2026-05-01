@@ -22,6 +22,7 @@ router.post(
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
       // Drain the multipart body before responding 401 to avoid ECONNRESET on the client.
+      // Mirrors authGuard.ts:17-19 — keep prefix check and error message in sync.
       req.on('data', () => {});
       req.on('end', () => res.status(401).json({ error: 'Missing access token' }));
       req.on('error', () => {
@@ -35,6 +36,9 @@ router.post(
     multerCsv.single('file')(req, res, (err) => {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ error: 'File too large' });
+      }
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: err.message });
       }
       if (err) return next(err);
       next();
