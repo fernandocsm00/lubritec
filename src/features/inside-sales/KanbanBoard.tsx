@@ -12,6 +12,7 @@ import { KanbanColumn } from './KanbanColumn';
 import { AddDealDialog } from './AddDealDialog';
 import { LossReasonDialog } from './LossReasonDialog';
 import { GanhoValueDialog } from './GanhoValueDialog';
+import { DealDrawer } from './DealDrawer';
 import { DEAL_STAGES } from '@shared/types';
 import type { DealStage, PublicDeal, LossReason } from './types';
 
@@ -28,7 +29,7 @@ export function KanbanBoard() {
   const q = searchParams.get('q') ?? '';
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
   const [searchInput, setSearchInput] = useState(q);
-  const [, setSelectedDealId] = useState<string | null>(null);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
@@ -186,6 +187,8 @@ export function KanbanBoard() {
           }
         }}
       />
+
+      <DealDrawer dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />
     </div>
   );
 }
