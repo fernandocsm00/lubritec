@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { users, leads, conversations, messages, messageTemplates } from '../db/schema';
+import { users, leads, conversations, messages, messageTemplates, deals, dealActivities } from '../db/schema';
 import { hashPassword } from '../lib/hash';
 import type { Role, LeadStatus, LeadSource } from '@shared/types';
 import type {
@@ -8,6 +8,11 @@ import type {
   MessageDirection,
   MessageKind,
   OriginKind,
+} from '@shared/types';
+import type {
+  DealStage,
+  DealActivityKind,
+  LossReason,
 } from '@shared/types';
 
 let _phoneSeq = 0;
@@ -141,4 +146,53 @@ export async function createMessageTemplate(opts: {
     })
     .returning();
   return t;
+}
+
+export async function createDeal(opts: {
+  leadId: string;
+  stage?: DealStage;
+  proposalValue?: number | null;
+  lossReason?: LossReason | null;
+  notes?: string | null;
+  ownerUserId?: string | null;
+  closedAt?: Date | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) {
+  const [d] = await db
+    .insert(deals)
+    .values({
+      leadId: opts.leadId,
+      stage: opts.stage ?? 'proposta_enviada',
+      // numeric must be passed as string by drizzle-orm
+      proposalValue: opts.proposalValue == null ? null : String(opts.proposalValue),
+      lossReason: opts.lossReason ?? null,
+      notes: opts.notes ?? null,
+      ownerUserId: opts.ownerUserId ?? null,
+      closedAt: opts.closedAt ?? null,
+      createdAt: opts.createdAt ?? new Date(),
+      updatedAt: opts.updatedAt ?? new Date(),
+    })
+    .returning();
+  return d;
+}
+
+export async function createDealActivity(opts: {
+  dealId: string;
+  kind?: DealActivityKind;
+  actorUserId?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: Date;
+}) {
+  const [a] = await db
+    .insert(dealActivities)
+    .values({
+      dealId: opts.dealId,
+      kind: opts.kind ?? 'created',
+      actorUserId: opts.actorUserId ?? null,
+      metadata: opts.metadata ?? {},
+      createdAt: opts.createdAt ?? new Date(),
+    })
+    .returning();
+  return a;
 }
