@@ -1,3 +1,4 @@
+import { useDraggable } from '@dnd-kit/core';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { avatarInitials, formatCurrency, relativeTime, LOSS_REASON_LABELS } from './helpers';
@@ -10,6 +11,11 @@ interface Props {
 }
 
 export function DealCard({ deal, currentUserId, onClick }: Props) {
+  const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({
+    id: deal.id,
+    data: { dealId: deal.id, fromStage: deal.stage },
+  });
+
   const isMine = deal.owner?.id === currentUserId;
   const ownerLabel = !deal.owner
     ? 'Sem dono'
@@ -17,10 +23,21 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
     ? 'Você'
     : deal.owner.name;
 
+  const style: React.CSSProperties = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.4 : 1 }
+    : { opacity: isDragging ? 0.4 : 1 };
+
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-card border border-border rounded-lg p-3 hover:border-primary transition-colors"
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={(e) => {
+        // Click só conta se não houve drag.
+        if (!isDragging) onClick();
+      }}
+      className="bg-card border border-border rounded-lg p-3 hover:border-primary transition-colors cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-center gap-2 mb-2">
         <Avatar className="h-7 w-7">
@@ -58,6 +75,6 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
           {ownerLabel} · {relativeTime(deal.updatedAt)}
         </span>
       </div>
-    </button>
+    </div>
   );
 }
