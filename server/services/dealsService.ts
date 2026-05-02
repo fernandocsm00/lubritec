@@ -268,3 +268,229 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
 
   return { ...toPublic(row), activities };
 }
+
+// ---------------------------------------------------------------------------
+// Mutations (todas registram activity no log)
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function logActivity(tx: any, opts: {
+  dealId: string;
+  kind: import('@shared/types').DealActivityKind;
+  actorUserId: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  await tx.insert(dealActivities).values({
+    dealId: opts.dealId,
+    kind: opts.kind,
+    actorUserId: opts.actorUserId,
+    metadata: opts.metadata ?? {},
+  });
+}
+
+export async function createDeal(input: {
+  leadId: string;
+  proposalValue?: number | null;
+  ownerUserId: string;
+  source: 'manual' | 'auto_image';
+}): Promise<PublicDeal> {
+  // Idempotente: se já existe deal pra esse lead, retorna o existing.
+  const [existing] = await db.select().from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
+  if (existing) {
+    return getDealById(existing.id);
+  }
+
+  const dealId = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(deals)
+      .values({
+        leadId: input.leadId,
+        stage: 'proposta_enviada',
+        proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
+        ownerUserId: input.ownerUserId,
+      })
+      .returning({ id: deals.id });
+    await logActivity(tx, {
+      dealId: created.id,
+      kind: 'created',
+      actorUserId: input.source === 'auto_image' ? null : input.ownerUserId,
+      metadata: { source: input.source },
+    });
+    return created.id;
+  });
+
+  return getDealById(dealId);
+}
+
+export async function updateDeal(input: {
+  id: string;
+  actorUserId: string;
+  proposalValue?: number | null;
+  notes?: string | null;
+  ownerUserId?: string | null;
+}): Promise<PublicDeal> {
+  const [current] = await db.select().from(deals).where(eq(deals.id, input.id)).limit(1);
+  if (!current) throw new HttpError(404, 'Deal not found');
+
+  await db.transaction(async (tx) => {
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (input.proposalValue !== undefined) {
+      const newVal = input.proposalValue == null ? null : String(input.proposalValue);
+      const oldVal = current.proposalValue;
+      if (newVal !== oldVal) {
+        patch.proposalValue = newVal;
+        await logActivity(tx, {
+          dealId: input.id,
+          kind: 'value_changed',
+          actorUserId: input.actorUserId,
+          metadata: {
+            from: oldVal == null ? null : Number(oldVal),
+            to: newVal == null ? null : Number(newVal),
+          },
+        });
+      }
+    }
+
+    if (input.notes !== undefined && input.notes !== current.notes) {
+      patch.notes = input.notes;
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'note_added',
+        actorUserId: input.actorUserId,
+        metadata: { note: input.notes ?? '' },
+      });
+    }
+
+    if (input.ownerUserId !== undefined && input.ownerUserId !== current.ownerUserId) {
+      patch.ownerUserId = input.ownerUserId;
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'owner_changed',
+        actorUserId: input.actorUserId,
+        metadata: {
+          fromUserId: current.ownerUserId,
+          toUserId: input.ownerUserId,
+        },
+      });
+    }
+
+    if (Object.keys(patch).length > 1) {
+      await tx.update(deals).set(patch).where(eq(deals.id, input.id));
+    }
+  });
+
+  return getDealById(input.id);
+}
+
+export async function changeStage(input: {
+  id: string;
+  actorUserId: string;
+  stage: DealStage;
+  lossReason?: LossReason;
+}): Promise<PublicDeal> {
+  const [current] = await db.select().from(deals).where(eq(deals.id, input.id)).limit(1);
+  if (!current) throw new HttpError(404, 'Deal not found');
+
+  if (input.stage === 'perdido' && !input.lossReason) {
+    throw new HttpError(400, 'lossReason is required when moving to perdido');
+  }
+  if (input.stage === 'ganho' && current.proposalValue == null) {
+    throw new HttpError(400, 'proposalValue is required before marking as ganho');
+  }
+  if (input.stage === current.stage) {
+    return getDealById(input.id);
+  }
+
+  const isTerminalNow = current.stage === 'ganho' || current.stage === 'perdido';
+  const movingToActive = input.stage === 'proposta_enviada' || input.stage === 'em_negociacao';
+  const reactivating = isTerminalNow && movingToActive;
+
+  await db.transaction(async (tx) => {
+    const patch: Record<string, unknown> = {
+      stage: input.stage,
+      updatedAt: new Date(),
+    };
+    // closed_at: set when entering terminal, clear when leaving terminal
+    if (input.stage === 'ganho' || input.stage === 'perdido') {
+      patch.closedAt = new Date();
+    } else {
+      patch.closedAt = null;
+    }
+    // loss_reason: set when going to perdido, clear otherwise
+    patch.lossReason = input.stage === 'perdido' ? input.lossReason : null;
+
+    await tx.update(deals).set(patch).where(eq(deals.id, input.id));
+
+    if (reactivating) {
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'reactivated',
+        actorUserId: input.actorUserId,
+        metadata: { from: current.stage, to: input.stage },
+      });
+    } else {
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'stage_changed',
+        actorUserId: input.actorUserId,
+        metadata: { from: current.stage, to: input.stage },
+      });
+    }
+
+    if (input.stage === 'ganho') {
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'won',
+        actorUserId: input.actorUserId,
+        metadata: { value: Number(current.proposalValue) },
+      });
+    }
+    if (input.stage === 'perdido') {
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'lost',
+        actorUserId: input.actorUserId,
+        metadata: { reason: input.lossReason },
+      });
+    }
+  });
+
+  return getDealById(input.id);
+}
+
+export async function deleteDeal(id: string): Promise<void> {
+  const [row] = await db.delete(deals).where(eq(deals.id, id)).returning({ id: deals.id });
+  if (!row) throw new HttpError(404, 'Deal not found');
+}
+
+export async function reactivateDeal(input: {
+  dealId: string;
+  actorUserId: string;
+}): Promise<PublicDeal> {
+  const [current] = await db.select().from(deals).where(eq(deals.id, input.dealId)).limit(1);
+  if (!current) throw new HttpError(404, 'Deal not found');
+  if (current.stage !== 'ganho' && current.stage !== 'perdido') {
+    return getDealById(input.dealId);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(deals)
+      .set({
+        stage: 'proposta_enviada',
+        closedAt: null,
+        lossReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(deals.id, input.dealId));
+    await logActivity(tx, {
+      dealId: input.dealId,
+      kind: 'reactivated',
+      actorUserId: input.actorUserId,
+      metadata: { from: current.stage, to: 'proposta_enviada' },
+    });
+  });
+
+  return getDealById(input.dealId);
+}
