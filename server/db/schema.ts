@@ -167,6 +167,13 @@ export const whatsappInstance = pgTable('whatsapp_instance', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const orgSettings = pgTable('org_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  singleton: boolean('singleton').notNull().default(true),
+  monthlySalesGoal: numeric('monthly_sales_goal', { precision: 12, scale: 2 }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const campaigns = pgTable('campaigns', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
@@ -228,3 +235,5 @@ export type DealActivity = typeof dealActivities.$inferSelect;
 export type NewDealActivity = typeof dealActivities.$inferInsert;
 export type WhatsappInstance = typeof whatsappInstance.$inferSelect;
 export type NewWhatsappInstance = typeof whatsappInstance.$inferInsert;
+export type OrgSettings = typeof orgSettings.$inferSelect;
+export type NewOrgSettings = typeof orgSettings.$inferInsert;
