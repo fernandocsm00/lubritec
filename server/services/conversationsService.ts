@@ -365,6 +365,19 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     return [inserted];
   });
 
+  // Pipeline Inside Sales: imagem em conversa Comercial pode criar/reativar deal.
+  // Best-effort — falha aqui não derruba o envio.
+  try {
+    const { maybeAddDealFromConversation } = await import('./pipelineIntegration');
+    await maybeAddDealFromConversation({
+      conversationId: conv.id,
+      messageKind: input.kind,
+      userId: input.userId,
+    });
+  } catch (err) {
+    console.warn('[pipeline] maybeAddDealFromConversation failed:', err);
+  }
+
   // Carrega o autor para o retorno público.
   const [sender] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
   return {
