@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Search, Plus } from 'lucide-react';
 import { useAuthStore } from '@/features/auth/store';
 import { useBoard } from './api';
 import { KanbanColumn } from './KanbanColumn';
+import { AddDealDialog } from './AddDealDialog';
 import { DEAL_STAGES } from '@shared/types';
 import type { DealStage, PublicDeal } from './types';
 
@@ -16,6 +18,7 @@ export function KanbanBoard() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
   const [searchInput, setSearchInput] = useState(q);
   const [, setSelectedDealId] = useState<string | null>(null);  // Task 15 wires drawer
+  const [addOpen, setAddOpen] = useState(false);
 
   function patch(updates: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
@@ -45,9 +48,7 @@ export function KanbanBoard() {
         <div className="flex gap-1.5">
           <button
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              owner === 'mine'
-                ? 'bg-primary/10 text-primary border-primary/40'
-                : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'
+              owner === 'mine' ? 'bg-primary/10 text-primary border-primary/40' : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'
             }`}
             onClick={() => patch({ owner: 'mine' })}
           >
@@ -55,16 +56,19 @@ export function KanbanBoard() {
           </button>
           <button
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              owner === 'all'
-                ? 'bg-primary/10 text-primary border-primary/40'
-                : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'
+              owner === 'all' ? 'bg-primary/10 text-primary border-primary/40' : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'
             }`}
             onClick={() => patch({ owner: 'all' })}
           >
             Todos
           </button>
         </div>
+        <div className="flex-1" />
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4 mr-1" /> Adicionar ao pipeline
+        </Button>
       </div>
+      <AddDealDialog open={addOpen} onOpenChange={setAddOpen} />
 
       {isError && (
         <div className="text-sm text-destructive p-4">Erro ao carregar o pipeline.</div>
