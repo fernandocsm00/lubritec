@@ -8,6 +8,7 @@ import {
   integer,
   inet,
   jsonb,
+  numeric,
   index,
 } from 'drizzle-orm/pg-core';
 import {
@@ -19,6 +20,9 @@ import {
   MESSAGE_DIRECTIONS,
   MESSAGE_KINDS,
   ORIGIN_KINDS,
+  DEAL_STAGES,
+  LOSS_REASONS,
+  DEAL_ACTIVITY_KINDS,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -122,6 +126,28 @@ export const messageTemplates = pgTable('message_templates', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const deals = pgTable('deals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  leadId: uuid('lead_id').notNull().unique().references(() => leads.id, { onDelete: 'restrict' }),
+  stage: text('stage', { enum: DEAL_STAGES }).notNull().default('proposta_enviada'),
+  proposalValue: numeric('proposal_value', { precision: 12, scale: 2 }),
+  lossReason: text('loss_reason', { enum: LOSS_REASONS }),
+  notes: text('notes'),
+  ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'restrict' }),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const dealActivities = pgTable('deal_activities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  dealId: uuid('deal_id').notNull().references(() => deals.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: DEAL_ACTIVITY_KINDS }).notNull(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  metadata: jsonb('metadata').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
@@ -135,3 +161,7 @@ export type NewMessage = typeof messages.$inferInsert;
 export type MessageTemplate = typeof messageTemplates.$inferSelect;
 export type NewMessageTemplate = typeof messageTemplates.$inferInsert;
 export type AuthTokenPurpose = 'invite' | 'password_reset';
+export type Deal = typeof deals.$inferSelect;
+export type NewDeal = typeof deals.$inferInsert;
+export type DealActivity = typeof dealActivities.$inferSelect;
+export type NewDealActivity = typeof dealActivities.$inferInsert;

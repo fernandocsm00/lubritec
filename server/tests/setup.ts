@@ -32,7 +32,7 @@ beforeEach(async () => {
   __resetRateLimitBuckets();
   if (!dbReady) return;
   await pool.query(
-    'TRUNCATE message_templates, messages, conversations, leads, sessions, auth_tokens, users RESTART IDENTITY CASCADE',
+    'TRUNCATE deal_activities, deals, message_templates, messages, conversations, leads, sessions, auth_tokens, users RESTART IDENTITY CASCADE',
   );
 });
 

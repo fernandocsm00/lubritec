@@ -144,3 +144,76 @@ export interface ConversationFilters {
   q?: string;
   page?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Inside Sales (sub-projeto 5)
+// ---------------------------------------------------------------------------
+
+export const DEAL_STAGES = [
+  'proposta_enviada',
+  'em_negociacao',
+  'ganho',
+  'perdido',
+] as const;
+export type DealStage = (typeof DEAL_STAGES)[number];
+
+export const LOSS_REASONS = [
+  'condicoes_comerciais',
+  'preco',
+  'sem_retorno',
+  'fora_do_perfil',
+] as const;
+export type LossReason = (typeof LOSS_REASONS)[number];
+
+export const DEAL_ACTIVITY_KINDS = [
+  'created',
+  'stage_changed',
+  'value_changed',
+  'note_added',
+  'won',
+  'lost',
+  'reactivated',
+  'owner_changed',
+] as const;
+export type DealActivityKind = (typeof DEAL_ACTIVITY_KINDS)[number];
+
+export interface PublicDeal {
+  id: string;
+  lead: {
+    id: string;
+    name: string;
+    phone: string;
+    vehicleModel: string | null;
+    vehiclePlate: string | null;
+    status: LeadStatus;
+  };
+  stage: DealStage;
+  proposalValue: number | null;
+  lossReason: LossReason | null;
+  notes: string | null;
+  owner: { id: string; name: string } | null;
+  closedAt: string | null;
+  isStale: boolean;
+  enteredCurrentStageAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublicDealActivity {
+  id: string;
+  dealId: string;
+  kind: DealActivityKind;
+  actor: { id: string; name: string } | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface DealStageTotal {
+  count: number;
+  valueSum: number;
+}
+
+export interface BoardResponse {
+  stages: Record<DealStage, PublicDeal[]>;
+  totals: Record<DealStage, DealStageTotal>;
+}
