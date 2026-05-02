@@ -42,6 +42,19 @@ export default {
           DEFAULT: 'hsl(var(--popover))',
           foreground: 'hsl(var(--popover-foreground))',
         },
+        // LubriConnect brand tokens (uso direto)
+        lc: {
+          navy: 'var(--lc-navy)',
+          'navy-deep': 'var(--lc-navy-deep)',
+          'navy-soft': 'var(--lc-navy-soft)',
+          ruby: 'var(--lc-ruby)',
+          'ruby-deep': 'var(--lc-ruby-deep)',
+          amber: 'var(--lc-amber)',
+          'amber-soft': 'var(--lc-amber-soft)',
+          ink: 'var(--lc-ink)',
+          paper: 'var(--lc-paper)',
+          'paper-2': 'var(--lc-paper-2)',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -49,8 +62,14 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        sans: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['Geist Mono', 'JetBrains Mono', 'ui-monospace', 'monospace'],
+      },
+      boxShadow: {
+        'lc-soft': '0 1px 0 rgba(11,37,69,0.04)',
+        'lc-card': '0 24px 60px -30px rgba(11,37,69,0.25), 0 4px 14px -8px rgba(11,37,69,0.08)',
+        'lc-cta': '0 6px 14px -4px rgba(11,37,69,0.4)',
+        'lc-ruby': '0 4px 10px -3px rgba(200,16,46,0.4)',
       },
     },
   },

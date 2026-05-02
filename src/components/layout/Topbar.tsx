@@ -6,15 +6,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuthStore } from '@/features/auth/store';
 import { useLogout } from '@/features/auth/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Bell } from 'lucide-react';
+
+const ROUTE_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  whatsapp: 'WhatsApp Inbox',
+  'inside-sales': 'Inside Sales',
+  cadastros: 'Cadastros',
+  admin: 'Admin',
+  settings: 'Configurações',
+};
 
 export function Topbar() {
   const user = useAuthStore((s) => s.user);
   const logout = useLogout();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const seg = location.pathname.split('/').filter(Boolean)[0] ?? 'dashboard';
+  const crumb = ROUTE_LABELS[seg] ?? seg;
 
   const initials = user?.name
     .split(' ')
@@ -24,25 +37,46 @@ export function Topbar() {
     .toUpperCase();
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-card px-6">
-      <div />
+    <header className="h-[60px] px-6 border-b border-border bg-card flex items-center gap-4">
+      <div className="flex items-center gap-2 text-[13px]">
+        <span className="text-muted-foreground font-medium">LubriConnect</span>
+        <span className="text-border">/</span>
+        <span className="text-foreground font-semibold">{crumb}</span>
+      </div>
+
+      <div className="flex-1" />
+
+      <div
+        className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted border border-border text-[11px] font-mono"
+        style={{ color: 'var(--lc-navy-deep)' }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'hsl(var(--success))' }} />
+        operação online · 12s atrás
+      </div>
+
+      <button className="w-9 h-9 rounded-md border border-border bg-card flex items-center justify-center relative hover:bg-muted">
+        <Bell className="h-4 w-4 text-muted-foreground" />
+        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive ring-2 ring-card" />
+      </button>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <span className="hidden text-sm sm:inline">{user?.name}</span>
+          <button className="flex items-center gap-2.5">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+              style={{
+                background: 'linear-gradient(135deg, var(--lc-ruby), var(--lc-navy-soft))',
+              }}
+            >
+              {initials}
+            </div>
+            <span className="hidden sm:inline text-sm font-medium">{user?.name}</span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>{user?.email}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => navigate('/settings')}>
-            Configurações
-          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/settings')}>Configurações</DropdownMenuItem>
           <DropdownMenuItem
             onClick={async () => {
               await logout.mutateAsync();
