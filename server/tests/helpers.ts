@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { users, leads, conversations, messages, messageTemplates, deals, dealActivities } from '../db/schema';
+import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance } from '../db/schema';
 import { hashPassword } from '../lib/hash';
 import type { Role, LeadStatus, LeadSource } from '@shared/types';
 import type {
@@ -195,4 +195,32 @@ export async function createDealActivity(opts: {
     })
     .returning();
   return a;
+}
+
+export async function createWhatsappInstance(opts: {
+  baseUrl?: string;
+  instanceId?: string | null;
+  instanceToken?: string | null;
+  webhookSecret?: string | null;
+  webhookUrl?: string | null;
+  webhookSynced?: boolean;
+  phoneNumber?: string | null;
+  profileName?: string | null;
+  lastStatus?: string | null;
+} = {}) {
+  const [row] = await db
+    .insert(whatsappInstance)
+    .values({
+      baseUrl: opts.baseUrl ?? 'https://api.uazapi.com',
+      instanceId: opts.instanceId ?? null,
+      instanceToken: opts.instanceToken ?? null,
+      webhookSecret: opts.webhookSecret ?? null,
+      webhookUrl: opts.webhookUrl ?? null,
+      webhookSynced: opts.webhookSynced ?? false,
+      phoneNumber: opts.phoneNumber ?? null,
+      profileName: opts.profileName ?? null,
+      lastStatus: opts.lastStatus ?? null,
+    })
+    .returning();
+  return row;
 }

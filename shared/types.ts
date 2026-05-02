@@ -218,3 +218,26 @@ export interface BoardResponse {
   stages: Record<DealStage, PublicDeal[]>;
   totals: Record<DealStage, DealStageTotal>;
 }
+
+// ---------------------------------------------------------------------------
+// WhatsApp Connection (sub-projeto 6)
+// ---------------------------------------------------------------------------
+
+export const INSTANCE_STATUSES = [
+  'disconnected',
+  'pairing',
+  'connected',
+  'error',
+] as const;
+export type InstanceStatus = (typeof INSTANCE_STATUSES)[number];
+
+export interface InstanceStatusResponse {
+  configured: boolean;
+  status: InstanceStatus;
+  qrCode: string | null;
+  phoneNumber: string | null;
+  profileName: string | null;
+  webhookSynced: boolean;
+  baseUrl: string;
+  lastStatusAt: string | null;
+}

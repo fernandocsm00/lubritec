@@ -148,6 +148,23 @@ export const dealActivities = pgTable('deal_activities', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const whatsappInstance = pgTable('whatsapp_instance', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  singleton: boolean('singleton').notNull().default(true),
+  baseUrl: text('base_url').notNull(),
+  instanceId: text('instance_id'),
+  instanceToken: text('instance_token'),
+  webhookSecret: text('webhook_secret'),
+  webhookUrl: text('webhook_url'),
+  webhookSynced: boolean('webhook_synced').notNull().default(false),
+  phoneNumber: text('phone_number'),
+  profileName: text('profile_name'),
+  lastStatus: text('last_status'),
+  lastStatusAt: timestamp('last_status_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
@@ -165,3 +182,5 @@ export type Deal = typeof deals.$inferSelect;
 export type NewDeal = typeof deals.$inferInsert;
 export type DealActivity = typeof dealActivities.$inferSelect;
 export type NewDealActivity = typeof dealActivities.$inferInsert;
+export type WhatsappInstance = typeof whatsappInstance.$inferSelect;
+export type NewWhatsappInstance = typeof whatsappInstance.$inferInsert;
