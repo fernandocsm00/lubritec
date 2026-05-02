@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: false,
+    globalSetup: ['./server/tests/globalSetup.ts'],
     setupFiles: ['./server/tests/setup.ts'],
     include: ['server/tests/**/*.test.ts'],
     // Tests share a single Postgres test DB and truncate in beforeEach;
