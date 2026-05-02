@@ -1,0 +1,83 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../app';
+import { db } from '../db/client';
+import { whatsappInstance } from '../db/schema';
+import { createUser, createWhatsappInstance } from './helpers';
+
+vi.mock('../services/uazapiInstanceClient', () => ({
+  initInstance: vi.fn(),
+  getInstanceStatus: vi.fn(),
+  logoutInstance: vi.fn(),
+  deleteInstance: vi.fn(),
+  setWebhook: vi.fn(),
+  UazapiInstanceError: class extends Error {
+    constructor(public status: number, public body: string) { super(`${status}`); }
+  },
+}));
+import { deleteInstance } from '../services/uazapiInstanceClient';
+
+const app = createApp();
+
+async function loginAs(email: string, role: 'admin' | 'comercial') {
+  await createUser({ email, password: 'pw12345', role });
+  const res = await request(app).post('/api/auth/login').send({ email, password: 'pw12345' });
+  return res.body.accessToken as string;
+}
+
+beforeEach(() => {
+  vi.mocked(deleteInstance).mockReset();
+});
+
+describe('DELETE /api/whatsapp-instance', () => {
+  it('403 pra comercial (admin only)', async () => {
+    const token = await loginAs('c@x.com', 'comercial');
+    const res = await request(app)
+      .delete('/api/whatsapp-instance')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('404 quando DB vazio', async () => {
+    const token = await loginAs('a@x.com', 'admin');
+    const res = await request(app)
+      .delete('/api/whatsapp-instance')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('204 admin deleta UazAPI + row', async () => {
+    await createWhatsappInstance({
+      instanceId: 'inst-del',
+      instanceToken: 'tok',
+    });
+    vi.mocked(deleteInstance).mockResolvedValueOnce(undefined);
+
+    const token = await loginAs('a2@x.com', 'admin');
+    const res = await request(app)
+      .delete('/api/whatsapp-instance')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(204);
+
+    const rows = await db.select().from(whatsappInstance);
+    expect(rows).toHaveLength(0);
+    expect(vi.mocked(deleteInstance)).toHaveBeenCalled();
+  });
+
+  it('204 mesmo se UazAPI delete falhar (best-effort) — apaga local', async () => {
+    await createWhatsappInstance({
+      instanceId: 'inst-fail',
+      instanceToken: 'tok',
+    });
+    vi.mocked(deleteInstance).mockRejectedValueOnce(new Error('uazapi down'));
+
+    const token = await loginAs('a3@x.com', 'admin');
+    const res = await request(app)
+      .delete('/api/whatsapp-instance')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(204);
+
+    const rows = await db.select().from(whatsappInstance);
+    expect(rows).toHaveLength(0);
+  });
+});

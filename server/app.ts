@@ -8,6 +8,7 @@ import whatsappRoutes from './routes/whatsapp';
 import conversationRoutes from './routes/conversations';
 import messageTemplateRoutes from './routes/messageTemplates';
 import dealRoutes from './routes/deals';
+import whatsappInstanceRoutes from './routes/whatsappInstance';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -30,6 +31,7 @@ export function createApp() {
   app.use('/api/conversations', conversationRoutes);
   app.use('/api/message-templates', messageTemplateRoutes);
   app.use('/api/deals', dealRoutes);
+  app.use('/api/whatsapp-instance', whatsappInstanceRoutes);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
