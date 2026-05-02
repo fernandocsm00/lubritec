@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { uazapiInboundSchema } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
+import { loadWebhookSecret } from '../services/whatsappInstanceService';
 
 export async function whatsappWebhookHandler(
   req: Request,
@@ -8,9 +9,9 @@ export async function whatsappWebhookHandler(
   next: NextFunction,
 ) {
   try {
-    const expected = process.env.UAZAPI_WEBHOOK_SECRET;
+    // Lê secret ativo: DB > env. Sem nenhum, qualquer chamada é 401.
+    const expected = await loadWebhookSecret();
     if (!expected) {
-      // Sem secret configurado, tratamos qualquer chamada como inválida.
       return res.status(401).json({ error: 'Webhook secret not configured' });
     }
     const got = req.header('X-Webhook-Token');
@@ -20,7 +21,6 @@ export async function whatsappWebhookHandler(
 
     const parsed = uazapiInboundSchema.safeParse(req.body);
     if (!parsed.success) {
-      // Payload inválido — UazAPI não vai conseguir corrigir, então 200 silencioso.
       return res.status(200).end();
     }
     await ingestInbound(parsed.data, req.body);
