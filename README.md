@@ -168,11 +168,25 @@ NO_RESPONSE_DAYS=7
 
 Configure o webhook no painel do UazAPI apontando pra `https://<seu-host>/api/whatsapp/webhook` com header `X-Webhook-Token: <UAZAPI_WEBHOOK_SECRET>`.
 
+## Inside Sales
+
+Tela em `/inside-sales` (apenas `admin` + `comercial`) com:
+
+- 4 colunas: **Proposta enviada** → **Em negociação** → **Ganho** / **Perdido**.
+- **Drag & drop** entre colunas (`@dnd-kit`). Mover pra Perdido abre dialog com motivo (4 opções: condições comerciais, preço, sem retorno, fora do perfil). Mover pra Ganho exige valor da proposta preenchido.
+- **Card de deal** mostra: avatar, nome, veículo · placa, valor (R$) ou "—", dono, tempo. Tag amarela "parado" se deal sem atividade há > 3 dias.
+- **Drawer lateral** ao clicar no card: dados do lead, valor editável inline, notas, **timeline de atividades** (created, stage_changed, value_changed, won, lost, reactivated, etc.), atalhos pra `/whatsapp` e `/cadastros`.
+- **Tab "Histórico"**: deals com `closed_at` há mais de 7 dias, paginado, com filtros (período, etapa, motivo, dono).
+- **Auto-trigger:** quando Comercial manda **imagem** numa conversa da fila Comercial do WhatsApp Inbox, o lead **entra automaticamente** no pipeline em "Proposta enviada". Idempotente — se já existe deal ativo, no-op; se está em terminal, reativa.
+- **Polling 5s** (lista) / **5s** (drawer). URL params persistem filtros pra deep-linking.
+
+Acesso pra Recepção: 403 (não vê o link na sidebar nem acessa a página).
+
 ## Próximos sub-projetos
 1. ✅ Admin/RBAC — gestão de usuários e permissões
 2. ✅ Cadastros — leads completos + import CSV
-3. Inside Sales — pipeline kanban / CRM
-4. ✅ WhatsApp Inbox — conversas com filas + composer
+3. ✅ WhatsApp Inbox — conversas com filas + composer
+4. ✅ Inside Sales — pipeline kanban + drag & drop + activity log
 5. Disparo em massa de campanhas
 6. IA de pré-qualificação
 7. Dashboard de Funil — métricas e conversão
