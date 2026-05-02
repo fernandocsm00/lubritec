@@ -49,8 +49,8 @@ function toPublic(row: RawDealRow): PublicDeal {
     notes: row.deal.notes,
     owner: row.owner ? { id: row.owner.id, name: row.owner.name } : null,
     closedAt: row.deal.closedAt?.toISOString() ?? null,
-    isStale: row.isStale,
-    enteredCurrentStageAt: row.enteredCurrentStageAt.toISOString(),
+    isStale: Boolean(row.isStale),
+    enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
     createdAt: row.deal.createdAt.toISOString(),
     updatedAt: row.deal.updatedAt.toISOString(),
   };
