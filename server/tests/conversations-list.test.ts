@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { createUser, createLead, createConversation, createMessage } from './helpers';
+import { createUser, createLead, createConversation, createMessage, createCampaign } from './helpers';
 
 const app = createApp();
 
@@ -90,11 +90,13 @@ describe('GET /api/conversations', () => {
   it('filtra por noResponse (campanha sem msg in há mais de 7 dias)', async () => {
     const token = await seedAuth();
     const lead = await createLead({ phone: '11000010030' });
+    const campaignOwner = await createUser({ email: 'campaign-owner@x.com', role: 'comercial' });
+    const campaign = await createCampaign({ createdByUserId: campaignOwner.id });
     await createConversation({
       phone: '11000010030',
       leadId: lead.id,
       originKind: 'campaign',
-      originCampaignId: '00000000-0000-0000-0000-000000000001',
+      originCampaignId: campaign.id,
       lastInboundAt: null,
       lastMessageAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
     });
