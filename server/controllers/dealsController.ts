@@ -62,3 +62,78 @@ export async function getHandler(req: Request, res: Response, next: NextFunction
 
 // Re-exports usados na tarefa 6
 export { DEAL_STAGES, LOSS_REASONS };
+
+import {
+  createDeal,
+  updateDeal,
+  changeStage,
+  deleteDeal,
+} from '../services/dealsService';
+
+const createBody = z.object({
+  leadId: z.string().uuid(),
+  proposalValue: z.number().nonnegative().optional(),
+});
+
+const patchBody = z
+  .object({
+    proposalValue: z.number().nonnegative().nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    ownerUserId: z.string().uuid().nullable().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: 'At least one field required' });
+
+const stageBody = z.object({
+  stage: z.enum(DEAL_STAGES),
+  lossReason: z.enum(LOSS_REASONS).optional(),
+});
+
+export async function createHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = createBody.parse(req.body);
+    const deal = await createDeal({
+      leadId: data.leadId,
+      proposalValue: data.proposalValue ?? null,
+      ownerUserId: req.user!.userId,
+      source: 'manual',
+    });
+    res.json(deal);
+  } catch (e) { next(e); }
+}
+
+export async function patchHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const data = patchBody.parse(req.body);
+    const deal = await updateDeal({
+      id,
+      actorUserId: req.user!.userId,
+      proposalValue: data.proposalValue,
+      notes: data.notes,
+      ownerUserId: data.ownerUserId,
+    });
+    res.json(deal);
+  } catch (e) { next(e); }
+}
+
+export async function stageHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const data = stageBody.parse(req.body);
+    const deal = await changeStage({
+      id,
+      actorUserId: req.user!.userId,
+      stage: data.stage,
+      lossReason: data.lossReason,
+    });
+    res.json(deal);
+  } catch (e) { next(e); }
+}
+
+export async function deleteHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    await deleteDeal(id);
+    res.status(204).end();
+  } catch (e) { next(e); }
+}

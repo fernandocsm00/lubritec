@@ -5,15 +5,23 @@ import {
   boardHandler,
   historyHandler,
   getHandler,
+  createHandler,
+  patchHandler,
+  stageHandler,
+  deleteHandler,
 } from '../controllers/dealsController';
 
 const router = Router();
 
 const guard = [authGuard, requireRole('admin', 'comercial')];
+const adminOnly = [authGuard, requireRole('admin')];
 
-// IMPORTANTE: /history antes de /:id senão "history" vira id e dá 400 (UUID inválido).
 router.get('/history', ...guard, historyHandler);
 router.get('/', ...guard, boardHandler);
 router.get('/:id', ...guard, getHandler);
+router.post('/', ...guard, createHandler);
+router.patch('/:id', ...guard, patchHandler);
+router.post('/:id/stage', ...guard, stageHandler);
+router.delete('/:id', ...adminOnly, deleteHandler);
 
 export default router;
