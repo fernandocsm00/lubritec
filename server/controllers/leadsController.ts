@@ -44,6 +44,7 @@ const listQuery = z.object({
   q: z.string().optional(),
   status: z.enum(LEAD_STATUSES).optional(),
   source: z.enum(LEAD_SOURCES).optional(),
+  pipeline: z.enum(['yes', 'no']).optional(),
   sort: z.enum(['name', 'created_at', 'last_purchase_date']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),

@@ -21,6 +21,7 @@ export default function CadastrosPage() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<LeadStatus | 'all'>('all');
   const [source, setSource] = useState<LeadSource | 'all'>('all');
+  const [pipeline, setPipeline] = useState<'yes' | 'no' | 'all'>('all');
   const [sort, setSort] = useState<NonNullable<ListParams['sort']>>('created_at');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -33,6 +34,7 @@ export default function CadastrosPage() {
     q: debouncedQ || undefined,
     status: status === 'all' ? undefined : status,
     source: source === 'all' ? undefined : source,
+    pipeline: pipeline === 'all' ? undefined : pipeline,
     sort,
     order,
     page,
@@ -40,7 +42,7 @@ export default function CadastrosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, source]);
+  }, [debouncedQ, status, source, pipeline]);
 
   const { data, isLoading } = useLeads(params);
 
@@ -73,9 +75,11 @@ export default function CadastrosPage() {
         q={q}
         status={status}
         source={source}
+        pipeline={pipeline}
         onQChange={setQ}
         onStatusChange={setStatus}
         onSourceChange={setSource}
+        onPipelineChange={setPipeline}
       />
 
       <LeadsTable

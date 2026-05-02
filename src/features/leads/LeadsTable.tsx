@@ -82,6 +82,7 @@ export function LeadsTable(props: Props) {
               </TableHead>
               <TableHead>Telefone</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Pipeline</TableHead>
               <TableHead>Origem</TableHead>
               <TableHead>
                 <SortHeader
@@ -99,7 +100,7 @@ export function LeadsTable(props: Props) {
             {loading
               ? Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 6 }).map((_, j) => (
+                    {Array.from({ length: 7 }).map((_, j) => (
                       <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
@@ -107,7 +108,7 @@ export function LeadsTable(props: Props) {
               : items.length === 0
                 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
                       Nenhum lead encontrado.
                     </TableCell>
                   </TableRow>
@@ -118,6 +119,13 @@ export function LeadsTable(props: Props) {
                     <TableCell>{l.phone}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_LABEL[l.status].variant}>{STATUS_LABEL[l.status].label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {l.hasDeal && (
+                        <Badge variant="outline" className="text-xs border-primary/40 text-primary">
+                          ● No pipeline
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{SOURCE_LABEL[l.source]}</TableCell>
                     <TableCell>{fmtDate(l.lastPurchaseDate)}</TableCell>

@@ -45,6 +45,7 @@ export interface PublicLead {
   avgMileagePerDay: number | null;
   status: LeadStatus;
   source: LeadSource;
+  hasDeal: boolean;
   createdAt: string;
   updatedAt: string;
 }

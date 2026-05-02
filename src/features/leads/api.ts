@@ -6,6 +6,7 @@ export interface ListParams {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
+  pipeline?: 'yes' | 'no';
   sort?: 'name' | 'created_at' | 'last_purchase_date';
   order?: 'asc' | 'desc';
   page?: number;

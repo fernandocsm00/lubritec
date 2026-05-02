@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { leads, type NewLead } from '../db/schema';
+import { leads, deals, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource } from '@shared/types';
@@ -12,7 +12,7 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, '');
 }
 
-function toPublic(row: typeof leads.$inferSelect): PublicLead {
+function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): PublicLead {
   return {
     id: row.id,
     name: row.name,
@@ -25,6 +25,7 @@ function toPublic(row: typeof leads.$inferSelect): PublicLead {
     avgMileagePerDay: row.avgMileagePerDay,
     status: row.status,
     source: row.source,
+    hasDeal: row.hasDeal ?? false,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -67,7 +68,7 @@ export async function createLead(input: {
         avgMileagePerDay: input.avgMileagePerDay ?? null,
       })
       .returning();
-    return toPublic(row);
+    return toPublic({ ...row, hasDeal: false });
   } catch (err) {
     // Drizzle wraps the underlying pg error in a DrizzleQueryError; the original
     // pg error is available as `err.cause`. Check both levels for safety.
@@ -115,7 +116,7 @@ export async function updateLead(input: {
   if (rest.status !== undefined) patch.status = rest.status;
   const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
   if (!row) throw new HttpError(404, 'Lead not found');
-  return toPublic(row);
+  return toPublic({ ...row, hasDeal: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +144,7 @@ export async function listLeads(params: {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
+  pipeline?: 'yes' | 'no';
   sort?: SortKey;
   order?: 'asc' | 'desc';
   page?: number;
@@ -155,6 +157,12 @@ export async function listLeads(params: {
   const conditions = [];
   if (params.status) conditions.push(eq(leads.status, params.status));
   if (params.source) conditions.push(eq(leads.source, params.source));
+  if (params.pipeline === 'yes') {
+    conditions.push(sql`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`);
+  }
+  if (params.pipeline === 'no') {
+    conditions.push(sql`NOT EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`);
+  }
   if (params.q) {
     const escaped = params.q.replace(/[%_\\]/g, '\\$&');
     const pat = `%${escaped}%`;
@@ -173,12 +181,15 @@ export async function listLeads(params: {
     .where(where);
 
   const rows = await db
-    .select()
+    .select({
+      lead: leads,
+      hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`,
+    })
     .from(leads)
     .where(where)
     .orderBy(orderFn(sortCol))
     .limit(PAGE_SIZE)
     .offset((page - 1) * PAGE_SIZE);
 
-  return { items: rows.map(toPublic), total, page, pageSize: PAGE_SIZE };
+  return { items: rows.map((r) => toPublic({ ...r.lead, hasDeal: Boolean(r.hasDeal) })), total, page, pageSize: PAGE_SIZE };
 }

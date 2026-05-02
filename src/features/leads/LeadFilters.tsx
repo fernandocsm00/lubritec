@@ -12,18 +12,22 @@ interface Props {
   q: string;
   status: LeadStatus | 'all';
   source: LeadSource | 'all';
+  pipeline: 'yes' | 'no' | 'all';
   onQChange: (v: string) => void;
   onStatusChange: (v: LeadStatus | 'all') => void;
   onSourceChange: (v: LeadSource | 'all') => void;
+  onPipelineChange: (v: 'yes' | 'no' | 'all') => void;
 }
 
 export function LeadFilters({
   q,
   status,
   source,
+  pipeline,
   onQChange,
   onStatusChange,
   onSourceChange,
+  onPipelineChange,
 }: Props) {
   return (
     <div className="flex flex-wrap gap-3 items-center">
@@ -49,6 +53,14 @@ export function LeadFilters({
           <SelectItem value="manual">Manual</SelectItem>
           <SelectItem value="csv">CSV</SelectItem>
           <SelectItem value="whatsapp">WhatsApp</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={pipeline} onValueChange={(v) => onPipelineChange(v as 'yes' | 'no' | 'all')}>
+        <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Pipeline: Todos</SelectItem>
+          <SelectItem value="yes">No pipeline</SelectItem>
+          <SelectItem value="no">Sem pipeline</SelectItem>
         </SelectContent>
       </Select>
     </div>
