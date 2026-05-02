@@ -241,3 +241,83 @@ export interface InstanceStatusResponse {
   baseUrl: string;
   lastStatusAt: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Mass Campaigns (sub-projeto 7)
+// ---------------------------------------------------------------------------
+
+export const CAMPAIGN_STATUSES = [
+  'draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled',
+] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+export const CAMPAIGN_RECIPIENT_STATUSES = [
+  'pending', 'sent', 'failed', 'skipped',
+] as const;
+export type CampaignRecipientStatus = (typeof CAMPAIGN_RECIPIENT_STATUSES)[number];
+
+export interface AudienceFilters {
+  status?: LeadStatus[];
+  source?: LeadSource[];
+  lastPurchaseDaysAgo?: number;
+  excludeLeadIds?: string[];
+  phoneCsv?: string[];
+}
+
+export interface CampaignDryRunResponse {
+  total: number;
+  preview: Array<{
+    leadId: string;
+    name: string;
+    phone: string;
+    vehicleModel: string | null;
+    vehiclePlate: string | null;
+    lastPurchaseDate: string | null;
+  }>;
+}
+
+export interface PublicCampaign {
+  id: string;
+  name: string;
+  description: string | null;
+  status: CampaignStatus;
+  templateId: string | null;
+  messageBody: string;
+  mediaUrl: string | null;
+  mediaMime: string | null;
+  audienceFilter: AudienceFilters;
+  audienceTotal: number;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  sentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  ratePerMinute: number;
+  createdBy: { id: string; name: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignFunnel {
+  totalRecipients: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  replied: number;
+  inDeal: number;
+  won: number;
+  lost: number;
+  lostByReason: Record<LossReason, number>;
+  totalWonValue: number;
+}
+
+export interface PublicCampaignRecipient {
+  id: string;
+  leadId: string;
+  leadName: string;
+  phone: string;
+  status: CampaignRecipientStatus;
+  sentAt: string | null;
+  failureReason: string | null;
+}

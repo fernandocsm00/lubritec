@@ -36,3 +36,6 @@ coverage/
 
 # brainstorming visual companion
 .superpowers/
+
+# uploaded media
+/uploads/

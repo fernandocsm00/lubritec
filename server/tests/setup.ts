@@ -32,7 +32,7 @@ beforeEach(async () => {
   __resetRateLimitBuckets();
   if (!dbReady) return;
   await pool.query(
-    'TRUNCATE deal_activities, deals, message_templates, messages, conversations, leads, sessions, auth_tokens, users, whatsapp_instance RESTART IDENTITY CASCADE',
+    'TRUNCATE campaign_recipients, campaigns, deal_activities, deals, message_templates, messages, conversations, leads, sessions, auth_tokens, users, whatsapp_instance RESTART IDENTITY CASCADE',
   );
 });
 

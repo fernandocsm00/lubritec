@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance } from '../db/schema';
+import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance, campaigns, campaignRecipients } from '../db/schema';
 import { hashPassword } from '../lib/hash';
 import type { Role, LeadStatus, LeadSource } from '@shared/types';
 import type {
@@ -223,4 +223,70 @@ export async function createWhatsappInstance(opts: {
     })
     .returning();
   return row;
+}
+
+import type { CampaignStatus, CampaignRecipientStatus } from '@shared/types';
+
+export async function createCampaign(opts: {
+  name?: string;
+  description?: string | null;
+  status?: CampaignStatus;
+  templateId?: string | null;
+  messageBody?: string;
+  mediaUrl?: string | null;
+  mediaMime?: string | null;
+  audienceFilter?: Record<string, unknown>;
+  audienceTotal?: number;
+  scheduledAt?: Date | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  sentCount?: number;
+  failedCount?: number;
+  skippedCount?: number;
+  ratePerMinute?: number;
+  createdByUserId: string;
+}) {
+  const [c] = await db.insert(campaigns).values({
+    name: opts.name ?? 'Campanha Teste',
+    description: opts.description ?? null,
+    status: opts.status ?? 'draft',
+    templateId: opts.templateId ?? null,
+    messageBody: opts.messageBody ?? 'Olá {{nome}}!',
+    mediaUrl: opts.mediaUrl ?? null,
+    mediaMime: opts.mediaMime ?? null,
+    audienceFilter: opts.audienceFilter ?? {},
+    audienceTotal: opts.audienceTotal ?? 0,
+    scheduledAt: opts.scheduledAt ?? null,
+    startedAt: opts.startedAt ?? null,
+    completedAt: opts.completedAt ?? null,
+    sentCount: opts.sentCount ?? 0,
+    failedCount: opts.failedCount ?? 0,
+    skippedCount: opts.skippedCount ?? 0,
+    ratePerMinute: opts.ratePerMinute ?? 20,
+    createdByUserId: opts.createdByUserId,
+  }).returning();
+  return c;
+}
+
+export async function createCampaignRecipient(opts: {
+  campaignId: string;
+  leadId: string;
+  phone?: string;
+  status?: CampaignRecipientStatus;
+  sentAt?: Date | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+  failureReason?: string | null;
+}) {
+  const [r] = await db.insert(campaignRecipients).values({
+    campaignId: opts.campaignId,
+    leadId: opts.leadId,
+    phone: opts.phone ?? `5511${Date.now()}`.slice(0, 13),
+    status: opts.status ?? 'pending',
+    sentAt: opts.sentAt ?? null,
+    conversationId: opts.conversationId ?? null,
+    messageId: opts.messageId ?? null,
+    failureReason: opts.failureReason ?? null,
+  }).returning();
+  return r;
 }

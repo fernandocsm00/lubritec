@@ -23,6 +23,8 @@ import {
   DEAL_STAGES,
   LOSS_REASONS,
   DEAL_ACTIVITY_KINDS,
+  CAMPAIGN_STATUSES,
+  CAMPAIGN_RECIPIENT_STATUSES,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -164,6 +166,48 @@ export const whatsappInstance = pgTable('whatsapp_instance', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const campaigns = pgTable('campaigns', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  description: text('description'),
+  status: text('status', { enum: CAMPAIGN_STATUSES }).notNull().default('draft'),
+  templateId: uuid('template_id').references(() => messageTemplates.id, { onDelete: 'set null' }),
+  messageBody: text('message_body').notNull(),
+  mediaUrl: text('media_url'),
+  mediaMime: text('media_mime'),
+  audienceFilter: jsonb('audience_filter').notNull().default({}),
+  audienceTotal: integer('audience_total').notNull().default(0),
+  scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  sentCount: integer('sent_count').notNull().default(0),
+  failedCount: integer('failed_count').notNull().default(0),
+  skippedCount: integer('skipped_count').notNull().default(0),
+  ratePerMinute: integer('rate_per_minute').notNull().default(20),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const campaignRecipients = pgTable('campaign_recipients', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  campaignId: uuid('campaign_id').notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'restrict' }),
+  phone: text('phone').notNull(),
+  status: text('status', { enum: CAMPAIGN_RECIPIENT_STATUSES }).notNull().default('pending'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+  messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
+  failureReason: text('failure_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type Campaign = typeof campaigns.$inferSelect;
+export type NewCampaign = typeof campaigns.$inferInsert;
+export type CampaignRecipient = typeof campaignRecipients.$inferSelect;
+export type NewCampaignRecipient = typeof campaignRecipients.$inferInsert;
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
