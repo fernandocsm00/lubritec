@@ -13,7 +13,7 @@ import { useAuthStore } from '@/features/auth/store';
 const items = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/whatsapp', label: 'WhatsApp', icon: MessageSquare },
-  { to: '/inside-sales', label: 'Inside Sales', icon: Briefcase },
+  { to: '/inside-sales', label: 'Inside Sales', icon: Briefcase, salesOnly: true },
   { to: '/cadastros', label: 'Cadastros', icon: Users },
   { to: '/admin', label: 'Admin', icon: ShieldCheck, adminOnly: true },
   { to: '/settings', label: 'Configurações', icon: SettingsIcon },
@@ -21,7 +21,11 @@ const items = [
 
 export function Sidebar() {
   const role = useAuthStore((s) => s.user?.role);
-  const visible = items.filter((i) => !i.adminOnly || role === 'admin');
+  const visible = items.filter((i) => {
+    if (i.adminOnly && role !== 'admin') return false;
+    if (i.salesOnly && role !== 'admin' && role !== 'comercial') return false;
+    return true;
+  });
 
   return (
     <aside className="hidden w-60 border-r bg-card md:flex md:flex-col">
