@@ -182,11 +182,32 @@ Tela em `/inside-sales` (apenas `admin` + `comercial`) com:
 
 Acesso pra Recepção: 403 (não vê o link na sidebar nem acessa a página).
 
+## Conexão WhatsApp
+
+Tela em `/settings?tab=whatsapp` (apenas `admin` + `comercial`) com:
+
+- **Empty state** — "Pronto para conectar". Botão único **CONECTAR INSTÂNCIA**.
+- **Pairing** — QR code de 256x256 com instruções (1. Abrir WhatsApp · 2. Aparelhos conectados · 3. Conectar). Polling 2s atualiza o QR automaticamente.
+- **Conectado** — avatar + nome do perfil + telefone formatado + última verificação. Polling 30s detecta queda.
+- **Erro** — mensagem clara quando UazAPI fora do ar; retorna automaticamente quando voltar.
+
+Ações:
+- **CONECTAR** — cria instância no UazAPI (se não existe) + registra webhook + retorna QR. Idempotente (reusa instância existente).
+- **DESCONECTAR** — logout sem deletar; admin pode reconectar depois.
+- **APAGAR** — `admin` apenas. Apaga instância no UazAPI + zera credenciais. Conversas históricas preservadas.
+
+**Config no DB**, não em env vars: as variáveis `UAZAPI_*` viram seed inicial — após a primeira conexão pela UI, o DB é a fonte da verdade. `webhook_secret` é gerado automaticamente (`crypto.randomBytes(32)`).
+
+**Indicador "● Credenciais protegidas no servidor"** — token UazAPI nunca volta no response do backend; frontend só vê estados booleanos.
+
+Pré-requisito: variável `APP_URL` configurada (ex: `https://app.lubritec.com`). UazAPI precisa conseguir alcançar `${APP_URL}/api/whatsapp/webhook`.
+
 ## Próximos sub-projetos
 1. ✅ Admin/RBAC — gestão de usuários e permissões
 2. ✅ Cadastros — leads completos + import CSV
 3. ✅ WhatsApp Inbox — conversas com filas + composer
 4. ✅ Inside Sales — pipeline kanban + drag & drop + activity log
-5. Disparo em massa de campanhas
-6. IA de pré-qualificação
-7. Dashboard de Funil — métricas e conversão
+5. ✅ Conexão WhatsApp — gestão da instância UazAPI via UI
+6. Disparo em massa de campanhas
+7. IA de pré-qualificação
+8. Dashboard de Funil — métricas e conversão
