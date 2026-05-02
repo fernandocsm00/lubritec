@@ -1,4 +1,48 @@
-import { Placeholder } from '@/components/layout/Placeholder';
+import { useSearchParams } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+
+const WhatsappConnectionTab = lazy(() => import('./WhatsappConnectionTab'));
+
+const Loader = () => <div className="p-6 text-muted-foreground text-sm">Carregando…</div>;
+
+type Tab = 'whatsapp';
+
 export default function SettingsPage() {
-  return <Placeholder title="Configurações" description="Preferências do usuário. Em breve." />;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = (searchParams.get('tab') as Tab) || 'whatsapp';
+
+  function setTab(t: Tab) {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', t);
+    setSearchParams(next, { replace: true });
+  }
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-4rem)] p-6 overflow-hidden">
+      <div className="mb-4">
+        <h1 className="text-2xl font-semibold">Configurações</h1>
+        <p className="text-sm text-muted-foreground">Configurações do sistema</p>
+      </div>
+
+      <div className="flex gap-1 border-b border-border mb-4">
+        <button
+          className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+            tab === 'whatsapp'
+              ? 'border-primary text-primary font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setTab('whatsapp')}
+        >
+          Conexão WhatsApp
+        </button>
+        {/* Futuras tabs entram aqui */}
+      </div>
+
+      <div className="flex-1 overflow-hidden">
+        <Suspense fallback={<Loader />}>
+          {tab === 'whatsapp' && <WhatsappConnectionTab />}
+        </Suspense>
+      </div>
+    </div>
+  );
 }

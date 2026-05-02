@@ -16,7 +16,7 @@ const items = [
   { to: '/inside-sales', label: 'Inside Sales', icon: Briefcase, salesOnly: true },
   { to: '/cadastros', label: 'Cadastros', icon: Users },
   { to: '/admin', label: 'Admin', icon: ShieldCheck, adminOnly: true },
-  { to: '/settings', label: 'Configurações', icon: SettingsIcon },
+  { to: '/settings', label: 'Configurações', icon: SettingsIcon, salesOnly: true },
 ];
 
 export function Sidebar() {
