@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuthStore } from '@/features/auth/store';
+import { useCreateDeal } from '@/features/inside-sales/api';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import type { ConversationFilters, PublicConversation } from './types';
@@ -66,11 +69,41 @@ export function LeadSidebar({ conversationId, filters }: Props) {
         <Row label="Origem" value={conv.originKind === 'campaign' ? 'Campanha' : 'Orgânica'} />
       </div>
 
+      {/* Pipeline section — só pra admin/comercial */}
+      <PipelineSection leadId={conv.lead.id} />
+
       <div className="mt-auto p-4 space-y-2">
         <Button asChild variant="default" className="w-full">
           <Link to="/cadastros">Editar lead →</Link>
         </Button>
       </div>
+    </div>
+  );
+}
+
+function PipelineSection({ leadId }: { leadId: string }) {
+  const role = useAuthStore((s) => s.user?.role);
+  const visible = role === 'admin' || role === 'comercial';
+  const create = useCreateDeal();
+
+  if (!visible) return null;
+
+  async function addToPipeline() {
+    try {
+      await create.mutateAsync({ leadId });
+      toast.success('Adicionado ao pipeline.');
+      window.location.href = `/inside-sales?owner=all`;
+    } catch {
+      toast.error('Falha ao adicionar.');
+    }
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Pipeline</h4>
+      <Button size="sm" variant="outline" className="w-full" onClick={addToPipeline} disabled={create.isPending}>
+        + Adicionar ao pipeline
+      </Button>
     </div>
   );
 }
