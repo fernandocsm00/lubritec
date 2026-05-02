@@ -1,3 +1,4 @@
+import path from 'node:path';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -9,6 +10,7 @@ import conversationRoutes from './routes/conversations';
 import messageTemplateRoutes from './routes/messageTemplates';
 import dealRoutes from './routes/deals';
 import whatsappInstanceRoutes from './routes/whatsappInstance';
+import campaignRoutes from './routes/campaigns';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -32,6 +34,8 @@ export function createApp() {
   app.use('/api/message-templates', messageTemplateRoutes);
   app.use('/api/deals', dealRoutes);
   app.use('/api/whatsapp-instance', whatsappInstanceRoutes);
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  app.use('/api/campaigns', campaignRoutes);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
