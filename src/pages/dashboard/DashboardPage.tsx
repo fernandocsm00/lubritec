@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '@/features/auth/store';
-import type { DashboardView, DashboardPeriod } from '@shared/types';
+import type { DashboardView, DashboardPeriod, DashboardSummary } from '@shared/types';
 import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp } from './hooks';
 import { ViewToggle } from './components/ViewToggle';
 import { PeriodPicker } from './components/PeriodPicker';
@@ -15,6 +15,16 @@ import { Leaderboard } from './components/Leaderboard';
 import { RecentActivities } from './components/RecentActivities';
 import { RefreshCcw } from 'lucide-react';
 
+function RightSection({ view, summary }: { view: DashboardView; summary: DashboardSummary | undefined }) {
+  if (view === 'org' && summary?.leaderboard) {
+    return <Leaderboard data={summary.leaderboard} />;
+  }
+  if (view === 'me' && summary?.recentActivities) {
+    return <RecentActivities data={summary.recentActivities} />;
+  }
+  return <BlockSkeleton height={200} />;
+}
+
 export default function DashboardPage() {
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
@@ -25,6 +35,8 @@ export default function DashboardPage() {
   const summary   = useDashboardSummary(view, period);
   const attention = useDashboardAttention(view);
   const whatsapp  = useDashboardWhatsapp(view === 'org');
+
+  const isRefreshing = summary.isFetching || attention.isFetching || (view === 'org' && whatsapp.isFetching);
 
   function refreshAll() {
     summary.refetch();
@@ -44,10 +56,11 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={refreshAll}
-            className="rounded-lg border border-slate-300 bg-white p-2 text-slate-500 hover:text-lc-navy"
+            disabled={isRefreshing}
+            className="rounded-lg border border-slate-300 bg-white p-2 text-slate-500 hover:text-lc-navy disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Atualizar dados"
           >
-            <RefreshCcw className="h-4 w-4" />
+            <RefreshCcw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
@@ -60,25 +73,41 @@ export default function DashboardPage() {
           </div>
         ) : summary.error ? (
           <BlockError onRetry={() => summary.refetch()} />
-        ) : (
-          <KpiRow data={summary.data!} view={view} period={period} />
-        )}
+        ) : summary.data ? (
+          <KpiRow data={summary.data} view={view} period={period} />
+        ) : null}
       </section>
 
       {/* ATENÇÃO */}
       <section>
         <h2 className="mb-2 text-xs uppercase tracking-wider text-slate-500">Atenção</h2>
-        {attention.isLoading && !attention.data
-          ? <BlockSkeleton height={220} />
-          : attention.error
-            ? <BlockError onRetry={() => attention.refetch()} />
-            : <AttentionList data={attention.data!} />}
+        {attention.isLoading && !attention.data ? (
+          <BlockSkeleton height={220} />
+        ) : attention.error ? (
+          <BlockError onRetry={() => attention.refetch()} />
+        ) : attention.data ? (
+          <AttentionList data={attention.data} />
+        ) : null}
       </section>
 
       {/* FUNIL + PIPELINE */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {summary.data ? <FunnelChart funnel={summary.data.funnel} /> : <BlockSkeleton height={300} />}
-        {summary.data ? <PipelineOpen data={summary.data.pipelineOpen} /> : <BlockSkeleton height={300} />}
+        {summary.error ? (
+          <>
+            <BlockError onRetry={() => summary.refetch()} />
+            <BlockError onRetry={() => summary.refetch()} />
+          </>
+        ) : summary.data ? (
+          <>
+            <FunnelChart funnel={summary.data.funnel} />
+            <PipelineOpen data={summary.data.pipelineOpen} />
+          </>
+        ) : (
+          <>
+            <BlockSkeleton height={300} />
+            <BlockSkeleton height={300} />
+          </>
+        )}
       </section>
 
       {/* WHATSAPP + LEADERBOARD/RECENTES */}
@@ -86,13 +115,11 @@ export default function DashboardPage() {
         {view === 'org' && (
           whatsapp.data
             ? <WhatsappStats data={whatsapp.data} />
-            : whatsapp.error ? <BlockError onRetry={() => whatsapp.refetch()} /> : <BlockSkeleton height={200} />
+            : whatsapp.error
+              ? <BlockError onRetry={() => whatsapp.refetch()} />
+              : <BlockSkeleton height={200} />
         )}
-        {view === 'org' && summary.data?.leaderboard
-          ? <Leaderboard data={summary.data.leaderboard} />
-          : view === 'me' && summary.data?.recentActivities
-            ? <RecentActivities data={summary.data.recentActivities} />
-            : <BlockSkeleton height={200} />}
+        <RightSection view={view} summary={summary.data} />
       </section>
     </div>
   );

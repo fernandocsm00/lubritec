@@ -1,7 +1,8 @@
 export function BlockSkeleton({ height = 120 }: { height?: number }) {
   return (
     <div
-      aria-busy="true"
+      role="status"
+      aria-label="Carregando"
       className="rounded-xl bg-slate-100 animate-pulse"
       style={{ height }}
     />
