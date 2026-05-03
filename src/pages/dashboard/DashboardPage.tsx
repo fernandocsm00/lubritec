@@ -1,4 +1,99 @@
-import { Placeholder } from '@/components/layout/Placeholder';
+import { useState } from 'react';
+import { useAuthStore } from '@/features/auth/store';
+import type { DashboardView, DashboardPeriod } from '@shared/types';
+import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp } from './hooks';
+import { ViewToggle } from './components/ViewToggle';
+import { PeriodPicker } from './components/PeriodPicker';
+import { BlockSkeleton } from './components/BlockSkeleton';
+import { BlockError } from './components/BlockError';
+import { KpiRow } from './components/KpiRow';
+import { AttentionList } from './components/AttentionList';
+import { FunnelChart } from './components/FunnelChart';
+import { PipelineOpen } from './components/PipelineOpen';
+import { WhatsappStats } from './components/WhatsappStats';
+import { Leaderboard } from './components/Leaderboard';
+import { RecentActivities } from './components/RecentActivities';
+import { RefreshCcw } from 'lucide-react';
+
 export default function DashboardPage() {
-  return <Placeholder title="Dashboard de Funil" description="Métricas de qualificação. Em breve." />;
+  const role = useAuthStore((s) => s.user?.role);
+  const isAdmin = role === 'admin';
+
+  const [view, setView] = useState<DashboardView>(isAdmin ? 'org' : 'me');
+  const [period, setPeriod] = useState<DashboardPeriod>('month');
+
+  const summary   = useDashboardSummary(view, period);
+  const attention = useDashboardAttention(view);
+  const whatsapp  = useDashboardWhatsapp(view === 'org');
+
+  function refreshAll() {
+    summary.refetch();
+    attention.refetch();
+    if (view === 'org') whatsapp.refetch();
+  }
+
+  return (
+    <div className="flex flex-col gap-6 p-6">
+      <div className="flex items-end justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {isAdmin && <ViewToggle value={view} onChange={setView} />}
+          {!isAdmin && <h1 className="text-xl font-semibold tracking-tight text-lc-ink">Meu pipeline</h1>}
+        </div>
+        <div className="flex items-end gap-3">
+          <PeriodPicker value={period} onChange={setPeriod} />
+          <button
+            type="button"
+            onClick={refreshAll}
+            className="rounded-lg border border-slate-300 bg-white p-2 text-slate-500 hover:text-lc-navy"
+            aria-label="Atualizar dados"
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* KPI ROW */}
+      <section>
+        {summary.isLoading && !summary.data ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <BlockSkeleton key={i} height={130} />)}
+          </div>
+        ) : summary.error ? (
+          <BlockError onRetry={() => summary.refetch()} />
+        ) : (
+          <KpiRow data={summary.data!} view={view} period={period} />
+        )}
+      </section>
+
+      {/* ATENÇÃO */}
+      <section>
+        <h2 className="mb-2 text-xs uppercase tracking-wider text-slate-500">Atenção</h2>
+        {attention.isLoading && !attention.data
+          ? <BlockSkeleton height={220} />
+          : attention.error
+            ? <BlockError onRetry={() => attention.refetch()} />
+            : <AttentionList data={attention.data!} />}
+      </section>
+
+      {/* FUNIL + PIPELINE */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {summary.data ? <FunnelChart funnel={summary.data.funnel} /> : <BlockSkeleton height={300} />}
+        {summary.data ? <PipelineOpen data={summary.data.pipelineOpen} /> : <BlockSkeleton height={300} />}
+      </section>
+
+      {/* WHATSAPP + LEADERBOARD/RECENTES */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {view === 'org' && (
+          whatsapp.data
+            ? <WhatsappStats data={whatsapp.data} />
+            : whatsapp.error ? <BlockError onRetry={() => whatsapp.refetch()} /> : <BlockSkeleton height={200} />
+        )}
+        {view === 'org' && summary.data?.leaderboard
+          ? <Leaderboard data={summary.data.leaderboard} />
+          : view === 'me' && summary.data?.recentActivities
+            ? <RecentActivities data={summary.data.recentActivities} />
+            : <BlockSkeleton height={200} />}
+      </section>
+    </div>
+  );
 }
