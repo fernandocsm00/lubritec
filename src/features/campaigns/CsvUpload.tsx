@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -9,12 +9,19 @@ interface Props {
 
 export function CsvUpload({ onPhones, current }: Props) {
   const [error, setError] = useState<string | null>(null);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   function handleFile(file: File) {
     setError(null);
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result ?? '');
+      if (!aliveRef.current) return;
+      // Strip UTF-8 BOM (Excel exports CSVs with one by default on Windows)
+      const text = String(reader.result ?? '').replace(/^\uFEFF/, '');
       const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       // Aceita: 1 telefone por linha, OU coluna `phone` em CSV
       const phones: string[] = [];

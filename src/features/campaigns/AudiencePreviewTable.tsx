@@ -23,17 +23,27 @@ interface Props {
 export function AudiencePreviewTable({ open, onClose, filters, excluded, onExcludedChange }: Props) {
   const [items, setItems] = useState<PublicLead[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     // Reusa /leads pra listar audiência possível (1ª página)
     const params = new URLSearchParams();
     if (filters.status?.length) params.set('status', filters.status[0]);  // simplificado
     if (filters.source?.length) params.set('source', filters.source[0]);
     api<ListResult>(`/leads?${params.toString()}`)
-      .then((r) => setItems(r.items))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!cancelled) setItems(r.items); })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setItems([]);
+          setError(e instanceof Error ? e.message : 'Falha ao carregar audiência.');
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [open, filters]);
 
   function toggle(id: string) {
@@ -51,6 +61,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
           <DialogTitle>Audiência (primeira página)</DialogTitle>
         </DialogHeader>
         <div className="max-h-96 overflow-auto">
+          {error && <div className="text-sm text-destructive p-3">{error}</div>}
           {loading ? <Skeleton className="h-40 w-full" /> : (
             <Table>
               <TableHeader>
