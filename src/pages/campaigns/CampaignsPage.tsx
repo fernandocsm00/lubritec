@@ -14,7 +14,11 @@ import { CAMPAIGN_STATUS_LABELS } from '@/features/campaigns/helpers';
 export default function CampaignsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const q = searchParams.get('q') ?? '';
-  const status = (searchParams.get('status') as CampaignStatus | null) ?? undefined;
+  const rawStatus = searchParams.get('status');
+  const status: CampaignStatus | undefined =
+    rawStatus && (CAMPAIGN_STATUSES as readonly string[]).includes(rawStatus)
+      ? (rawStatus as CampaignStatus)
+      : undefined;
   const [searchInput, setSearchInput] = useState(q);
 
   function patch(updates: Record<string, string | null>) {
