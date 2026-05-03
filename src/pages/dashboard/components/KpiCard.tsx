@@ -34,7 +34,14 @@ export function KpiCard(props: {
 
       {props.goal && (
         <div className="mt-3">
-          <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+          <div
+            className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden"
+            role="progressbar"
+            aria-valuenow={props.goal.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Progresso da meta: ${props.goal.percent}% de ${props.goal.targetLabel}`}
+          >
             <div
               className="h-full bg-gradient-to-r from-lc-navy to-lc-amber"
               style={{ width: `${Math.min(100, props.goal.percent)}%` }}

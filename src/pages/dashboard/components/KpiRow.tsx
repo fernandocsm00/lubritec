@@ -1,11 +1,11 @@
-import type { DashboardSummary } from '@shared/types';
+import type { DashboardSummary, DashboardPeriod, DashboardView } from '@shared/types';
 import { KpiCard } from './KpiCard';
 
 const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 
-export function KpiRow({ data, view }: { data: DashboardSummary; view: 'org' | 'me' }) {
+export function KpiRow({ data, view, period }: { data: DashboardSummary; view: DashboardView; period: DashboardPeriod }) {
   const k = data.kpis;
-  const showGoalCta = view === 'org' && data.period.label === 'Mês corrente' && !data.goal;
+  const showGoalCta = view === 'org' && period === 'month' && !data.goal;
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -13,7 +13,6 @@ export function KpiRow({ data, view }: { data: DashboardSummary; view: 'org' | '
         label={view === 'org' ? 'Vendas' : 'Meus ganhos'}
         value={fmtBRL(k.sales.value)}
         empty={k.sales.value === 0 && k.sales.prev === 0}
-        emptyHint="sem vendas no período"
         delta={{ pct: k.sales.deltaPct, isGood: k.sales.deltaPct >= 0 }}
         goal={data.goal ? { percent: data.goal.percent, targetLabel: fmtBRL(data.goal.monthlyTarget) } : undefined}
         cta={showGoalCta ? { label: 'Definir meta →', to: '/settings?tab=organization' } : undefined}
