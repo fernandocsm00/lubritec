@@ -38,6 +38,9 @@ export default function CampaignDetailPage() {
 
   const isRunningOrPaused = data.status === 'running' || data.status === 'paused';
   const isCancellable = ['scheduled', 'running', 'paused', 'draft'].includes(data.status);
+  const onActionError = (e: unknown) => {
+    toast.error(e instanceof Error ? e.message : 'Falha ao executar ação.');
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] p-6 overflow-y-auto">
@@ -63,6 +66,7 @@ export default function CampaignDetailPage() {
           {data.status === 'running' && (
             <Button size="sm" variant="outline" onClick={() => pause.mutate(id, {
               onSuccess: () => toast.success('Pausada.'),
+              onError: onActionError,
             })}>
               <Pause className="h-4 w-4 mr-1" /> Pausar
             </Button>
@@ -70,13 +74,17 @@ export default function CampaignDetailPage() {
           {data.status === 'paused' && (
             <Button size="sm" variant="outline" onClick={() => resume.mutate(id, {
               onSuccess: () => toast.success('Retomada.'),
+              onError: onActionError,
             })}>
               <Play className="h-4 w-4 mr-1" /> Retomar
             </Button>
           )}
           {isCancellable && (
             <Button size="sm" variant="outline" className="text-destructive border-destructive/40"
-              onClick={() => cancel.mutate(id, { onSuccess: () => toast.success('Cancelada.') })}
+              onClick={() => cancel.mutate(id, {
+                onSuccess: () => toast.success('Cancelada.'),
+                onError: onActionError,
+              })}
             >
               <X className="h-4 w-4 mr-1" /> Cancelar
             </Button>
@@ -110,7 +118,7 @@ export default function CampaignDetailPage() {
         )}
       </div>
 
-      <RecipientsTable campaignId={id} />
+      <RecipientsTable campaignId={id} campaignStatus={data.status} />
 
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <AlertDialogContent>
@@ -127,6 +135,7 @@ export default function CampaignDetailPage() {
               className="bg-destructive text-destructive-foreground"
               onClick={() => del.mutate(id, {
                 onSuccess: () => { toast.success('Apagada.'); navigate('/campanhas'); },
+                onError: onActionError,
               })}
             >
               Apagar

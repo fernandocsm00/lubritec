@@ -8,15 +8,15 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useRecipients } from './api';
-import { formatDateTime } from './helpers';
-import type { CampaignRecipientStatus } from './types';
+import { formatDateTime, RECIPIENT_STATUS_LABELS, RECIPIENT_STATUS_TONES } from './helpers';
+import type { CampaignRecipientStatus, CampaignStatus } from './types';
 
-interface Props { campaignId: string }
+interface Props { campaignId: string; campaignStatus?: CampaignStatus }
 
-export function RecipientsTable({ campaignId }: Props) {
+export function RecipientsTable({ campaignId, campaignStatus }: Props) {
   const [status, setStatus] = useState<CampaignRecipientStatus | undefined>();
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useRecipients(campaignId, { status, page });
+  const { data, isLoading } = useRecipients(campaignId, { status, page }, campaignStatus);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
@@ -61,7 +61,11 @@ export function RecipientsTable({ campaignId }: Props) {
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.leadName}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{r.phone}</TableCell>
-                    <TableCell><span className="text-xs">{r.status}</span></TableCell>
+                    <TableCell>
+                      <span className={`inline-block uppercase text-[10px] tracking-wide px-2 py-0.5 rounded border ${RECIPIENT_STATUS_TONES[r.status]}`}>
+                        {RECIPIENT_STATUS_LABELS[r.status]}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{formatDateTime(r.sentAt)}</TableCell>
                     <TableCell className="text-xs text-destructive truncate max-w-xs">{r.failureReason ?? '—'}</TableCell>
                   </TableRow>

@@ -1,4 +1,4 @@
-import type { CampaignStatus, LossReason } from './types';
+import type { CampaignRecipientStatus, CampaignStatus, LossReason } from './types';
 
 export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   draft: 'Rascunho',
@@ -16,6 +16,20 @@ export const CAMPAIGN_STATUS_TONES: Record<CampaignStatus, string> = {
   paused: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
   completed: 'bg-primary/15 text-primary border-primary/30',
   cancelled: 'bg-destructive/15 text-destructive border-destructive/30',
+};
+
+export const RECIPIENT_STATUS_LABELS: Record<CampaignRecipientStatus, string> = {
+  pending: 'Pendente',
+  sent: 'Enviado',
+  failed: 'Falhou',
+  skipped: 'Ignorado',
+};
+
+export const RECIPIENT_STATUS_TONES: Record<CampaignRecipientStatus, string> = {
+  pending: 'bg-muted text-muted-foreground border-border',
+  sent: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+  failed: 'bg-destructive/15 text-destructive border-destructive/30',
+  skipped: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
 };
 
 export const LOSS_REASON_LABELS: Record<LossReason, string> = {

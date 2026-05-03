@@ -133,16 +133,23 @@ export interface RecipientsResult {
   pageSize: number;
 }
 
-export function useRecipients(id: string, filters: { status?: CampaignRecipientStatus; page?: number }) {
+export function useRecipients(
+  id: string,
+  filters: { status?: CampaignRecipientStatus; page?: number },
+  campaignStatus?: CampaignStatus,
+) {
   const u = new URLSearchParams();
   if (filters.status) u.set('status', filters.status);
   if (filters.page && filters.page > 1) u.set('page', String(filters.page));
   const qs = u.toString();
+  // Stop polling once the campaign reaches a terminal state — saves 1 req/10s
+  // for completed/cancelled campaigns left open in a tab.
+  const isTerminal = campaignStatus === 'completed' || campaignStatus === 'cancelled';
   return useQuery({
     queryKey: ['campaigns', 'recipients', id, filters],
     queryFn: () => api<RecipientsResult>(`/campaigns/${id}/recipients${qs ? `?${qs}` : ''}`),
     enabled: !!id,
-    refetchInterval: 10_000,
+    refetchInterval: isTerminal ? false : 10_000,
   });
 }
 
