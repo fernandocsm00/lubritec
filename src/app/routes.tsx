@@ -10,6 +10,9 @@ const ResetPassword = lazy(() => import('@/pages/auth-reset/ResetPassword'));
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
 const WhatsappPage = lazy(() => import('@/pages/whatsapp/WhatsappPage'));
 const InsideSalesPage = lazy(() => import('@/pages/inside-sales/InsideSalesPage'));
+const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage'));
+const CampaignNewPage = lazy(() => import('@/pages/campaigns/CampaignNewPage'));
+const CampaignDetailPage = lazy(() => import('@/pages/campaigns/CampaignDetailPage'));
 const CadastrosPage = lazy(() => import('@/pages/cadastros/CadastrosPage'));
 const AdminPage = lazy(() => import('@/pages/admin/AdminPage'));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
@@ -32,6 +35,9 @@ export const routes: RouteObject[] = [
           { path: '/dashboard', element: wrap(<DashboardPage />) },
           { path: '/whatsapp', element: wrap(<WhatsappPage />) },
           { path: '/inside-sales', element: wrap(<InsideSalesPage />) },
+          { path: '/campanhas', element: wrap(<CampaignsPage />) },
+          { path: '/campanhas/nova', element: wrap(<CampaignNewPage />) },
+          { path: '/campanhas/:id', element: wrap(<CampaignDetailPage />) },
           { path: '/cadastros', element: wrap(<CadastrosPage />) },
           { path: '/settings', element: wrap(<SettingsPage />) },
           {

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { createApp } from './app';
+import { startDispatcher } from './services/campaignsDispatcher';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -29,6 +30,9 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`LubriConnect server on http://localhost:${PORT}`);
   });
+
+  startDispatcher();
+  console.log('[campaigns] dispatcher started (tick every 60s)');
 }
 
 start().catch((err) => {
