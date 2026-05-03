@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
@@ -71,9 +72,12 @@ export function ReviewStep(p: Props) {
       </div>
 
       {p.audienceTotal > 50 && (
-        <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-3 text-xs">
-          <strong>⚠️ Atenção:</strong> você vai disparar pra <strong>{p.audienceTotal}</strong> leads.
-          Esta ação não pode ser desfeita por completo (é possível pausar/cancelar mid-execução, mas mensagens já enviadas não voltam).
+        <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-3 text-xs flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <strong>Atenção:</strong> você vai disparar pra <strong>{p.audienceTotal}</strong> leads.
+            Esta ação não pode ser desfeita por completo (é possível pausar/cancelar mid-execução, mas mensagens já enviadas não voltam).
+          </div>
         </div>
       )}
     </div>
