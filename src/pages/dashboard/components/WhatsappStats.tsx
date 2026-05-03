@@ -3,9 +3,10 @@ import { PlugZap } from 'lucide-react';
 import type { DashboardWhatsappStats } from '@shared/types';
 
 const fmtSec = (s: number) => {
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
+  const total = Math.round(s);
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const r = total % 60;
   return r === 0 ? `${m}m` : `${m}m ${r}s`;
 };
 

@@ -30,7 +30,7 @@ export function PipelineOpen({ data }: { data: DashboardSummary['pipelineOpen'] 
         <span className="text-slate-500">Total aberto</span>
         <span className="font-mono text-lc-ink">{fmtBRL(data.totalValue)}</span>
       </div>
-      <p className="mt-1 text-xs text-slate-500">Idade média {data.avgAgeDays} dias</p>
+      <p className="mt-1 text-xs text-slate-500">Idade média {data.avgAgeDays.toFixed(1)} dias</p>
     </div>
   );
 }

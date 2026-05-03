@@ -16,13 +16,9 @@ import { RecentActivities } from './components/RecentActivities';
 import { RefreshCcw } from 'lucide-react';
 
 function RightSection({ view, summary }: { view: DashboardView; summary: DashboardSummary | undefined }) {
-  if (view === 'org' && summary?.leaderboard) {
-    return <Leaderboard data={summary.leaderboard} />;
-  }
-  if (view === 'me' && summary?.recentActivities) {
-    return <RecentActivities data={summary.recentActivities} />;
-  }
-  return <BlockSkeleton height={200} />;
+  if (!summary) return <BlockSkeleton height={200} />;
+  if (view === 'org') return <Leaderboard data={summary.leaderboard ?? []} />;
+  return <RecentActivities data={summary.recentActivities ?? []} />;
 }
 
 export default function DashboardPage() {

@@ -392,7 +392,7 @@ export interface DashboardLeader {
 
 export interface DashboardRecentActivity {
   id: string;
-  kind: string;
+  kind: DealActivityKind;
   dealId: string;
   leadName: string;
   createdAt: string;

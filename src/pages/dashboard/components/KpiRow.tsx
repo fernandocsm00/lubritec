@@ -13,6 +13,7 @@ export function KpiRow({ data, view, period }: { data: DashboardSummary; view: D
         label={view === 'org' ? 'Vendas' : 'Meus ganhos'}
         value={fmtBRL(k.sales.value)}
         empty={k.sales.value === 0 && k.sales.prev === 0}
+        emptyHint="sem vendas no período"
         delta={{ pct: k.sales.deltaPct, isGood: k.sales.deltaPct >= 0 }}
         goal={data.goal ? { percent: data.goal.percent, targetLabel: fmtBRL(data.goal.monthlyTarget) } : undefined}
         cta={showGoalCta ? { label: 'Definir meta →', to: '/settings?tab=organization' } : undefined}
@@ -22,6 +23,7 @@ export function KpiRow({ data, view, period }: { data: DashboardSummary; view: D
         label={view === 'org' ? 'Propostas' : 'Minhas propostas'}
         value={String(k.proposals.value)}
         empty={k.proposals.value === 0 && k.proposals.prev === 0}
+        emptyHint="sem propostas no período"
         delta={{ pct: k.proposals.deltaPct, isGood: k.proposals.deltaPct >= 0 }}
       />
 
@@ -29,6 +31,7 @@ export function KpiRow({ data, view, period }: { data: DashboardSummary; view: D
         label={view === 'org' ? 'Win rate' : 'Meu win rate'}
         value={`${k.winRate.value}%`}
         empty={k.winRate.value === 0 && k.winRate.prev === 0}
+        emptyHint="sem dados de fechamento"
         delta={{ pct: k.winRate.deltaPct, isGood: k.winRate.deltaPct >= 0, suffix: 'pp' }}
       />
 
@@ -36,6 +39,7 @@ export function KpiRow({ data, view, period }: { data: DashboardSummary; view: D
         label={view === 'org' ? 'Ticket médio' : 'Meu ticket médio'}
         value={fmtBRL(k.avgTicket.value)}
         empty={k.avgTicket.value === 0 && k.avgTicket.prev === 0}
+        emptyHint="sem ganhos no período"
         delta={{ pct: k.avgTicket.deltaPct, isGood: k.avgTicket.deltaPct >= 0 }}
       />
     </div>

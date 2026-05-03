@@ -10,6 +10,7 @@ import {
   jsonb,
   numeric,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import {
   ROLES,
@@ -167,12 +168,16 @@ export const whatsappInstance = pgTable('whatsapp_instance', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const orgSettings = pgTable('org_settings', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  singleton: boolean('singleton').notNull().default(true),
-  monthlySalesGoal: numeric('monthly_sales_goal', { precision: 12, scale: 2 }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const orgSettings = pgTable(
+  'org_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    singleton: boolean('singleton').notNull().default(true),
+    monthlySalesGoal: numeric('monthly_sales_goal', { precision: 12, scale: 2 }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ singletonUniq: uniqueIndex('idx_org_settings_singleton').on(t.singleton) }),
+);
 
 export const campaigns = pgTable('campaigns', {
   id: uuid('id').primaryKey().defaultRandom(),
