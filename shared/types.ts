@@ -321,3 +321,115 @@ export interface PublicCampaignRecipient {
   sentAt: string | null;
   failureReason: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Org Settings (sub-projeto 8 — singleton da organização)
+// ---------------------------------------------------------------------------
+
+export interface PublicOrgSettings {
+  monthlySalesGoal: number | null;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+export type DashboardView = 'org' | 'me';
+export type DashboardPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
+
+export interface DashboardKpiNumber {
+  value: number;
+  prev: number;
+  deltaPct: number;
+}
+
+export interface DashboardKpis {
+  sales:     DashboardKpiNumber & { count: number; prevCount: number };
+  proposals: DashboardKpiNumber;
+  winRate:   DashboardKpiNumber;
+  avgTicket: DashboardKpiNumber;
+}
+
+export interface DashboardGoal {
+  monthlyTarget: number;
+  currentMonthSales: number;
+  percent: number;
+}
+
+export interface DashboardFunnelOrg {
+  kind: 'org';
+  newLeads: number;
+  withConversation: number;
+  withProposal: number;
+  won: number;
+  convLeadToConv: number;
+  convConvToProposal: number;
+  convProposalToWon: number;
+}
+
+export interface DashboardFunnelMe {
+  kind: 'me';
+  respondedConversations: number;
+  myProposals: number;
+  myWon: number;
+  convRespToProposal: number;
+  convProposalToWon: number;
+}
+
+export interface DashboardPipelineOpen {
+  byStage: { stage: 'proposta_enviada' | 'em_negociacao'; count: number; valueSum: number }[];
+  totalValue: number;
+  avgAgeDays: number;
+}
+
+export interface DashboardLeader {
+  userId: string;
+  name: string;
+  wonValue: number;
+  wonCount: number;
+}
+
+export interface DashboardRecentActivity {
+  id: string;
+  kind: string;
+  dealId: string;
+  leadName: string;
+  createdAt: string;
+}
+
+export interface DashboardSummary {
+  period: { start: string; end: string; prevStart: string; prevEnd: string; label: string };
+  kpis: DashboardKpis;
+  goal: DashboardGoal | null;
+  funnel: DashboardFunnelOrg | DashboardFunnelMe;
+  pipelineOpen: DashboardPipelineOpen;
+  leaderboard: DashboardLeader[] | null;
+  recentActivities: DashboardRecentActivity[] | null;
+}
+
+export type DashboardAttentionKind =
+  | 'proposal_old'
+  | 'conv_expired'
+  | 'deal_stale'
+  | 'queue_pending';
+
+export interface DashboardAttentionItem {
+  severity: 'critical' | 'warning' | 'info';
+  kind: DashboardAttentionKind;
+  count: number;
+  route: string;
+  filter: Record<string, unknown>;
+}
+
+export interface DashboardAttentionResponse {
+  items: DashboardAttentionItem[];
+}
+
+export interface DashboardWhatsappStats {
+  inQueue: number;
+  avgFirstResponseSec: number;
+  expired24h: number;
+  noResponseToday: number;
+  instanceConnected: boolean;
+}
