@@ -2,10 +2,11 @@ import { useSearchParams } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 
 const WhatsappConnectionTab = lazy(() => import('./WhatsappConnectionTab'));
+const OrganizationTab = lazy(() => import('./OrganizationTab'));
 
 const Loader = () => <div className="p-6 text-muted-foreground text-sm">Carregando…</div>;
 
-type Tab = 'whatsapp';
+type Tab = 'whatsapp' | 'organization';
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,12 +36,22 @@ export default function SettingsPage() {
         >
           Conexão WhatsApp
         </button>
-        {/* Futuras tabs entram aqui */}
+        <button
+          className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+            tab === 'organization'
+              ? 'border-primary text-primary font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setTab('organization')}
+        >
+          Organização
+        </button>
       </div>
 
       <div className="flex-1 overflow-hidden">
         <Suspense fallback={<Loader />}>
           {tab === 'whatsapp' && <WhatsappConnectionTab />}
+          {tab === 'organization' && <OrganizationTab />}
         </Suspense>
       </div>
     </div>
