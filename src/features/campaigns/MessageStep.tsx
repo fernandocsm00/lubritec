@@ -46,8 +46,10 @@ export function MessageStep(p: Props) {
         }
       },
     });
+  // Re-fetch when audience filter changes (stringified to defeat referential
+  // inequality on nested arrays); dryRun.mutate identity is stable across renders.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [JSON.stringify(p.audienceFilter)]);
 
   const previews = useMemo(() => dryRun.data?.preview ?? [], [dryRun.data]);
 
