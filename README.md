@@ -202,12 +202,38 @@ Ações:
 
 Pré-requisito: variável `APP_URL` configurada (ex: `https://app.lubritec.com`). UazAPI precisa conseguir alcançar `${APP_URL}/api/whatsapp/webhook`.
 
+## Campanhas (disparo em massa)
+
+Tela em `/campanhas` (apenas `admin` + `comercial`) com:
+
+- **Lista de campanhas** com status, audiência, % enviadas, criada por.
+- **Wizard de criação** em 4 passos:
+  1. Nome + descrição
+  2. Audiência: filtros (status, source, última compra) + opt-out manual + upload CSV
+  3. Mensagem: template (opcional) + edição inline + placeholders + imagem (upload nativo)
+  4. Revisão + agendamento ("agora" ou data/hora) + dupla confirmação se > 50 leads
+
+- **Placeholders** suportados: `{{nome}}`, `{{telefone}}`, `{{placa}}`, `{{modelo}}`, `{{ultima_compra}}`. Preview ao vivo na tela de mensagem.
+
+- **Dispatcher in-process** (`setInterval` 60s no boot do server). Rate-limit padrão 20 msg/min (~1 a cada 3s, override por campanha via `ratePerMinute`). Resume natural via `WHERE status='pending'`. Pausável e cancelável mid-execução.
+
+- **Detail page** com:
+  - Progresso ao vivo (se running): barra "X/Y processadas" + breakdown enviadas/falharam/ignoradas
+  - **Funil ROI**: Enviadas → Respondidas → Em negociação → Ganho/Perdido (com motivos + R$ total fechado)
+  - Lista paginada de destinatários com filtro por status (polling para quando a campanha termina)
+
+- **APAGAR** restrito a admin (mesmo padrão do Inside Sales). Conversas históricas continuam disponíveis (FK `ON DELETE SET NULL`).
+
+Mídia: upload via multer (5MB, jpeg/png/webp) pra `/uploads/campaigns/`. Pasta servida via Express static. UazAPI baixa direto a URL pública.
+
+Pré-requisito: variável `APP_URL` configurada (UazAPI precisa alcançar `${APP_URL}/uploads/...`). Variável opcional: `DISPATCH_RATE_PER_MINUTE` (default 20).
+
 ## Próximos sub-projetos
 1. ✅ Admin/RBAC — gestão de usuários e permissões
 2. ✅ Cadastros — leads completos + import CSV
 3. ✅ WhatsApp Inbox — conversas com filas + composer
 4. ✅ Inside Sales — pipeline kanban + drag & drop + activity log
 5. ✅ Conexão WhatsApp — gestão da instância UazAPI via UI
-6. Disparo em massa de campanhas
+6. ✅ Disparo em massa de campanhas — wizard + agendamento + funil ROI
 7. IA de pré-qualificação
 8. Dashboard de Funil — métricas e conversão
