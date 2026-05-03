@@ -14,7 +14,7 @@ export default function OrganizationTab() {
         setGoal(s.monthlySalesGoal == null ? '' : String(s.monthlySalesGoal));
         setLoaded(true);
       })
-      .catch((e) => setError(e.message));
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Erro ao carregar'));
   }, []);
 
   async function onSave(e: React.FormEvent) {
@@ -28,8 +28,8 @@ export default function OrganizationTab() {
       }
       const r = await updateOrgSettings({ monthlySalesGoal: parsed });
       setSavedAt(r.updatedAt);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido');
     } finally {
       setSaving(false);
     }
