@@ -8,6 +8,7 @@ import {
   deleteHandler,
   debugEventsHandler,
   clearDebugEventsHandler,
+  probeWebhookHandler,
 } from '../controllers/whatsappInstanceController';
 
 const router = Router();
@@ -21,5 +22,6 @@ router.post('/disconnect', ...adminOnly, disconnectHandler);
 router.delete('/', ...adminOnly, deleteHandler);
 router.get('/debug-events', ...adminOnly, debugEventsHandler);
 router.delete('/debug-events', ...adminOnly, clearDebugEventsHandler);
+router.get('/probe-webhook', ...adminOnly, probeWebhookHandler);
 
 export default router;

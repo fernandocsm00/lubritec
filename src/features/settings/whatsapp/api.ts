@@ -77,3 +77,20 @@ export function useClearWebhookDebugEvents() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['whatsapp-instance', 'debug-events'] }),
   });
 }
+
+export interface ProbeWebhookResult {
+  ours: {
+    webhookUrl: string | null;
+    webhookSecretPresent: boolean;
+    webhookSynced: boolean;
+    instanceId: string | null;
+    baseUrl: string;
+  } | null;
+  uazapi: Array<{ path: string; method: string; status: number; body: unknown }>;
+}
+
+export function useProbeWebhook() {
+  return useMutation({
+    mutationFn: () => api<ProbeWebhookResult>('/whatsapp-instance/probe-webhook'),
+  });
+}

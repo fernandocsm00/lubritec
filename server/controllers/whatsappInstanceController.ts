@@ -5,6 +5,7 @@ import {
   connect,
   disconnect,
   destroy,
+  probeWebhook,
 } from '../services/whatsappInstanceService';
 import { listDebugEntries, clearDebugEntries } from '../lib/webhookDebugBuffer';
 
@@ -49,5 +50,11 @@ export async function clearDebugEventsHandler(_req: Request, res: Response, next
   try {
     clearDebugEntries();
     res.status(204).end();
+  } catch (e) { next(e); }
+}
+
+export async function probeWebhookHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await probeWebhook());
   } catch (e) { next(e); }
 }

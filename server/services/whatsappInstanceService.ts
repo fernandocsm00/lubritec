@@ -367,3 +367,39 @@ export async function loadWebhookSecret(): Promise<string | null> {
   if (row?.webhookSecret) return row.webhookSecret;
   return process.env.UAZAPI_WEBHOOK_SECRET ?? null;
 }
+
+/**
+ * Diagnóstico — pergunta direto pra UazAPI o que ela tem cadastrado de webhook.
+ * Retorna o que cada path tentado respondeu + o que NÓS armazenamos no DB
+ * (URL/secret/synced) pra comparação.
+ */
+export async function probeWebhook(): Promise<{
+  ours: {
+    webhookUrl: string | null;
+    webhookSecretPresent: boolean;
+    webhookSynced: boolean;
+    instanceId: string | null;
+    baseUrl: string;
+  } | null;
+  uazapi: Array<{ path: string; method: string; status: number; body: unknown }>;
+}> {
+  const [row] = await db.select().from(whatsappInstance).limit(1);
+  if (!row || !row.instanceToken) {
+    return { ours: null, uazapi: [] };
+  }
+  const { probeWebhookConfig } = await import('./uazapiInstanceClient');
+  const uazapi = await probeWebhookConfig({
+    baseUrl: row.baseUrl,
+    token: row.instanceToken,
+  });
+  return {
+    ours: {
+      webhookUrl: row.webhookUrl,
+      webhookSecretPresent: !!row.webhookSecret,
+      webhookSynced: row.webhookSynced,
+      instanceId: row.instanceId,
+      baseUrl: row.baseUrl,
+    },
+    uazapi,
+  };
+}

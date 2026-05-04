@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Bug, RefreshCw, Trash2, Copy, Check } from 'lucide-react';
+import { Bug, RefreshCw, Trash2, Copy, Check, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useWebhookDebugEvents, useClearWebhookDebugEvents } from './api';
+import { useWebhookDebugEvents, useClearWebhookDebugEvents, useProbeWebhook } from './api';
 
 const RESULT_BADGE: Record<string, string> = {
   inserted: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
@@ -29,6 +29,7 @@ export function WebhookDebugPanel() {
   const [copied, setCopied] = useState(false);
   const { data, isLoading, refetch } = useWebhookDebugEvents({ enabled: open });
   const clear = useClearWebhookDebugEvents();
+  const probe = useProbeWebhook();
   const events = data?.events ?? [];
 
   async function copyAll() {
@@ -100,10 +101,22 @@ export function WebhookDebugPanel() {
           </div>
 
           {events.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              Nenhum webhook recebido ainda.
-              <br />
-              Mande uma mensagem de teste pro WhatsApp conectado e aguarde alguns segundos.
+            <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground space-y-3">
+              <div>
+                Nenhum webhook recebido ainda.
+                <br />
+                Mande uma mensagem de teste pro WhatsApp conectado e aguarde alguns segundos.
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => probe.mutate()}
+                disabled={probe.isPending}
+                className="gap-1.5"
+              >
+                <Search className={`h-3.5 w-3.5 ${probe.isPending ? 'animate-pulse' : ''}`} />
+                Inspecionar webhook na UazAPI
+              </Button>
             </div>
           ) : (
             <div className="space-y-3 max-h-[600px] overflow-y-auto">
@@ -151,6 +164,24 @@ export function WebhookDebugPanel() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {probe.data && (
+            <div className="rounded-md border border-border bg-background p-3 space-y-2">
+              <div className="text-xs font-semibold">Webhook cadastrado na UazAPI</div>
+              <div className="text-[11px]">
+                <div className="font-medium mb-1">O que NÓS achamos que está cadastrado (DB):</div>
+                <pre className="bg-muted/40 p-2 rounded overflow-x-auto">
+                  {JSON.stringify(probe.data.ours, null, 2)}
+                </pre>
+              </div>
+              <div className="text-[11px]">
+                <div className="font-medium mb-1 mt-2">O que a UazAPI responde (vários paths tentados):</div>
+                <pre className="bg-muted/40 p-2 rounded overflow-x-auto max-h-96">
+                  {JSON.stringify(probe.data.uazapi, null, 2)}
+                </pre>
+              </div>
             </div>
           )}
         </div>
