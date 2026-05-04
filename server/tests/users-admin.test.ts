@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { createUser } from './helpers';
 import { db } from '../db/client';
-import { sessions, authTokens } from '../db/schema';
+import { sessions, authTokens, users } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { sendInviteEmail } from '../lib/mailer';
 
 const app = createApp();
 
@@ -170,6 +171,32 @@ describe('PATCH /api/users/:id', () => {
   });
 });
 
+describe('POST /api/users — SMTP failure rollback', () => {
+  it('returns 502 EMAIL_SEND_FAILED and removes the orphan user when sendInviteEmail rejects', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const { accessToken } = await loginAs('admin@b.com');
+
+    vi.mocked(sendInviteEmail).mockRejectedValueOnce(new Error('SMTP auth failed'));
+
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: 'fantasma@b.com', name: 'Fantasma', role: 'comercial' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe('EMAIL_SEND_FAILED');
+
+    // The user must NOT remain in the DB (no ghost row, no leaked token).
+    const remaining = await db.select().from(users).where(eq(users.email, 'fantasma@b.com'));
+    expect(remaining).toHaveLength(0);
+    const orphanTokens = await db
+      .select()
+      .from(authTokens)
+      .where(eq(authTokens.purpose, 'invite'));
+    expect(orphanTokens).toHaveLength(0);
+  });
+});
+
 describe('POST /api/users/:id/resend-invite', () => {
   it('admin resends invite — old token invalidated, new token created', async () => {
     await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
@@ -230,6 +257,40 @@ describe('POST /api/users/:id/resend-invite', () => {
       .post(`/api/users/${target.id}/resend-invite`)
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(403);
+  });
+
+  it('returns 502 EMAIL_SEND_FAILED and removes the fresh token (user kept) when SMTP rejects', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const { accessToken } = await loginAs('admin@b.com');
+
+    // First, create a pending user successfully
+    const inviteRes = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: 'pending@b.com', name: 'Pending', role: 'comercial' });
+    expect(inviteRes.status).toBe(201);
+    const userId = inviteRes.body.id;
+
+    // Now make resend's email send fail
+    vi.mocked(sendInviteEmail).mockRejectedValueOnce(new Error('SMTP timeout'));
+
+    const resendRes = await request(app)
+      .post(`/api/users/${userId}/resend-invite`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(resendRes.status).toBe(502);
+    expect(resendRes.body.code).toBe('EMAIL_SEND_FAILED');
+
+    // User must still exist (resend doesn't roll back the user)
+    const stillThere = await db.select().from(users).where(eq(users.id, userId));
+    expect(stillThere).toHaveLength(1);
+
+    // The freshly issued token must have been removed; resend deleted the
+    // previous one before issuing the new one, so the count should be 0.
+    const tokens = await db
+      .select()
+      .from(authTokens)
+      .where(eq(authTokens.userId, userId));
+    expect(tokens).toHaveLength(0);
   });
 });
 

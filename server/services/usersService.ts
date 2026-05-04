@@ -8,34 +8,58 @@ import type { Role } from '@shared/types';
 const INVITE_TTL_DAYS = Number(process.env.INVITE_TTL_DAYS || 7);
 
 export async function inviteUser(input: { email: string; name: string; role: Role }) {
-  const [existing] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
-  if (existing) {
-    throw new HttpError(409, 'Email already in use');
-  }
-  const [user] = await db
-    .insert(users)
-    .values({
-      email: input.email,
-      name: input.name,
-      role: input.role,
-      passwordHash: null,
-    })
-    .returning();
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(users)
+      .where(eq(users.email, input.email))
+      .limit(1);
+    if (existing) {
+      throw new HttpError(409, 'Email already in use');
+    }
+    const [user] = await tx
+      .insert(users)
+      .values({
+        email: input.email,
+        name: input.name,
+        role: input.role,
+        passwordHash: null,
+      })
+      .returning();
 
-  const rawToken = generateRawToken();
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
-  const [t] = await db
-    .insert(authTokens)
-    .values({
-      userId: user.id,
-      tokenHash,
-      purpose: 'invite',
-      expiresAt,
-    })
-    .returning();
+    const rawToken = generateRawToken();
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const [t] = await tx
+      .insert(authTokens)
+      .values({
+        userId: user.id,
+        tokenHash,
+        purpose: 'invite',
+        expiresAt,
+      })
+      .returning();
 
-  return { tokenId: t.id, rawToken, user };
+    return { tokenId: t.id, rawToken, user };
+  });
+}
+
+/**
+ * Compensating delete used when an invite is created in the DB but the
+ * subsequent email send fails — avoids leaving a "ghost" user with no
+ * password hash that nothing can clean up. CASCADE handles auth_tokens.
+ */
+export async function deleteUserById(userId: string): Promise<void> {
+  await db.delete(users).where(eq(users.id, userId));
+}
+
+/**
+ * Compensating delete for the resend-invite flow: the user already existed,
+ * but the most recently issued invite token must be removed when the email
+ * send fails so the next resend attempt works cleanly.
+ */
+export async function deleteInviteTokenById(tokenId: string): Promise<void> {
+  await db.delete(authTokens).where(eq(authTokens.id, tokenId));
 }
 
 export async function listUsers() {

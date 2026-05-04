@@ -1,7 +1,15 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { inviteUser, listUsers, updateUser, resendInvite } from '../services/usersService';
+import {
+  inviteUser,
+  listUsers,
+  updateUser,
+  resendInvite,
+  deleteUserById,
+  deleteInviteTokenById,
+} from '../services/usersService';
 import { sendInviteEmail } from '../lib/mailer';
+import { HttpError } from '../middleware/errorHandler';
 import { ROLES } from '../../shared/types';
 import type { AuthedRequest } from '../middleware/authGuard';
 
@@ -29,7 +37,22 @@ export async function inviteHandler(req: Request, res: Response, next: NextFunct
   try {
     const body = inviteSchema.parse(req.body);
     const result = await inviteUser(body);
-    await sendInviteEmail(body.email, body.name, result.tokenId, result.rawToken);
+    try {
+      await sendInviteEmail(body.email, body.name, result.tokenId, result.rawToken);
+    } catch (mailErr) {
+      // Compensating rollback: invite was inserted but the email failed,
+      // which would leave a ghost user with no password. Delete and surface
+      // a typed error so the admin sees something better than 500.
+      console.error('[invite] sendInviteEmail failed, rolling back user', mailErr);
+      await deleteUserById(result.user.id).catch((cleanupErr) => {
+        console.error('[invite] compensating delete also failed', cleanupErr);
+      });
+      throw new HttpError(
+        502,
+        'Invite created but email could not be sent. Check SMTP settings and try again.',
+        'EMAIL_SEND_FAILED',
+      );
+    }
     res.status(201).json({
       id: result.user.id,
       email: result.user.email,
@@ -71,7 +94,21 @@ export async function resendInviteHandler(req: Request, res: Response, next: Nex
   try {
     const { id } = userIdParamsSchema.parse(req.params);
     const result = await resendInvite(id);
-    await sendInviteEmail(result.user.email, result.user.name, result.tokenId, result.rawToken);
+    try {
+      await sendInviteEmail(result.user.email, result.user.name, result.tokenId, result.rawToken);
+    } catch (mailErr) {
+      // The user already existed; only the freshly-issued invite token is new.
+      // Drop it so the next resend attempt starts clean.
+      console.error('[resend-invite] sendInviteEmail failed, removing fresh token', mailErr);
+      await deleteInviteTokenById(result.tokenId).catch((cleanupErr) => {
+        console.error('[resend-invite] compensating delete also failed', cleanupErr);
+      });
+      throw new HttpError(
+        502,
+        'Invite re-issued but email could not be sent. Check SMTP settings and try again.',
+        'EMAIL_SEND_FAILED',
+      );
+    }
     res.json({ ok: true });
   } catch (e) {
     next(e);
