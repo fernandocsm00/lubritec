@@ -1,20 +1,26 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 
-if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-  throw new Error('SMTP_HOST, SMTP_USER, and SMTP_PASS must be set');
+// Lazy init so the app boots without SMTP envs configured. The check only
+// fires when invite/reset is actually attempted.
+let _transporter: Transporter | null = null;
+function getTransporter(): Transporter {
+  if (_transporter) return _transporter;
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error('SMTP_HOST, SMTP_USER, and SMTP_PASS must be set to send emails');
+  }
+  _transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 2525),
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  });
+  return _transporter;
 }
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 2525),
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  connectionTimeout: 10_000,
-  greetingTimeout: 10_000,
-  socketTimeout: 15_000,
-});
 
 const FROM = process.env.SMTP_FROM || 'LubriConnect <no-reply@lubritec.local>';
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
@@ -31,7 +37,7 @@ function escapeHtml(s: string): string {
 export async function sendInviteEmail(to: string, name: string, tokenId: string, rawToken: string) {
   const url = `${APP_URL}/auth/setup?id=${tokenId}&token=${rawToken}`;
   const safeName = escapeHtml(name);
-  await transporter.sendMail({
+  await getTransporter().sendMail({
     from: FROM,
     to,
     subject: 'Configure seu acesso ao LubriConnect',
@@ -43,7 +49,7 @@ export async function sendInviteEmail(to: string, name: string, tokenId: string,
 export async function sendResetEmail(to: string, name: string, tokenId: string, rawToken: string) {
   const url = `${APP_URL}/auth/reset?id=${tokenId}&token=${rawToken}`;
   const safeName = escapeHtml(name);
-  await transporter.sendMail({
+  await getTransporter().sendMail({
     from: FROM,
     to,
     subject: 'Redefina sua senha — LubriConnect',
