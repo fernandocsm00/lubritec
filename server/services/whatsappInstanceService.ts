@@ -27,7 +27,7 @@ async function loadOrSeed(): Promise<typeof whatsappInstance.$inferSelect | null
 
   // Seed automático: env vars completas → cria row inicial.
   const baseUrl = process.env.UAZAPI_BASE_URL;
-  const token = process.env.UAZAPI_TOKEN;
+  const token = uazapiTokenFromEnv();
   const instanceId = process.env.UAZAPI_INSTANCE_ID;
   const webhookSecret = process.env.UAZAPI_WEBHOOK_SECRET;
 
@@ -58,6 +58,10 @@ async function loadOrSeed(): Promise<typeof whatsappInstance.$inferSelect | null
 function buildWebhookUrl(): string {
   const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
   return `${appUrl.replace(/\/$/, '')}/api/whatsapp/webhook`;
+}
+
+function uazapiTokenFromEnv(): string | undefined {
+  return process.env.UAZAPI_ADMIN_TOKEN || process.env.UAZAPI_TOKEN || undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,27 +162,32 @@ export async function connect(input: {
 }): Promise<InstanceStatusResponse> {
   // Garante row
   let [row] = await db.select().from(whatsappInstance).limit(1);
+  const envToken = uazapiTokenFromEnv();
   if (!row) {
     const baseUrl = input.baseUrl ?? process.env.UAZAPI_BASE_URL ?? 'https://api.uazapi.com';
     [row] = await db
       .insert(whatsappInstance)
-      .values({ baseUrl, instanceToken: input.instanceToken ?? process.env.UAZAPI_TOKEN ?? null })
+      .values({ baseUrl, instanceToken: input.instanceToken ?? envToken ?? null })
       .returning();
-  } else if (input.baseUrl || input.instanceToken) {
-    // Atualiza credenciais se admin enviou novas
-    [row] = await db
-      .update(whatsappInstance)
-      .set({
-        baseUrl: input.baseUrl ?? row.baseUrl,
-        instanceToken: input.instanceToken ?? row.instanceToken,
-        updatedAt: new Date(),
-      })
-      .where(eq(whatsappInstance.id, row.id))
-      .returning();
+  } else {
+    // Atualiza credenciais quando admin enviou novas OU quando a row existe sem token e há env disponível
+    const nextBaseUrl = input.baseUrl ?? row.baseUrl;
+    const nextToken = input.instanceToken ?? row.instanceToken ?? envToken ?? null;
+    if (nextBaseUrl !== row.baseUrl || nextToken !== row.instanceToken) {
+      [row] = await db
+        .update(whatsappInstance)
+        .set({
+          baseUrl: nextBaseUrl,
+          instanceToken: nextToken,
+          updatedAt: new Date(),
+        })
+        .where(eq(whatsappInstance.id, row.id))
+        .returning();
+    }
   }
 
   if (!row.instanceToken) {
-    throw new HttpError(400, 'Instance token required (set UAZAPI_TOKEN env or pass via body)');
+    throw new HttpError(400, 'Instance token required (set UAZAPI_ADMIN_TOKEN env or pass via body)');
   }
 
   // Cria instância no UazAPI se ainda não tem ID

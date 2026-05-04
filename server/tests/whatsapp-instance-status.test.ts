@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.mocked(getInstanceStatus).mockReset();
   delete process.env.UAZAPI_BASE_URL;
   delete process.env.UAZAPI_TOKEN;
+  delete process.env.UAZAPI_ADMIN_TOKEN;
   delete process.env.UAZAPI_INSTANCE_ID;
   delete process.env.UAZAPI_WEBHOOK_SECRET;
 });

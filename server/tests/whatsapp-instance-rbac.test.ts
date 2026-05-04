@@ -63,7 +63,7 @@ describe('Whatsapp Instance RBAC', () => {
     expect(res.status).toBe(403);
   });
 
-  it('comercial 403 só em DELETE; OK em GET/connect/disconnect', async () => {
+  it('comercial: OK em GET; 403 em connect/disconnect/delete (instância é admin-only)', async () => {
     const token = await loginAs('c@x.com', 'comercial');
 
     const get = await request(app)
@@ -81,12 +81,12 @@ describe('Whatsapp Instance RBAC', () => {
       .post('/api/whatsapp-instance/connect')
       .set('Authorization', `Bearer ${token}`)
       .send({});
-    expect(connect.status).toBe(200);
+    expect(connect.status).toBe(403);
 
     const disconnect = await request(app)
       .post('/api/whatsapp-instance/disconnect')
       .set('Authorization', `Bearer ${token}`);
-    expect(disconnect.status).toBe(200);
+    expect(disconnect.status).toBe(403);
 
     const del = await request(app)
       .delete('/api/whatsapp-instance')

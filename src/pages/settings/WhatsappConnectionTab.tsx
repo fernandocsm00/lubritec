@@ -1,3 +1,4 @@
+import { Users } from 'lucide-react';
 import { useInstanceStatus } from '@/features/settings/whatsapp/api';
 import { StatusBadges } from '@/features/settings/whatsapp/StatusBadges';
 import { ConnectionControls } from '@/features/settings/whatsapp/ConnectionControls';
@@ -20,6 +21,18 @@ export default function WhatsappConnectionTab() {
           status={data?.status ?? 'disconnected'}
           webhookSynced={data?.webhookSynced ?? false}
         />
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        <Users className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />
+        <div>
+          <p className="font-medium">Número compartilhado por toda a equipe</p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            O WhatsApp conectado aqui será usado por todos os usuários do LubriConnect
+            (Inbox, Campanhas e Disparos). Apenas administradores podem conectar,
+            desconectar ou trocar o número.
+          </p>
+        </div>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-6 space-y-4">

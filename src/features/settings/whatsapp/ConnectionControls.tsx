@@ -27,7 +27,7 @@ export function ConnectionControls({ data }: Props) {
       await connect.mutateAsync({});
       toast.success(configured ? 'Conexão atualizada.' : 'Instância criada — escaneie o QR.');
     } catch (err) {
-      toast.error('Falha ao conectar instância.');
+      toast.error(`Falha ao conectar instância: ${errorMessage(err)}`);
     }
   }
 
@@ -35,8 +35,8 @@ export function ConnectionControls({ data }: Props) {
     try {
       await disconnect.mutateAsync();
       toast.success('Desconectado.');
-    } catch {
-      toast.error('Falha ao desconectar.');
+    } catch (err) {
+      toast.error(`Falha ao desconectar: ${errorMessage(err)}`);
     }
   }
 
@@ -45,48 +45,60 @@ export function ConnectionControls({ data }: Props) {
       await deleteFn.mutateAsync();
       toast.success('Instância apagada.');
       setConfirmOpen(false);
-    } catch {
-      toast.error('Falha ao apagar.');
+    } catch (err) {
+      toast.error(`Falha ao apagar: ${errorMessage(err)}`);
     }
+  }
+
+  function errorMessage(err: unknown): string {
+    if (err instanceof Error && err.message) return err.message;
+    return 'erro desconhecido';
   }
 
   return (
     <div className="space-y-3">
-      <Button
-        size="lg"
-        className="w-full"
-        onClick={doConnect}
-        disabled={connect.isPending}
-      >
-        {connect.isPending ? (
-          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-        ) : (
-          <Plug className="h-4 w-4 mr-2" />
-        )}
-        {connect.isPending ? 'Conectando…' : 'Conectar Instância'}
-      </Button>
-
-      {configured && (
-        <div className="grid grid-cols-2 gap-2">
+      {isAdmin ? (
+        <>
           <Button
-            variant="outline"
-            onClick={doDisconnect}
-            disabled={!isConnected || disconnect.isPending}
+            size="lg"
+            className="w-full"
+            onClick={doConnect}
+            disabled={connect.isPending}
           >
-            <PlugZap className="h-4 w-4 mr-2" />
-            Desconectar
+            {connect.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Plug className="h-4 w-4 mr-2" />
+            )}
+            {connect.isPending ? 'Conectando…' : 'Conectar Instância'}
           </Button>
-          {isAdmin && (
-            <Button
-              variant="outline"
-              className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10"
-              onClick={() => setConfirmOpen(true)}
-              disabled={deleteFn.isPending}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Apagar
-            </Button>
+
+          {configured && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                onClick={doDisconnect}
+                disabled={!isConnected || disconnect.isPending}
+              >
+                <PlugZap className="h-4 w-4 mr-2" />
+                Desconectar
+              </Button>
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => setConfirmOpen(true)}
+                disabled={deleteFn.isPending}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Apagar
+              </Button>
+            </div>
           )}
+        </>
+      ) : (
+        <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+          Apenas administradores podem conectar, desconectar ou trocar o número de
+          WhatsApp da equipe.
         </div>
       )}
 

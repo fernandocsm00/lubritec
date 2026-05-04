@@ -14,8 +14,8 @@ const guard = [authGuard, requireRole('admin', 'comercial')];
 const adminOnly = [authGuard, requireRole('admin')];
 
 router.get('/', ...guard, statusHandler);
-router.post('/connect', ...guard, connectHandler);
-router.post('/disconnect', ...guard, disconnectHandler);
+router.post('/connect', ...adminOnly, connectHandler);
+router.post('/disconnect', ...adminOnly, disconnectHandler);
 router.delete('/', ...adminOnly, deleteHandler);
 
 export default router;
