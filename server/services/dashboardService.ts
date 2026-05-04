@@ -6,6 +6,8 @@ import { resolvePeriod, type PeriodKey } from '../lib/period';
 import type {
   DashboardSummary,
   DashboardView,
+  DashboardAttentionItem,
+  DashboardAttentionResponse,
 } from '../../shared/types';
 
 interface SummaryArgs {
@@ -203,6 +205,64 @@ async function goalFn(view: 'org' | 'me', periodKey: PeriodKey, currentMonthSale
   if (s.monthlySalesGoal == null || s.monthlySalesGoal === 0) return null;
   const percent = Math.min(200, Math.round((currentMonthSales / s.monthlySalesGoal) * 100));
   return { monthlyTarget: s.monthlySalesGoal, currentMonthSales, percent };
+}
+
+async function countProposalOld(ownerUserId: string | null): Promise<number> {
+  const where = ownerUserId
+    ? and(eq(deals.stage, 'proposta_enviada'), sql`${deals.updatedAt} < now() - interval '14 days'`, eq(deals.ownerUserId, ownerUserId))
+    : and(eq(deals.stage, 'proposta_enviada'), sql`${deals.updatedAt} < now() - interval '14 days'`);
+  const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(deals).where(where);
+  return r.cnt;
+}
+
+async function countDealStale(ownerUserId: string | null): Promise<number> {
+  const where = ownerUserId
+    ? and(sql`${deals.stage} IN ('proposta_enviada', 'em_negociacao')`, sql`${deals.updatedAt} < now() - interval '5 days'`, eq(deals.ownerUserId, ownerUserId))
+    : and(sql`${deals.stage} IN ('proposta_enviada', 'em_negociacao')`, sql`${deals.updatedAt} < now() - interval '5 days'`);
+  const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(deals).where(where);
+  return r.cnt;
+}
+
+async function countConvExpired(ownerUserId: string | null): Promise<number> {
+  const base = and(
+    sql`${conversations.status} != 'encerrada'`,
+    sql`${conversations.lastInboundAt} IS NOT NULL`,
+    sql`${conversations.lastInboundAt} < now() - interval '24 hours'`,
+  );
+  const where = ownerUserId ? and(base, eq(conversations.assignedTo, ownerUserId)) : base;
+  const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations).where(where);
+  return r.cnt;
+}
+
+async function countQueuePending(ownerUserId: string | null): Promise<number> {
+  const base = and(eq(conversations.queue, 'comercial'), eq(conversations.status, 'aguardando_atendimento'));
+  const where = ownerUserId ? and(base, eq(conversations.assignedTo, ownerUserId)) : base;
+  const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations).where(where);
+  return r.cnt;
+}
+
+export async function attention(args: { view: DashboardView; userId?: string }): Promise<DashboardAttentionResponse> {
+  const owner = args.view === 'me' ? args.userId! : null;
+  const [proposalOld, dealStale, convExpired, queuePending] = await Promise.all([
+    countProposalOld(owner),
+    countDealStale(owner),
+    countConvExpired(owner),
+    countQueuePending(owner),
+  ]);
+
+  const meFilter = args.view === 'me' ? { owner: 'me' } : {};
+  const candidates: DashboardAttentionItem[] = [
+    { severity: 'critical' as const, kind: 'proposal_old',  count: proposalOld,  route: '/inside-sales', filter: { ...meFilter, stage: 'proposta_enviada', stale: true } },
+    { severity: 'critical' as const, kind: 'conv_expired',  count: convExpired,  route: '/whatsapp',     filter: { ...meFilter, expired24h: true } },
+    { severity: 'warning'  as const, kind: 'deal_stale',    count: dealStale,    route: '/inside-sales', filter: { ...meFilter, stale: true } },
+    { severity: 'info'     as const, kind: 'queue_pending', count: queuePending, route: '/whatsapp',     filter: { ...meFilter, queue: 'comercial', status: 'aguardando_atendimento' } },
+  ];
+  const items = candidates.filter((i) => i.count > 0);
+
+  const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+  items.sort((a, b) => order[a.severity] - order[b.severity]);
+
+  return { items };
 }
 
 export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
