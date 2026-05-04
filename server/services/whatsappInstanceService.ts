@@ -6,6 +6,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { InstanceStatusResponse, InstanceStatus } from '@shared/types';
 import {
   initInstance,
+  connectInstance,
   getInstanceStatus,
   logoutInstance,
   deleteInstance,
@@ -114,7 +115,6 @@ export async function getStatus(): Promise<InstanceStatusResponse> {
     const live = await getInstanceStatus({
       baseUrl: row.baseUrl,
       token: row.instanceToken,
-      instanceId: row.instanceId,
     });
     liveStatus = live.status;
     qrCode = live.qrCode;
@@ -186,22 +186,22 @@ export async function connect(input: {
     }
   }
 
-  if (!row.instanceToken) {
-    throw new HttpError(400, 'Instance token required (set UAZAPI_ADMIN_TOKEN env or pass via body)');
-  }
-
-  // Cria instância no UazAPI se ainda não tem ID
+  // Cria instância no UazAPI se ainda não tem ID (usa AdminToken — admin auth).
+  // O token per-instance que volta vai pra DB e é usado nas demais ops.
   let instanceId = row.instanceId;
   let instanceToken = row.instanceToken;
   if (!instanceId) {
+    const adminToken = envToken;
+    if (!adminToken) {
+      throw new HttpError(400, 'UAZAPI_ADMIN_TOKEN required to init a new instance');
+    }
     try {
       const init = await initInstance(
-        { baseUrl: row.baseUrl, token: instanceToken },
+        { baseUrl: row.baseUrl, token: adminToken },
         'lubritec',
       );
       instanceId = init.instanceId;
-      // Se UazAPI retornar token específico da instância, usa ele.
-      if (init.token) instanceToken = init.token;
+      instanceToken = init.token;  // sempre o per-instance token devolvido por uazapiGO
       [row] = await db
         .update(whatsappInstance)
         .set({ instanceId, instanceToken, updatedAt: new Date() })
@@ -215,13 +215,17 @@ export async function connect(input: {
     }
   }
 
-  // Garante webhook_secret e registra webhook
+  if (!instanceToken) {
+    throw new HttpError(500, 'Instance token missing after init');
+  }
+
+  // Garante webhook_secret e registra webhook (usa instance token).
   let webhookSecret = row.webhookSecret ?? generateWebhookSecret();
   const webhookUrl = buildWebhookUrl();
 
   try {
     await setWebhook(
-      { baseUrl: row.baseUrl, token: instanceToken, instanceId },
+      { baseUrl: row.baseUrl, token: instanceToken },
       { url: webhookUrl, secret: webhookSecret, events: ['message.received'] },
     );
     [row] = await db
@@ -243,6 +247,17 @@ export async function connect(input: {
       .returning();
     if (err instanceof UazapiInstanceError) {
       throw new HttpError(502, `Webhook config failed: ${err.message}`);
+    }
+    throw err;
+  }
+
+  // Inicia o pareamento — uazapiGO gera o QR via /instance/connect (chamada explícita).
+  // Sem isso a instância fica em "disconnected" pra sempre.
+  try {
+    await connectInstance({ baseUrl: row.baseUrl, token: instanceToken });
+  } catch (err) {
+    if (err instanceof UazapiInstanceError) {
+      throw new HttpError(502, `UazAPI connect failed: ${err.message}`);
     }
     throw err;
   }
@@ -274,7 +289,6 @@ export async function disconnect(): Promise<InstanceStatusResponse> {
     await logoutInstance({
       baseUrl: row.baseUrl,
       token: row.instanceToken,
-      instanceId: row.instanceId,
     });
   } catch (err) {
     if (err instanceof UazapiInstanceError) {
@@ -310,7 +324,6 @@ export async function destroy(): Promise<void> {
       await deleteInstance({
         baseUrl: row.baseUrl,
         token: row.instanceToken,
-        instanceId: row.instanceId,
       });
     } catch {
       // Ignora — a row local vai ser apagada de qualquer jeito.

@@ -7,6 +7,7 @@ import { createUser, createWhatsappInstance } from './helpers';
 
 vi.mock('../services/uazapiInstanceClient', () => ({
   initInstance: vi.fn(),
+  connectInstance: vi.fn(),
   getInstanceStatus: vi.fn(),
   logoutInstance: vi.fn(),
   deleteInstance: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('../services/uazapiInstanceClient', () => ({
 }));
 import {
   initInstance,
+  connectInstance,
   getInstanceStatus,
   setWebhook,
 } from '../services/uazapiInstanceClient';
@@ -31,8 +33,17 @@ async function loginAdmin() {
 
 beforeEach(() => {
   vi.mocked(initInstance).mockReset();
+  vi.mocked(connectInstance).mockReset();
   vi.mocked(getInstanceStatus).mockReset();
   vi.mocked(setWebhook).mockReset();
+  // connectInstance default: succeed silently (tests can override with mockResolvedValueOnce)
+  vi.mocked(connectInstance).mockResolvedValue({
+    status: 'pairing',
+    qrCode: 'data:image/png;base64,QR',
+    phoneNumber: null,
+    profileName: null,
+    rawPayload: {},
+  });
   process.env.APP_URL = 'http://localhost:3000';
   process.env.UAZAPI_TOKEN = 'env-token-fallback';
 });
@@ -42,6 +53,7 @@ describe('POST /api/whatsapp-instance/connect', () => {
     vi.mocked(initInstance).mockResolvedValueOnce({
       instanceId: 'new-inst-1',
       token: 'instance-token',
+      status: 'disconnected',
       rawPayload: {},
     });
     vi.mocked(setWebhook).mockResolvedValueOnce(undefined);
@@ -114,6 +126,8 @@ describe('POST /api/whatsapp-instance/connect', () => {
   it('webhookSynced=false se setWebhook falhar mas instância criada', async () => {
     vi.mocked(initInstance).mockResolvedValueOnce({
       instanceId: 'new-inst-2',
+      token: 'instance-token-2',
+      status: 'disconnected',
       rawPayload: {},
     });
     const { UazapiInstanceError } = await import('../services/uazapiInstanceClient');

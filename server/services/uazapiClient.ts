@@ -20,30 +20,40 @@ export interface UazapiSendResponse {
   rawPayload: unknown;
 }
 
+// Map MessageKind to uazapiGO `type` field for /send/media.
+function mapMediaType(kind: MessageKind): string {
+  switch (kind) {
+    case 'image': return 'image';
+    case 'video': return 'video';
+    case 'audio': return 'audio';
+    case 'document': return 'document';
+    default: return 'document';
+  }
+}
+
 export async function sendUazapiMessage(opts: SendMessageOpts): Promise<UazapiSendResponse> {
   const cfg = await loadSendConfig();
 
-  const endpoint = opts.kind === 'text'
-    ? '/v1/messages/text'
-    : '/v1/messages/media';
+  // uazapiGO endpoints:
+  //   POST /send/text   { number, text }
+  //   POST /send/media  { number, type, file, caption? }
+  // Auth: header `token: <instance_token>` (NOT Authorization Bearer).
+  // Instance is identified by the token, no need to pass instance_id in body.
+  const endpoint = opts.kind === 'text' ? '/send/text' : '/send/media';
 
-  const body: Record<string, unknown> = {
-    instance_id: cfg.instanceId,
-    to: opts.to,
-  };
+  const body: Record<string, unknown> = { number: opts.to };
   if (opts.kind === 'text') {
     body.text = opts.text;
   } else {
-    body.media_url = opts.mediaUrl;
-    body.media_mime = opts.mediaMime;
-    body.kind = opts.kind;
+    body.type = mapMediaType(opts.kind);
+    body.file = opts.mediaUrl;
     if (opts.text) body.caption = opts.text;
   }
 
   const res = await fetch(`${cfg.baseUrl}${endpoint}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${cfg.token}`,
+      token: cfg.token,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -55,11 +65,13 @@ export async function sendUazapiMessage(opts: SendMessageOpts): Promise<UazapiSe
     throw new UazapiError(res.status, text);
   }
 
-  const json = await res.json();
+  const json = (await res.json()) as Record<string, unknown> | null;
+  // uazapiGO response varies by endpoint; defensively look in common spots.
+  const msgObj = (json?.message as Record<string, unknown> | undefined) ?? json;
   const messageId =
-    (json?.messageId as string | undefined) ??
-    (json?.id as string | undefined) ??
-    (json?.data?.id as string | undefined);
+    (msgObj?.messageid as string | undefined) ??
+    (msgObj?.id as string | undefined) ??
+    (json?.messageId as string | undefined);
   if (!messageId) {
     throw new UazapiError(500, `Missing messageId in response: ${JSON.stringify(json)}`);
   }
