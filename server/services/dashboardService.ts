@@ -1,6 +1,6 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { deals, dealActivities, leads, conversations, users } from '../db/schema';
+import { deals, dealActivities, leads, conversations, messages, users } from '../db/schema';
 import { getOrgSettings } from './orgSettingsService';
 import { resolvePeriod, type PeriodKey } from '../lib/period';
 import type {
@@ -89,6 +89,59 @@ async function funnelOrg(start: Date, end: Date) {
     convConvToProposal: pct(withProposal, withConversation),
     convProposalToWon: pct(won, withProposal),
   };
+}
+
+async function funnelMe(start: Date, end: Date, userId: string) {
+  const [respRow] = await db
+    .select({ cnt: sql<number>`count(distinct ${messages.conversationId})::int` })
+    .from(messages)
+    .where(and(eq(messages.sentByUserId, userId), gte(messages.sentAt, start), lt(messages.sentAt, end)));
+
+  const [propRow] = await db
+    .select({ cnt: sql<number>`count(*)::int` })
+    .from(deals)
+    .where(and(eq(deals.ownerUserId, userId), gte(deals.createdAt, start), lt(deals.createdAt, end)));
+
+  const [wonRow] = await db
+    .select({ cnt: sql<number>`count(*)::int` })
+    .from(deals)
+    .where(and(eq(deals.ownerUserId, userId), eq(deals.stage, 'ganho'), gte(deals.closedAt!, start), lt(deals.closedAt!, end)));
+
+  const respondedConversations = respRow.cnt;
+  const myProposals = propRow.cnt;
+  const myWon = wonRow.cnt;
+  const pct = (a: number, b: number) => (b === 0 ? 0 : Math.round((a / b) * 100));
+  return {
+    kind: 'me' as const,
+    respondedConversations, myProposals, myWon,
+    convRespToProposal: pct(myProposals, respondedConversations),
+    convProposalToWon: pct(myWon, myProposals),
+  };
+}
+
+async function recentActivitiesMe(userId: string) {
+  const rows = await db
+    .select({
+      id: dealActivities.id,
+      kind: dealActivities.kind,
+      dealId: dealActivities.dealId,
+      leadName: leads.name,
+      createdAt: dealActivities.createdAt,
+    })
+    .from(dealActivities)
+    .innerJoin(deals, eq(deals.id, dealActivities.dealId))
+    .innerJoin(leads, eq(leads.id, deals.leadId))
+    .where(eq(dealActivities.actorUserId, userId))
+    .orderBy(sql`${dealActivities.createdAt} DESC`)
+    .limit(10);
+
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    dealId: r.dealId,
+    leadName: r.leadName,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 async function pipelineOpenFn(ownerUserId: string | null) {
@@ -189,9 +242,9 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
     goal: await goalFn(args.view, args.period, salesCur.value),
     funnel: args.view === 'org'
       ? await funnelOrg(period.start, period.end)
-      : { kind: 'me' as const, respondedConversations: 0, myProposals: 0, myWon: 0, convRespToProposal: 0, convProposalToWon: 0 },
+      : await funnelMe(period.start, period.end, args.userId!),
     pipelineOpen: await pipelineOpenFn(owner),
     leaderboard: args.view === 'org' ? await leaderboardFn(period.start, period.end) : null,
-    recentActivities: args.view === 'me' ? [] : null, // Task 7 will populate
+    recentActivities: args.view === 'me' ? await recentActivitiesMe(args.userId!) : null,
   };
 }
