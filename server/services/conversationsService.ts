@@ -392,3 +392,128 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     sentAt: msg.sentAt.toISOString(),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Start conversation (cria lead+conversa se preciso, depois envia 1ª mensagem)
+// ---------------------------------------------------------------------------
+
+function normalizePhone(raw: string): string {
+  return raw.replace(/\D/g, '');
+}
+
+export interface StartConversationInput {
+  userId: string;
+  phone: string;
+  name?: string | null;
+  kind: MessageKind;
+  body?: string | null;
+  mediaUrl?: string | null;
+  mediaMime?: string | null;
+}
+
+export interface StartConversationResult {
+  conversation: PublicConversation;
+  message: PublicMessage;
+}
+
+export async function startConversation(
+  input: StartConversationInput,
+): Promise<StartConversationResult> {
+  const phone = normalizePhone(input.phone);
+  // E.164 brasileiro válido: 10 a 15 dígitos. Validação de domínio fica no schema do controller.
+  if (phone.length < 10 || phone.length > 15) {
+    throw new HttpError(400, 'Telefone inválido');
+  }
+
+  // 1. Lead — find ou create (com proteção a race igual ao webhook ingest).
+  let leadId: string;
+  const foundLead = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(eq(leads.phone, phone))
+    .limit(1);
+  if (foundLead.length) {
+    leadId = foundLead[0].id;
+  } else {
+    try {
+      const [created] = await db
+        .insert(leads)
+        .values({
+          name: input.name?.trim() || phone,
+          phone,
+          source: 'whatsapp',
+          status: 'frio',
+        })
+        .returning({ id: leads.id });
+      leadId = created.id;
+    } catch (err) {
+      const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
+      if (pgErr?.code === '23505') {
+        const retry = await db
+          .select({ id: leads.id })
+          .from(leads)
+          .where(eq(leads.phone, phone))
+          .limit(1);
+        if (!retry.length) throw err;
+        leadId = retry[0].id;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // 2. Conversa — find ou create. Sempre cai em recepcao + em_atendimento + atribuída.
+  let conversationId: string;
+  const foundConv = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.phone, phone))
+    .limit(1);
+  if (foundConv.length) {
+    conversationId = foundConv[0].id;
+  } else {
+    try {
+      const now = new Date();
+      const [createdConv] = await db
+        .insert(conversations)
+        .values({
+          phone,
+          leadId,
+          queue: 'recepcao',
+          status: 'em_atendimento',
+          assignedTo: input.userId,
+          originKind: 'organic',
+          lastMessageAt: now,
+          unreadCount: 0,
+        })
+        .returning({ id: conversations.id });
+      conversationId = createdConv.id;
+    } catch (err) {
+      const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
+      if (pgErr?.code === '23505') {
+        const retry = await db
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(eq(conversations.phone, phone))
+          .limit(1);
+        if (!retry.length) throw err;
+        conversationId = retry[0].id;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // 3. Reusa o sendMessage existente — ele já faz auto-claim, pipeline integration, etc.
+  const message = await sendMessage({
+    conversationId,
+    userId: input.userId,
+    kind: input.kind,
+    body: input.body ?? null,
+    mediaUrl: input.mediaUrl ?? null,
+    mediaMime: input.mediaMime ?? null,
+  });
+
+  const conversation = await getConversationById(conversationId, input.userId);
+  return { conversation, message };
+}

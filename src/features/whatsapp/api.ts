@@ -62,6 +62,34 @@ export function useMessages(conversationId: string | null) {
   });
 }
 
+export interface StartConversationInput {
+  phone: string;
+  name?: string;
+  kind: MessageKind;
+  body?: string;
+  mediaUrl?: string;
+  mediaMime?: string;
+}
+
+export interface StartConversationResult {
+  conversation: PublicConversation;
+  message: PublicMessage;
+}
+
+export function useStartConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StartConversationInput) =>
+      api<StartConversationResult>('/conversations/start', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
 export function useSendMessage(conversationId: string) {
   const qc = useQueryClient();
   return useMutation({

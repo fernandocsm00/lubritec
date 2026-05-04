@@ -16,6 +16,7 @@ import {
   closeConversation,
   markRead,
   sendMessage,
+  startConversation,
 } from '../services/conversationsService';
 
 const csvOf = <T extends string>(values: readonly T[]) =>
@@ -135,5 +136,39 @@ export async function sendMessageHandler(req: Request, res: Response, next: Next
       mediaMime: data.mediaMime ?? null,
     });
     res.json(msg);
+  } catch (e) { next(e); }
+}
+
+const startBody = z
+  .object({
+    phone: z.string().min(1).max(32),
+    name: z.string().max(120).optional(),
+    kind: z.enum(MESSAGE_KINDS),
+    body: z.string().max(4000).optional(),
+    mediaUrl: z.string().url().optional(),
+    mediaMime: z.string().max(120).optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.kind === 'text' && !d.body) {
+      ctx.addIssue({ code: 'custom', message: 'body is required for kind=text', path: ['body'] });
+    }
+    if (d.kind !== 'text' && !d.mediaUrl) {
+      ctx.addIssue({ code: 'custom', message: 'mediaUrl is required for media kinds', path: ['mediaUrl'] });
+    }
+  });
+
+export async function startConversationHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = startBody.parse(req.body);
+    const result = await startConversation({
+      userId: req.user!.userId,
+      phone: data.phone,
+      name: data.name ?? null,
+      kind: data.kind,
+      body: data.body ?? null,
+      mediaUrl: data.mediaUrl ?? null,
+      mediaMime: data.mediaMime ?? null,
+    });
+    res.json(result);
   } catch (e) { next(e); }
 }

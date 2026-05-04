@@ -6,6 +6,7 @@ import { ConversationList } from '@/features/whatsapp/ConversationList';
 import { Thread } from '@/features/whatsapp/Thread';
 import { ChatHeader } from '@/features/whatsapp/ChatHeader';
 import { LeadSidebar } from '@/features/whatsapp/LeadSidebar';
+import { NewConversationDialog } from '@/features/whatsapp/NewConversationDialog';
 import { useConversations } from '@/features/whatsapp/api';
 import { useAuthStore } from '@/features/auth/store';
 import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
@@ -46,8 +47,9 @@ export default function WhatsappPage() {
   return (
     <div className="grid h-[calc(100vh-4rem)]" style={{ gridTemplateColumns: '380px 1fr 340px' }}>
       <aside className="flex flex-col border-r border-border bg-background">
-        <div className="px-4 py-3 border-b border-border">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">Inbox</h2>
+          <NewConversationDialog onCreated={(id) => setSelectedConvId(id)} />
         </div>
         <QueueTabs
           active={queue}

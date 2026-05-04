@@ -10,12 +10,14 @@ import {
   closeHandler,
   readHandler,
   sendMessageHandler,
+  startConversationHandler,
 } from '../controllers/conversationsController';
 
 const router = Router();
 
 router.get('/counts', authGuard, countsHandler);
 router.get('/', authGuard, listHandler);
+router.post('/start', authGuard, startConversationHandler);
 router.get('/:id', authGuard, getHandler);
 router.get('/:id/messages', authGuard, listMessagesHandler);
 router.post('/:id/claim', authGuard, claimHandler);
