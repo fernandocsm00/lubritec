@@ -48,3 +48,32 @@ export function useDeleteInstance() {
     onSuccess: () => invalidate(qc),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Webhook debug events (admin-only diagnostics)
+// ---------------------------------------------------------------------------
+
+export interface WebhookDebugEntry {
+  receivedAt: string;
+  headers: Record<string, string>;
+  body: unknown;
+  bodyKeys: string[] | null;
+  result: { kind: string; [key: string]: unknown };
+}
+
+export function useWebhookDebugEvents(opts: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['whatsapp-instance', 'debug-events'],
+    queryFn: () => api<{ events: WebhookDebugEntry[] }>('/whatsapp-instance/debug-events'),
+    enabled: opts.enabled,
+    refetchInterval: opts.enabled ? 3_000 : false,
+  });
+}
+
+export function useClearWebhookDebugEvents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>('/whatsapp-instance/debug-events', { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['whatsapp-instance', 'debug-events'] }),
+  });
+}

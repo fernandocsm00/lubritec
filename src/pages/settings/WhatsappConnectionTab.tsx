@@ -3,6 +3,7 @@ import { useInstanceStatus } from '@/features/settings/whatsapp/api';
 import { StatusBadges } from '@/features/settings/whatsapp/StatusBadges';
 import { ConnectionControls } from '@/features/settings/whatsapp/ConnectionControls';
 import { InstanceStatusCard } from '@/features/settings/whatsapp/InstanceStatusCard';
+import { WebhookDebugPanel } from '@/features/settings/whatsapp/WebhookDebugPanel';
 
 export default function WhatsappConnectionTab() {
   const { data, isLoading, isError } = useInstanceStatus();
@@ -44,6 +45,8 @@ export default function WhatsappConnectionTab() {
           </div>
         )}
       </div>
+
+      <WebhookDebugPanel />
     </div>
   );
 }
