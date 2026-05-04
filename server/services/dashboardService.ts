@@ -1,6 +1,6 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { deals, dealActivities, leads, conversations, messages, users } from '../db/schema';
+import { deals, dealActivities, leads, conversations, messages, users, whatsappInstance } from '../db/schema';
 import { getOrgSettings } from './orgSettingsService';
 import { resolvePeriod, type PeriodKey } from '../lib/period';
 import type {
@@ -8,6 +8,7 @@ import type {
   DashboardView,
   DashboardAttentionItem,
   DashboardAttentionResponse,
+  DashboardWhatsappStats,
 } from '../../shared/types';
 
 interface SummaryArgs {
@@ -309,5 +310,58 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
     pipelineOpen: await pipelineOpenFn(owner),
     leaderboard: args.view === 'org' ? await leaderboardFn(period.start, period.end) : null,
     recentActivities: args.view === 'me' ? await recentActivitiesMe(args.userId!) : null,
+  };
+}
+
+export async function whatsappStats(): Promise<DashboardWhatsappStats> {
+  const [instRow] = await db
+    .select({ lastStatus: whatsappInstance.lastStatus })
+    .from(whatsappInstance)
+    .where(eq(whatsappInstance.singleton, true))
+    .limit(1);
+  const instanceConnected = instRow?.lastStatus === 'connected';
+
+  const [inQueueRow] = await db
+    .select({ cnt: sql<number>`count(*)::int` })
+    .from(conversations)
+    .where(eq(conversations.status, 'aguardando_atendimento'));
+
+  const [expiredRow] = await db
+    .select({ cnt: sql<number>`count(*)::int` })
+    .from(conversations)
+    .where(and(
+      sql`${conversations.status} != 'encerrada'`,
+      sql`${conversations.lastInboundAt} IS NOT NULL`,
+      sql`${conversations.lastInboundAt} < now() - interval '24 hours'`,
+      sql`${conversations.lastMessageAt} <= ${conversations.lastInboundAt}`,
+    ));
+
+  // Average first-response time over conversations created in last 7d
+  const avgRes = await db.execute<{ avg_sec: string | null }>(sql`
+    SELECT avg(extract(epoch from (first_out.sent_at - first_in.sent_at)))::text AS avg_sec
+    FROM conversations c
+    JOIN LATERAL (SELECT sent_at FROM messages WHERE conversation_id = c.id AND direction = 'in'  ORDER BY sent_at ASC LIMIT 1) AS first_in ON TRUE
+    JOIN LATERAL (SELECT sent_at FROM messages WHERE conversation_id = c.id AND direction = 'out' AND sent_at > first_in.sent_at ORDER BY sent_at ASC LIMIT 1) AS first_out ON TRUE
+    WHERE c.created_at >= now() - interval '7 days'
+  `);
+  const avgRows = (avgRes as any).rows ?? avgRes;
+  const avgSec = avgRows?.[0]?.avg_sec;
+  const avgFirstResponseSec = avgSec ? Math.round(Number(avgSec)) : 0;
+
+  const noRespRes = await db.execute<{ cnt: string }>(sql`
+    SELECT count(*)::text AS cnt
+    FROM conversations c
+    WHERE c.last_inbound_at >= date_trunc('day', now() at time zone 'America/Sao_Paulo') at time zone 'America/Sao_Paulo'
+      AND (c.last_message_at <= c.last_inbound_at OR c.last_message_at IS NULL)
+  `);
+  const noRespRows = (noRespRes as any).rows ?? noRespRes;
+  const noResponseToday = Number(noRespRows[0].cnt);
+
+  return {
+    inQueue: inQueueRow.cnt,
+    avgFirstResponseSec,
+    expired24h: expiredRow.cnt,
+    noResponseToday,
+    instanceConnected,
   };
 }
