@@ -152,4 +152,123 @@ describe('POST /api/whatsapp/webhook', () => {
     expect(msgs[0].mediaMime).toBe('image/jpeg');
     expect(msgs[0].body).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // Formato real da uazapiGO (varia por versão; aceitamos defensivamente).
+  // -------------------------------------------------------------------------
+
+  it('aceita formato uazapiGO: EventType + message.messageid + message.sender', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-MSG-001',
+          sender: '5511955554444@s.whatsapp.net',
+          messageType: 'conversation',
+          text: 'oi tudo bem',
+          timestamp: 1746115200,
+        },
+      });
+    expect(res.status).toBe(200);
+
+    const [conv] = await db.select().from(conversations).where(eq(conversations.phone, '5511955554444'));
+    expect(conv).toBeDefined();
+    const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].uazapiMsgId).toBe('UAZGO-MSG-001');
+    expect(msgs[0].kind).toBe('text');
+    expect(msgs[0].body).toBe('oi tudo bem');
+  });
+
+  it('filtra fromMe=true (mensagem outbound já gravada via sendMessage)', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-MSG-OUT',
+          sender: '5511944443333@s.whatsapp.net',
+          fromMe: true,
+          messageType: 'conversation',
+          text: 'enviei eu mesmo',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    expect(res.status).toBe(200);
+    const all = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-MSG-OUT'));
+    expect(all).toHaveLength(0);
+  });
+
+  it('aceita token no header `token` (uazapiGO comum) em vez de X-Webhook-Token', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-MSG-AUTH-HEADER',
+          sender: '5511933332222',
+          messageType: 'conversation',
+          text: 'auth via token header',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    expect(res.status).toBe(200);
+    const [m] = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-MSG-AUTH-HEADER'));
+    expect(m).toBeDefined();
+  });
+
+  it('aceita token no body (campo `token`)', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .send({
+        token: SECRET,
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-MSG-AUTH-BODY',
+          sender: '5511922221111',
+          messageType: 'conversation',
+          text: 'auth via body token',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    expect(res.status).toBe(200);
+    const [m] = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-MSG-AUTH-BODY'));
+    expect(m).toBeDefined();
+  });
+
+  it('aceita formato Baileys-like: messageType=imageMessage + mediaUrl', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-IMG-001',
+          chatid: '5511911110000@s.whatsapp.net',
+          messageType: 'imageMessage',
+          mediaUrl: 'https://cdn.example.com/photo.jpg',
+          mimetype: 'image/jpeg',
+          caption: 'olha essa foto',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    expect(res.status).toBe(200);
+    const [m] = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-IMG-001'));
+    expect(m).toBeDefined();
+    expect(m.kind).toBe('image');
+    expect(m.mediaUrl).toBe('https://cdn.example.com/photo.jpg');
+    expect(m.mediaMime).toBe('image/jpeg');
+  });
+
+  it('200 quando payload não é mensagem (presence, status, etc.)', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({ EventType: 'presence', status: 'available' });
+    expect(res.status).toBe(200);
+  });
 });

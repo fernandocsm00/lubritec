@@ -1,33 +1,17 @@
 import { db } from '../db/client';
 import { conversations, messages, leads } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
-import type { UazapiInbound } from '../lib/uazapiSchema';
-import type { MessageKind } from '@shared/types';
+import type { InboundMessage } from '../lib/uazapiSchema';
 
 function normalizePhone(raw: string): string {
+  // Remove tudo que não é dígito. Funciona pra "+55 11 9...", "5511...@s.whatsapp.net", "5511...@c.us", etc.
   return raw.replace(/\D/g, '');
 }
 
-function detectKind(type: string | undefined): MessageKind {
-  switch (type) {
-    case 'text': return 'text';
-    case 'image': return 'image';
-    case 'audio': return 'audio';
-    case 'video': return 'video';
-    case 'document': return 'document';
-    default: return 'unknown';
-  }
-}
-
 export async function ingestInbound(
-  payload: UazapiInbound,
+  m: InboundMessage,
   rawPayload: unknown,
 ): Promise<{ status: 'inserted' | 'duplicate' | 'ignored' }> {
-  if (payload.event !== 'message.received' || !payload.message) {
-    return { status: 'ignored' };
-  }
-  const m = payload.message;
-
   // Idempotência por uazapi_msg_id
   const existing = await db
     .select({ id: messages.id })
@@ -37,8 +21,9 @@ export async function ingestInbound(
   if (existing.length) return { status: 'duplicate' };
 
   const phone = normalizePhone(m.from);
+  if (phone.length < 8) return { status: 'ignored' };
+
   const sentAt = m.timestamp;
-  const kind = detectKind(typeof m.type === 'string' ? m.type : undefined);
 
   await db.transaction(async (tx) => {
     // 1. Match ou cria lead. Em caso de race (UNIQUE violation), refaz a query.
@@ -54,7 +39,6 @@ export async function ingestInbound(
           .returning({ id: leads.id });
         leadId = created.id;
       } catch (err) {
-        // Race: outra request criou simultaneamente. Refaz a query.
         const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
         if (pgErr?.code === '23505') {
           const retry = await tx.select({ id: leads.id }).from(leads).where(eq(leads.phone, phone)).limit(1);
@@ -110,10 +94,10 @@ export async function ingestInbound(
     await tx.insert(messages).values({
       conversationId,
       direction: 'in',
-      kind,
-      body: kind === 'text' ? (m.text ?? null) : null,
-      mediaUrl: m.media_url ?? null,
-      mediaMime: m.mimetype ?? null,
+      kind: m.kind,
+      body: m.kind === 'text' ? m.text : null,
+      mediaUrl: m.mediaUrl,
+      mediaMime: m.mediaMime,
       uazapiMsgId: m.id,
       rawPayload: rawPayload as object,
       sentAt,
