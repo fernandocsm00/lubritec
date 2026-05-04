@@ -10,6 +10,7 @@ import conversationRoutes from './routes/conversations';
 import messageTemplateRoutes from './routes/messageTemplates';
 import dealRoutes from './routes/deals';
 import whatsappInstanceRoutes from './routes/whatsappInstance';
+import orgSettingsRoutes from './routes/orgSettings';
 import campaignRoutes from './routes/campaigns';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -34,6 +35,7 @@ export function createApp() {
   app.use('/api/message-templates', messageTemplateRoutes);
   app.use('/api/deals', dealRoutes);
   app.use('/api/whatsapp-instance', whatsappInstanceRoutes);
+  app.use('/api/org-settings', orgSettingsRoutes);
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   app.use('/api/campaigns', campaignRoutes);
 
