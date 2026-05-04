@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------------------------------------------------------------------------
-# Stage 1 — builder: install all deps, type-check, build frontend + server
+# Stage 1 — builder: install all deps, type-check, build frontend
 # ---------------------------------------------------------------------------
 FROM node:24-alpine AS builder
 WORKDIR /app
@@ -10,16 +10,17 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy sources required by the build
+# Copy sources required by the build (vite + tsc type-check)
 COPY tsconfig.json tsconfig.server.json vite.config.ts tailwind.config.ts components.json index.html ./
 COPY server ./server
 COPY shared ./shared
 COPY src ./src
 
-# Vite → /app/dist; tsc → /app/dist-server
+# Type-check (both client and server) + Vite build → /app/dist.
+# Server is NOT compiled to dist-server: we run TypeScript directly via tsx in prod.
 RUN npm run build
 
-# Prune dev deps after build so we can copy a slim node_modules to runtime
+# Drop dev deps (tsx stays — it's a runtime dep)
 RUN npm prune --omit=dev
 
 # ---------------------------------------------------------------------------
@@ -31,21 +32,23 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000
 
-# Production deps only
+# Production deps only (includes tsx)
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
-# Built artifacts
+# Frontend build
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/dist-server ./dist-server
 
-# SQL migrations are read at runtime by migrate.js
-COPY --from=builder /app/server/db/migrations ./server/db/migrations
+# Server source (executed by tsx at runtime — same as dev)
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/tsconfig.server.json ./tsconfig.server.json
 
-# Uploads dir (multer writes here)
+# Uploads dir (multer writes here — mount as volume in prod for persistence)
 RUN mkdir -p uploads
 
 EXPOSE 3000
 
-# Migrate then start. Migrate is idempotent (checks _migrations table).
+# Migrate (idempotent) then start the server.
 CMD ["npm", "run", "start:prod"]
