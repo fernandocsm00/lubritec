@@ -224,10 +224,13 @@ async function countDealStale(ownerUserId: string | null): Promise<number> {
 }
 
 async function countConvExpired(ownerUserId: string | null): Promise<number> {
+  // "Expired without our reply": last inbound was >24h ago AND nothing went out since
+  // (lastMessageAt <= lastInboundAt means the most recent message is the inbound one).
   const base = and(
     sql`${conversations.status} != 'encerrada'`,
     sql`${conversations.lastInboundAt} IS NOT NULL`,
     sql`${conversations.lastInboundAt} < now() - interval '24 hours'`,
+    sql`${conversations.lastMessageAt} <= ${conversations.lastInboundAt}`,
   );
   const where = ownerUserId ? and(base, eq(conversations.assignedTo, ownerUserId)) : base;
   const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations).where(where);

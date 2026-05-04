@@ -38,11 +38,16 @@ describe('dashboardService.attention', () => {
     expect(item?.count).toBe(1);
   });
 
-  it('counts conv_expired (>24h since last inbound, status != encerrada)', async () => {
+  it('counts conv_expired (>24h since last inbound AND no outbound after, status != encerrada)', async () => {
     const lead1 = await createLead({});
     const lead2 = await createLead({});
-    await createConversation({ leadId: lead1.id, status: 'em_atendimento', lastInboundAt: ago(2) });   // expired
-    await createConversation({ leadId: lead2.id, status: 'em_atendimento', lastInboundAt: ago(0.5) }); // ok
+    const lead3 = await createLead({});
+    // Expired: inbound 2d ago, no outbound since (lastMessageAt = inbound)
+    await createConversation({ leadId: lead1.id, status: 'em_atendimento', lastInboundAt: ago(2), lastMessageAt: ago(2) });
+    // Not expired: inbound recent
+    await createConversation({ leadId: lead2.id, status: 'em_atendimento', lastInboundAt: ago(0.5), lastMessageAt: ago(0.5) });
+    // Not expired: inbound 2d ago BUT we replied (lastMessageAt > lastInboundAt)
+    await createConversation({ leadId: lead3.id, status: 'em_atendimento', lastInboundAt: ago(2), lastMessageAt: ago(1) });
     const r = await attention({ view: 'org' });
     const item = r.items.find((i) => i.kind === 'conv_expired');
     expect(item?.count).toBe(1);
