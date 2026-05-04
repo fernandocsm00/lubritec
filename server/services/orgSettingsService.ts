@@ -31,5 +31,6 @@ export async function updateOrgSettings(opts: {
     })
     .where(eq(orgSettings.singleton, true))
     .returning();
+  if (!row) throw new HttpError(500, 'Org settings singleton not found (check migrations)');
   return toPublic(row);
 }

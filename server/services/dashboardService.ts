@@ -289,6 +289,18 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
   const avgTicketCur  = salesCur.count === 0 ? 0 : Math.round(salesCur.value / salesCur.count);
   const avgTicketPrev = salesPrev.count === 0 ? 0 : Math.round(salesPrev.value / salesPrev.count);
 
+  // Independent secondary aggregations — fire in parallel (was 4 sequential round-trips)
+  const [goal, funnel, pipeline, leaderOrRecent] = await Promise.all([
+    goalFn(args.view, args.period, salesCur.value),
+    args.view === 'org'
+      ? funnelOrg(period.start, period.end)
+      : funnelMe(period.start, period.end, args.userId!),
+    pipelineOpenFn(owner),
+    args.view === 'org'
+      ? leaderboardFn(period.start, period.end)
+      : recentActivitiesMe(args.userId!),
+  ]);
+
   return {
     period: {
       start: period.start.toISOString(),
@@ -303,13 +315,11 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
       winRate:   { value: winRateCur,      prev: winRatePrev,      deltaPct: ppDiff(winRateCur, winRatePrev) },
       avgTicket: { value: avgTicketCur,    prev: avgTicketPrev,    deltaPct: pctChange(avgTicketCur, avgTicketPrev) },
     },
-    goal: await goalFn(args.view, args.period, salesCur.value),
-    funnel: args.view === 'org'
-      ? await funnelOrg(period.start, period.end)
-      : await funnelMe(period.start, period.end, args.userId!),
-    pipelineOpen: await pipelineOpenFn(owner),
-    leaderboard: args.view === 'org' ? await leaderboardFn(period.start, period.end) : null,
-    recentActivities: args.view === 'me' ? await recentActivitiesMe(args.userId!) : null,
+    goal,
+    funnel,
+    pipelineOpen: pipeline,
+    leaderboard: args.view === 'org' ? (leaderOrRecent as Awaited<ReturnType<typeof leaderboardFn>>) : null,
+    recentActivities: args.view === 'me' ? (leaderOrRecent as Awaited<ReturnType<typeof recentActivitiesMe>>) : null,
   };
 }
 
