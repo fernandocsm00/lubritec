@@ -6,6 +6,8 @@ import {
   connectHandler,
   disconnectHandler,
   deleteHandler,
+  debugEventsHandler,
+  clearDebugEventsHandler,
 } from '../controllers/whatsappInstanceController';
 
 const router = Router();
@@ -17,5 +19,7 @@ router.get('/', ...guard, statusHandler);
 router.post('/connect', ...adminOnly, connectHandler);
 router.post('/disconnect', ...adminOnly, disconnectHandler);
 router.delete('/', ...adminOnly, deleteHandler);
+router.get('/debug-events', ...adminOnly, debugEventsHandler);
+router.delete('/debug-events', ...adminOnly, clearDebugEventsHandler);
 
 export default router;

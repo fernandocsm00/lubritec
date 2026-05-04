@@ -2,6 +2,11 @@ import type { Request, Response, NextFunction } from 'express';
 import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
 import { loadWebhookSecret } from '../services/whatsappInstanceService';
+import {
+  pushDebugEntry,
+  summarizeHeaders,
+  type WebhookDebugEntry,
+} from '../lib/webhookDebugBuffer';
 
 /**
  * Lê o secret enviado pela uazapiGO. Aceita várias convenções porque a
@@ -45,20 +50,22 @@ export async function whatsappWebhookHandler(
   res: Response,
   next: NextFunction,
 ) {
+  const debug: WebhookDebugEntry = {
+    receivedAt: new Date().toISOString(),
+    headers: summarizeHeaders(req.headers as Record<string, unknown>),
+    body: req.body,
+    bodyKeys: req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? Object.keys(req.body)
+      : null,
+    result: { kind: 'error', message: 'unhandled' },
+  };
+
   // Diagnóstico: SEMPRE logamos o payload bruto antes de qualquer validação.
-  // Isso permite inspecionar o que a uazapiGO realmente envia (formato varia
-  // por versão) sem precisar instrumentar a cada nova falha.
   try {
-    const headerKeys = Object.keys(req.headers).filter((k) =>
-      ['x-webhook-token', 'token', 'apikey', 'authorization', 'content-type', 'user-agent'].includes(k.toLowerCase()),
-    );
-    const headerSummary = Object.fromEntries(
-      headerKeys.map((k) => [k, k.toLowerCase() === 'authorization' ? '[redacted]' : req.headers[k]]),
-    );
     console.log('[whatsapp:webhook] received', {
-      headers: headerSummary,
-      bodyKeys: req.body && typeof req.body === 'object' ? Object.keys(req.body) : null,
-      body: req.body,
+      headers: debug.headers,
+      bodyKeys: debug.bodyKeys,
+      body: debug.body,
     });
   } catch {
     // Logging não pode derrubar o handler.
@@ -67,7 +74,8 @@ export async function whatsappWebhookHandler(
   try {
     const expected = await loadWebhookSecret();
     if (!expected) {
-      // Sem secret configurado: 401 (não dá pra confiar em payload anônimo).
+      debug.result = { kind: 'no_secret_configured' };
+      pushDebugEntry(debug);
       return res.status(401).json({ error: 'Webhook secret not configured' });
     }
 
@@ -77,26 +85,48 @@ export async function whatsappWebhookHandler(
         gotPresent: !!got,
         gotLen: got?.length ?? 0,
       });
+      debug.result = {
+        kind: 'auth_failed',
+        reason: got ? `provided token (${got.length} chars) does not match expected (${expected.length} chars)` : 'no token in headers/body',
+      };
+      pushDebugEntry(debug);
       return res.status(401).json({ error: 'Invalid webhook token' });
     }
 
     const parsed = uazapiInboundSchema.safeParse(req.body);
     if (!parsed.success) {
-      // Body não é objeto JSON — já respondemos 200 pra evitar retry agressivo.
       console.warn('[whatsapp:webhook] non-object body, ignoring');
+      debug.result = { kind: 'non_object_body' };
+      pushDebugEntry(debug);
       return res.status(200).end();
     }
 
     const inbound = extractInbound(parsed.data);
     if (!inbound) {
-      // Evento não é de mensagem inbound, ou faltam campos essenciais.
-      // Retornamos 200 — uazapiGO entrega vários eventos no mesmo webhook.
+      debug.result = {
+        kind: 'not_a_message',
+        reason: 'event not recognized as inbound message OR missing id/from OR fromMe=true',
+      };
+      pushDebugEntry(debug);
       return res.status(200).end();
     }
 
-    await ingestInbound(inbound, parsed.data);
+    debug.result = {
+      kind: 'extracted',
+      messageId: inbound.id,
+      from: inbound.from,
+      messageKind: inbound.kind,
+      fromMe: inbound.fromMe,
+    };
+
+    const ingestResult = await ingestInbound(inbound, parsed.data);
+    debug.result = { kind: ingestResult.status, messageId: inbound.id };
+    pushDebugEntry(debug);
+
     return res.status(200).end();
   } catch (e) {
+    debug.result = { kind: 'error', message: e instanceof Error ? e.message : String(e) };
+    pushDebugEntry(debug);
     next(e);
   }
 }

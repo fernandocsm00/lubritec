@@ -6,6 +6,7 @@ import {
   disconnect,
   destroy,
 } from '../services/whatsappInstanceService';
+import { listDebugEntries, clearDebugEntries } from '../lib/webhookDebugBuffer';
 
 const connectBody = z.object({
   baseUrl: z.string().url().optional(),
@@ -34,6 +35,19 @@ export async function disconnectHandler(_req: Request, res: Response, next: Next
 export async function deleteHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     await destroy();
+    res.status(204).end();
+  } catch (e) { next(e); }
+}
+
+export async function debugEventsHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ events: listDebugEntries() });
+  } catch (e) { next(e); }
+}
+
+export async function clearDebugEventsHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    clearDebugEntries();
     res.status(204).end();
   } catch (e) { next(e); }
 }
