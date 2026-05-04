@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json --noEmit false --outDir dist-server",
+    "start": "node dist-server/server/index.js",
+    "migrate:prod": "node dist-server/server/scripts/migrate.js",
+    "start:prod": "npm run migrate:prod && npm run start",
     "preview": "vite preview",
     "lint": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",

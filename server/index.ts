@@ -21,9 +21,12 @@ async function start() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, '../dist')));
+    // In production, this file runs from dist-server/server/index.js, so the
+    // Vite frontend build (project_root/dist) is two levels up.
+    const distDir = path.resolve(__dirname, '../../dist');
+    app.use(express.static(distDir));
     app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, '../dist/index.html'));
+      res.sendFile(path.resolve(distDir, 'index.html'));
     });
   }
 

@@ -1,0 +1,46 @@
+# Build artifacts (regenerated inside the image)
+dist
+dist-server
+node_modules
+
+# Local env (must be set in EasyPanel)
+.env
+.env.local
+.env.*.local
+
+# Uploads (runtime data, mounted as volume in prod)
+uploads/*
+!uploads/.gitkeep
+
+# Tests + dev tooling
+server/tests
+**/*.test.ts
+vitest.config.ts
+.vitest
+
+# Editors / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Git + CI
+.git
+.gitignore
+.github
+
+# Docs (not needed in image)
+docs
+README.md
+*.md
+
+# Logs
+*.log
+npm-debug.log*
+
+# Claude / Superpowers metadata
+.claude
+.superpowers
+
+# Old data dirs
+embedded-postgres-data
