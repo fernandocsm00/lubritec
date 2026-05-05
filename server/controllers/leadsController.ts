@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { LEAD_STATUSES, LEAD_SOURCES } from '../../shared/types';
 import { createLead, listLeads, updateLead, deleteLead } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
+import { enrichLead } from '../services/leadsEnrichment';
 
 const phoneInput = z
   .string()
@@ -106,6 +107,16 @@ export async function importHandler(req: Request, res: Response, next: NextFunct
     }
     const report = await importLeadsFromCsv(req.file.buffer);
     res.json(report);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function enrichHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const result = await enrichLead(id);
+    res.json(result);
   } catch (e) {
     next(e);
   }

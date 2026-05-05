@@ -88,3 +88,27 @@ export function useImportLeads() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   });
 }
+
+export type EnrichmentStatus =
+  | 'phone_found'
+  | 'phone_not_in_brasilapi'
+  | 'cnpj_not_found'
+  | 'cnpj_inactive'
+  | 'api_error';
+
+export interface EnrichmentResult {
+  status: EnrichmentStatus;
+  lead?: PublicLead;
+  phoneFound?: string;
+  errorMessage?: string;
+  source: 'brasilapi';
+}
+
+export function useEnrichLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<EnrichmentResult>(`/leads/${id}/enrich`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+  });
+}

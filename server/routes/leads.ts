@@ -6,6 +6,7 @@ import {
   updateHandler,
   deleteHandler,
   importHandler,
+  enrichHandler,
 } from '../controllers/leadsController';
 import { authGuard } from '../middleware/authGuard';
 import { multerCsv } from '../middleware/multerCsv';
@@ -16,6 +17,7 @@ router.get('/', authGuard, listHandler);
 router.post('/', authGuard, createHandler);
 router.patch('/:id', authGuard, updateHandler);
 router.delete('/:id', authGuard, deleteHandler);
+router.post('/:id/enrich', authGuard, enrichHandler);
 router.post(
   '/import',
   (req: Request, res: Response, next: NextFunction) => {
