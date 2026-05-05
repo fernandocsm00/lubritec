@@ -125,7 +125,7 @@ export default function Login() {
           </div>
 
           <h2 className="text-[26px] font-bold tracking-tight text-lc-ink m-0 mb-1.5">
-            Conectando pessoas, acelerando negócios
+            Bem-vindo(a) de volta!
           </h2>
           <p className="text-sm text-muted-foreground m-0 mb-6">
             Entre com seu e-mail corporativo @lubritec.com.br

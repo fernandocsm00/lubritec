@@ -4,6 +4,11 @@ import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES } from '../../shared/type
 import { createLead, listLeads, updateLead, deleteLead } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
+import {
+  startBulkEnrichment,
+  getCurrentJob,
+  cancelCurrentJob,
+} from '../services/enrichmentJobs';
 
 const phoneInput = z
   .string()
@@ -121,4 +126,25 @@ export async function enrichHandler(req: Request, res: Response, next: NextFunct
   } catch (e) {
     next(e);
   }
+}
+
+export async function bulkEnrichStartHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const job = await startBulkEnrichment(req.user!.userId);
+    res.json(job);
+  } catch (e) { next(e); }
+}
+
+export async function bulkEnrichGetHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const job = await getCurrentJob();
+    res.json({ job });
+  } catch (e) { next(e); }
+}
+
+export async function bulkEnrichCancelHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const job = await cancelCurrentJob();
+    res.json({ job });
+  } catch (e) { next(e); }
 }

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createApp } from './app';
 import { startDispatcher } from './services/campaignsDispatcher';
+import { startEnrichmentWorker } from './services/enrichmentWorker';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -36,6 +37,9 @@ async function start() {
 
   startDispatcher();
   console.log('[campaigns] dispatcher started (tick every 60s)');
+
+  startEnrichmentWorker();
+  console.log('[enrichment] worker started (tick every 21s — BrasilAPI rate limit)');
 }
 
 start().catch((err) => {

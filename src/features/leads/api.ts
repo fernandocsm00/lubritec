@@ -113,3 +113,39 @@ export function useEnrichLead() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   });
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Bulk enrichment job (Sprint 6.1)
+// ────────────────────────────────────────────────────────────────────────────
+
+import type { PublicEnrichmentJob } from '@shared/types';
+
+const BULK_KEY = ['leads', 'enrich-bulk'] as const;
+
+export function useBulkEnrichmentJob(opts: { enabled: boolean; pollMs?: number }) {
+  return useQuery({
+    queryKey: BULK_KEY,
+    queryFn: () => api<{ job: PublicEnrichmentJob | null }>('/leads/enrich-bulk'),
+    enabled: opts.enabled,
+    refetchInterval: opts.enabled ? (opts.pollMs ?? 3_000) : false,
+  });
+}
+
+export function useStartBulkEnrichment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<PublicEnrichmentJob>('/leads/enrich-bulk', { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: BULK_KEY });
+      qc.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+export function useCancelBulkEnrichment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ job: PublicEnrichmentJob | null }>('/leads/enrich-bulk/cancel', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BULK_KEY }),
+  });
+}

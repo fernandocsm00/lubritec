@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Upload } from 'lucide-react';
+import { Plus, Upload, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LeadFilters } from '@/features/leads/LeadFilters';
 import { LeadsTable } from '@/features/leads/LeadsTable';
 import { LeadDialog } from '@/features/leads/LeadDialog';
 import { ImportCsvDialog } from '@/features/leads/ImportCsvDialog';
+import { BulkEnrichmentDialog } from '@/features/leads/BulkEnrichmentDialog';
 import { useLeads, type ListParams } from '@/features/leads/api';
+import { useAuthStore } from '@/features/auth/store';
 import { LEAD_FLOW_STAGES, type LeadStatus, type LeadSource, type LeadFlowStage } from '@shared/types';
 
 function useDebounced<T>(value: T, ms = 300): T {
@@ -36,6 +38,7 @@ export default function CadastrosPage() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
 
   const debouncedQ = useDebounced(q, 300);
 
@@ -80,6 +83,16 @@ export default function CadastrosPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Cadastros</h1>
         <div className="flex gap-2">
+          {isAdmin && (
+            <BulkEnrichmentDialog
+              trigger={
+                <Button variant="outline">
+                  <Search className="h-4 w-4 mr-2" />
+                  Enriquecer incompletos
+                </Button>
+              }
+            />
+          )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Importar CSV

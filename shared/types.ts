@@ -526,6 +526,29 @@ export interface DashboardWhatsappStats {
 }
 
 // ---------------------------------------------------------------------------
+// Bulk enrichment job (Sprint 6.1)
+// ---------------------------------------------------------------------------
+
+export type EnrichmentJobStatus = 'pending' | 'running' | 'completed' | 'cancelled';
+
+export interface PublicEnrichmentJob {
+  id: string;
+  status: EnrichmentJobStatus;
+  totalLeads: number;
+  processedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  pendingCount: number;
+  pctComplete: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  lastError: string | null;
+  estimatedRemainingMinutes: number | null;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Macro funnel (Sprint 5) — visão de cada etapa do flow_stage no período
 // ---------------------------------------------------------------------------
 

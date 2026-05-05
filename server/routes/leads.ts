@@ -7,13 +7,21 @@ import {
   deleteHandler,
   importHandler,
   enrichHandler,
+  bulkEnrichStartHandler,
+  bulkEnrichGetHandler,
+  bulkEnrichCancelHandler,
 } from '../controllers/leadsController';
 import { authGuard } from '../middleware/authGuard';
+import { requireRole } from '../middleware/requireRole';
 import { multerCsv } from '../middleware/multerCsv';
 
 const router = Router();
 
 router.get('/', authGuard, listHandler);
+// Bulk enrichment routes — vêm ANTES de /:id pra não conflitar.
+router.get('/enrich-bulk', authGuard, requireRole('admin'), bulkEnrichGetHandler);
+router.post('/enrich-bulk', authGuard, requireRole('admin'), bulkEnrichStartHandler);
+router.post('/enrich-bulk/cancel', authGuard, requireRole('admin'), bulkEnrichCancelHandler);
 router.post('/', authGuard, createHandler);
 router.patch('/:id', authGuard, updateHandler);
 router.delete('/:id', authGuard, deleteHandler);

@@ -250,6 +250,37 @@ export type NewCampaign = typeof campaigns.$inferInsert;
 export type CampaignRecipient = typeof campaignRecipients.$inferSelect;
 export type NewCampaignRecipient = typeof campaignRecipients.$inferInsert;
 
+// ── Enrichment jobs (Sprint 6.1) ─────────────────────────────────
+export const enrichmentJobs = pgTable('enrichment_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  status: text('status').notNull().default('pending'), // pending|running|completed|cancelled
+  totalLeads: integer('total_leads').notNull(),
+  processedCount: integer('processed_count').notNull().default(0),
+  succeededCount: integer('succeeded_count').notNull().default(0),
+  failedCount: integer('failed_count').notNull().default(0),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const enrichmentJobLeads = pgTable('enrichment_job_leads', {
+  jobId: uuid('job_id').notNull().references(() => enrichmentJobs.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'), // pending|succeeded|failed
+  resultStatus: text('result_status'),
+  phoneFound: text('phone_found'),
+  errorMessage: text('error_message'),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+});
+
+export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
+export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
+export type EnrichmentJobLead = typeof enrichmentJobLeads.$inferSelect;
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
