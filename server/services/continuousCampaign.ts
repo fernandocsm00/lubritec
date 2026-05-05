@@ -1,8 +1,8 @@
 import { db } from '../db/client';
-import { campaigns, campaignRecipients, leads, type Campaign, type CampaignMessageVariant } from '../db/schema';
+import { campaigns, campaignRecipients, leads, messages, type Campaign, type CampaignMessageVariant } from '../db/schema';
 import { and, eq, sql, count } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicContinuousCampaign, UpsertContinuousCampaignInput } from '@shared/types';
+import type { PublicContinuousCampaign, UpsertContinuousCampaignInput, VariantStat } from '@shared/types';
 import { loadOrgSettingsRow } from './orgSettingsService';
 
 const CONTINUOUS_NAME_DEFAULT = 'Disparo automático contínuo';
@@ -68,6 +68,8 @@ async function buildPublic(row: Campaign): Promise<PublicContinuousCampaign> {
     .from(campaignRecipients)
     .where(eq(campaignRecipients.campaignId, row.id));
 
+  const variantStats = await getVariantStats(row.id);
+
   return {
     id: row.id,
     name: row.name,
@@ -79,9 +81,70 @@ async function buildPublic(row: Campaign): Promise<PublicContinuousCampaign> {
     sentCount: row.sentCount,
     failedCount: row.failedCount,
     pendingCount: Number(pendingRow?.n ?? 0),
+    variantStats,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Métricas A/B por variante. Lê o `variantBody` que o dispatcher gravou em
+ * raw_payload no momento do envio, agrupa, e calcula reply/qualify rate
+ * com subqueries EXISTS.
+ */
+export async function getVariantStats(campaignId: string): Promise<VariantStat[]> {
+  // Carrega definição das variantes pra mapear body → name (display).
+  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+  if (!campaign) return [];
+  const definedVariants = (campaign.messageVariants ?? []) as CampaignMessageVariant[];
+  const nameByBody = new Map(definedVariants.map((v) => [v.body, v.name ?? null]));
+
+  const rows = await db.execute<{
+    variant_body: string;
+    sent_count: number;
+    replied_count: number;
+    qualified_count: number;
+  }>(sql`
+    SELECT
+      coalesce(m.raw_payload->>'variantBody', ${campaign.messageBody}) as variant_body,
+      count(r.id)::int as sent_count,
+      count(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM ${messages} m2
+        WHERE m2.conversation_id = r.conversation_id
+          AND m2.direction = 'in'
+          AND m2.sent_at > r.sent_at
+      ))::int as replied_count,
+      count(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM ${leads} l
+        WHERE l.id = r.lead_id
+          AND l.flow_stage IN ('qualified', 'handed_off')
+      ))::int as qualified_count
+    FROM ${campaignRecipients} r
+    JOIN ${messages} m ON m.id = r.message_id
+    WHERE r.campaign_id = ${campaignId}
+      AND r.status = 'sent'
+    GROUP BY variant_body
+    ORDER BY sent_count DESC
+  `);
+
+  const list = (rows as { rows?: typeof rows } | typeof rows);
+  // drizzle's db.execute returns either { rows } (pg-style) or array. Normalize.
+  const arr = Array.isArray(list) ? list : (list as { rows: typeof rows }).rows ?? [];
+
+  return (arr as Array<{ variant_body: string; sent_count: number; replied_count: number; qualified_count: number }>).map((r) => {
+    const sent = Number(r.sent_count);
+    const replied = Number(r.replied_count);
+    const qualified = Number(r.qualified_count);
+    return {
+      variantBody: r.variant_body,
+      variantName: nameByBody.get(r.variant_body) ?? null,
+      sentCount: sent,
+      repliedCount: replied,
+      qualifiedCount: qualified,
+      replyRate: sent === 0 ? 0 : Math.round((replied / sent) * 1000) / 10,
+      qualifyRate: sent === 0 ? 0 : Math.round((qualified / sent) * 1000) / 10,
+    };
+  });
 }
 
 export async function getContinuousCampaign(): Promise<PublicContinuousCampaign | null> {

@@ -410,8 +410,19 @@ export interface PublicContinuousCampaign {
   sentCount: number;
   failedCount: number;
   pendingCount: number;
+  variantStats: VariantStat[];               // métricas A/B (vazio se sem variantes ou sem envios)
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VariantStat {
+  variantBody: string;             // o body identifica a variante (mesmo que nameless)
+  variantName: string | null;      // nome da variante quando definido em messageVariants
+  sentCount: number;               // quantas vezes essa variante foi enviada
+  repliedCount: number;            // quantos receptores responderam (inbound após o sent_at)
+  qualifiedCount: number;          // quantos leads viraram qualified/handed_off
+  replyRate: number;               // % repliedCount / sentCount
+  qualifyRate: number;             // % qualifiedCount / sentCount
 }
 
 export interface UpsertContinuousCampaignInput {

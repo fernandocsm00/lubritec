@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Zap, Pause, Play } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Zap, Pause, Play, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -220,6 +220,57 @@ export default function ContinuousCampaignPage() {
             </div>
           )}
         </div>
+
+        {/* Variant stats (A/B) */}
+        {campaign && campaign.variantStats.length > 0 && (
+          <div className="rounded-lg border border-border bg-card p-6 space-y-3">
+            <div className="text-sm font-semibold border-b pb-2 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" /> Performance por variante (A/B)
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-muted-foreground border-b border-border">
+                  <th className="text-left py-1.5 font-medium">Variante</th>
+                  <th className="text-right py-1.5 font-medium">Enviadas</th>
+                  <th className="text-right py-1.5 font-medium">Responderam</th>
+                  <th className="text-right py-1.5 font-medium">Qualificadas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {campaign.variantStats.map((v, i) => {
+                  const isBest = i === 0
+                    && campaign.variantStats.length > 1
+                    && v.qualifyRate >= Math.max(...campaign.variantStats.map((x) => x.qualifyRate));
+                  return (
+                    <tr key={i} className="border-b border-border/40 last:border-0">
+                      <td className="py-2 align-top">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium">{v.variantName ?? `Variante ${String.fromCharCode(65 + i)}`}</span>
+                          {isBest && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded dark:bg-emerald-950/40 dark:text-emerald-300">★ MELHOR</span>}
+                        </div>
+                        <p className="text-muted-foreground text-[11px] mt-0.5 line-clamp-2 max-w-md">
+                          {v.variantBody.length > 120 ? `${v.variantBody.slice(0, 120)}…` : v.variantBody}
+                        </p>
+                      </td>
+                      <td className="text-right tabular-nums font-mono py-2 align-top">{v.sentCount}</td>
+                      <td className="text-right tabular-nums font-mono py-2 align-top">
+                        {v.repliedCount}
+                        <span className="ml-1 text-[10px] text-muted-foreground">{v.replyRate.toFixed(1)}%</span>
+                      </td>
+                      <td className="text-right tabular-nums font-mono py-2 align-top">
+                        {v.qualifiedCount}
+                        <span className="ml-1 text-[10px] text-muted-foreground">{v.qualifyRate.toFixed(1)}%</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="text-[11px] text-muted-foreground">
+              Métricas baseadas nos disparos efetivamente enviados. "Responderam" conta inbound após o envio. "Qualificadas" conta leads que viraram <code>qualified</code> ou <code>handed_off</code>.
+            </p>
+          </div>
+        )}
 
         {/* Rate */}
         <div className="rounded-lg border border-border bg-card p-6 space-y-3">
