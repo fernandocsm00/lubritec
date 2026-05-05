@@ -87,8 +87,10 @@ export async function updateLead(input: {
   name?: string;
   email?: string | null;
   notes?: string | null;
-  // source and cnpj are intentionally immutable after creation
   status?: LeadStatus;
+  // CNPJ é editável APENAS se o lead ainda não tem CNPJ (caso de leads criados
+  // automaticamente via WhatsApp inbound). Uma vez setado, vira imutável.
+  cnpj?: string;
 }): Promise<PublicLead> {
   const { id, ...rest } = input;
   const patch: Partial<NewLead> = { updatedAt: new Date() };
@@ -96,9 +98,31 @@ export async function updateLead(input: {
   if (rest.email !== undefined) patch.email = rest.email;
   if (rest.notes !== undefined) patch.notes = rest.notes;
   if (rest.status !== undefined) patch.status = rest.status;
-  const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
-  if (!row) throw new HttpError(404, 'Lead not found');
-  return toPublic({ ...row, hasDeal: false });
+
+  if (rest.cnpj !== undefined) {
+    const [current] = await db.select({ cnpj: leads.cnpj }).from(leads).where(eq(leads.id, id)).limit(1);
+    if (!current) throw new HttpError(404, 'Lead not found');
+    if (current.cnpj && current.cnpj.length > 0) {
+      throw new HttpError(400, 'CNPJ cannot be edited');
+    }
+    const cnpj = normalizeCnpj(rest.cnpj);
+    if (!isValidCnpjFormat(cnpj)) throw new HttpError(400, 'CNPJ inválido');
+    const [dup] = await db.select({ id: leads.id }).from(leads).where(eq(leads.cnpj, cnpj)).limit(1);
+    if (dup && dup.id !== id) throw new HttpError(409, 'CNPJ já cadastrado');
+    patch.cnpj = cnpj;
+  }
+
+  try {
+    const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
+    if (!row) throw new HttpError(404, 'Lead not found');
+    return toPublic({ ...row, hasDeal: false });
+  } catch (err) {
+    const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string; constraint?: string };
+    if (pgErr?.code === '23505' && (pgErr.constraint === undefined || pgErr.constraint.includes('cnpj'))) {
+      throw new HttpError(409, 'CNPJ já cadastrado');
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -59,6 +59,7 @@ export function useUpdateLead() {
       email?: string | null;
       notes?: string | null;
       status?: LeadStatus;
+      cnpj?: string;
     }) => {
       const { id, ...body } = input;
       return api<PublicLead>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) });

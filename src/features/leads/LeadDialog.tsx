@@ -63,6 +63,9 @@ export function LeadDialog({
   const create = useCreateLead();
   const update = useUpdateLead();
   const isEdit = lead !== null;
+  // Lead criado via WhatsApp inbound vem sem CNPJ. Liberamos a edição nesses
+  // casos. Uma vez setado, vira imutável (regra do backend).
+  const cnpjEditable = !isEdit || !lead?.cnpj;
 
   const form = useForm<FormData>({
     resolver: zodResolver(baseSchema),
@@ -108,7 +111,13 @@ export function LeadDialog({
     };
     try {
       if (isEdit && lead) {
-        await update.mutateAsync({ id: lead.id, ...payload, status: values.status });
+        await update.mutateAsync({
+          id: lead.id,
+          ...payload,
+          status: values.status,
+          // Só envia CNPJ no update se for editável (lead sem CNPJ atual).
+          ...(cnpjEditable ? { cnpj: cnpjDigits(values.cnpj) } : {}),
+        });
         toast.success('Lead atualizado.');
       } else {
         await create.mutateAsync({
@@ -153,10 +162,15 @@ export function LeadDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>CNPJ *</FormLabel>
-                    <FormControl><Input {...field} disabled={isEdit} placeholder="00.000.000/0000-00" /></FormControl>
-                    {isEdit && (
+                    <FormControl><Input {...field} disabled={!cnpjEditable} placeholder="00.000.000/0000-00" /></FormControl>
+                    {!cnpjEditable && (
                       <p className="text-xs text-muted-foreground">
-                        CNPJ não pode ser alterado.
+                        CNPJ não pode ser alterado depois de salvo.
+                      </p>
+                    )}
+                    {isEdit && cnpjEditable && (
+                      <p className="text-xs text-muted-foreground">
+                        Lead criado via WhatsApp — informe o CNPJ para concluir o cadastro.
                       </p>
                     )}
                     <FormMessage />

@@ -28,14 +28,27 @@ export async function ingestInbound(
   await db.transaction(async (tx) => {
     // 1. Match ou cria lead. Em caso de race (UNIQUE violation), refaz a query.
     let leadId: string;
-    const found = await tx.select({ id: leads.id }).from(leads).where(eq(leads.phone, phone)).limit(1);
+    const found = await tx.select({ id: leads.id, name: leads.name }).from(leads).where(eq(leads.phone, phone)).limit(1);
     if (found.length) {
       leadId = found[0].id;
+      // Se o nome atual é o telefone (auto-gerado) e agora temos contactName real,
+      // promove pra nome de verdade. Não sobrescreve nome customizado pelo usuário.
+      if (m.contactName && found[0].name === phone) {
+        await tx
+          .update(leads)
+          .set({ name: m.contactName, updatedAt: new Date() })
+          .where(eq(leads.id, leadId));
+      }
     } else {
       try {
         const [created] = await tx
           .insert(leads)
-          .values({ name: phone, phone, source: 'whatsapp', status: 'frio' })
+          .values({
+            name: m.contactName ?? phone,
+            phone,
+            source: 'whatsapp',
+            status: 'frio',
+          })
           .returning({ id: leads.id });
         leadId = created.id;
       } catch (err) {

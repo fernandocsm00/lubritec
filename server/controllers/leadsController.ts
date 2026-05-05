@@ -35,6 +35,9 @@ const updateSchema = z
   .object({
     ...editableCoreUpdate,
     status: z.enum(LEAD_STATUSES).optional(),
+    // CNPJ é editável no payload, mas o service só permite quando o lead atual
+    // ainda não tem CNPJ (caso de leads criados via WhatsApp inbound).
+    cnpj: cnpjInput.optional(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field required' });
@@ -77,9 +80,7 @@ export async function updateHandler(req: Request, res: Response, next: NextFunct
       if ('phone' in req.body) {
         return res.status(400).json({ error: 'Phone cannot be edited' });
       }
-      if ('cnpj' in req.body) {
-        return res.status(400).json({ error: 'CNPJ cannot be edited' });
-      }
+      // CNPJ pode vir no payload — o service decide se aceita (só quando atual é null).
     }
     const { id } = idParams.parse(req.params);
     const body = updateSchema.parse(req.body);

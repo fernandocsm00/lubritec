@@ -23,6 +23,7 @@ export type UazapiInbound = z.infer<typeof uazapiInboundSchema>;
 export interface InboundMessage {
   id: string;
   from: string;
+  contactName: string | null;
   text: string | null;
   kind: MessageKind;
   mediaUrl: string | null;
@@ -166,9 +167,20 @@ export function extractInbound(payload: UazapiInbound): InboundMessage | null {
     msg.timestamp ?? msg.t ?? msg.messageTimestamp ?? payload.timestamp,
   );
 
+  // Nome do contato no WhatsApp. Aceita variantes pushName/senderName/notify.
+  // Filtra valores inválidos (só símbolos, muito curtos) que vêm de chats sem
+  // nome cadastrado — nesses casos volta o telefone como fallback no service.
+  const rawContactName =
+    pickString(msg, ['pushName', 'senderName', 'notify', 'pushname']) ??
+    pickString(asObj(payload.chat), ['name', 'wa_name', 'pushname']);
+  const isValidName = !!rawContactName
+    && rawContactName.length > 1
+    && /[a-zA-Z0-9À-ɏ]/.test(rawContactName);
+
   return {
     id,
     from,
+    contactName: isValidName ? rawContactName : null,
     text: kind === 'text' ? text : null,
     kind,
     mediaUrl: kind === 'text' ? null : mediaUrl,

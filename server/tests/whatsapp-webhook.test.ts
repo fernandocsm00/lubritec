@@ -271,4 +271,70 @@ describe('POST /api/whatsapp/webhook', () => {
       .send({ EventType: 'presence', status: 'available' });
     expect(res.status).toBe(200);
   });
+
+  it('usa pushName do WhatsApp como nome do lead quando criando lead novo', async () => {
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-PUSHNAME-001',
+          sender: '5511988887777@s.whatsapp.net',
+          pushName: 'João da Silva',
+          messageType: 'conversation',
+          text: 'oi',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    expect(res.status).toBe(200);
+    const [lead] = await db.select().from(leads).where(eq(leads.phone, '5511988887777'));
+    expect(lead).toBeDefined();
+    expect(lead.name).toBe('João da Silva');
+  });
+
+  it('promove nome de lead existente quando estava como telefone e chega pushName real', async () => {
+    // Lead pré-existente com nome = phone (criado em msg anterior sem pushName)
+    await createLead({ phone: '5511977776666', name: '5511977776666' });
+
+    await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-PROMOTE-001',
+          sender: '5511977776666@s.whatsapp.net',
+          pushName: 'Maria Santos',
+          messageType: 'conversation',
+          text: 'voltei',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+
+    const [lead] = await db.select().from(leads).where(eq(leads.phone, '5511977776666'));
+    expect(lead.name).toBe('Maria Santos');
+  });
+
+  it('NÃO sobrescreve nome customizado quando chega pushName diferente', async () => {
+    await createLead({ phone: '5511966665555', name: 'Cliente Importante (custom)' });
+
+    await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-NOOVERWRITE-001',
+          sender: '5511966665555@s.whatsapp.net',
+          pushName: 'Outro Nome',
+          messageType: 'conversation',
+          text: 'oi',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+
+    const [lead] = await db.select().from(leads).where(eq(leads.phone, '5511966665555'));
+    expect(lead.name).toBe('Cliente Importante (custom)');
+  });
 });
