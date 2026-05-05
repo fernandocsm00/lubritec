@@ -8,8 +8,30 @@ import {
   Handshake,
   AlertTriangle,
   XCircle,
+  Clock,
 } from 'lucide-react';
-import type { DashboardMacroFunnel, MacroFunnelStage } from '@shared/types';
+import type { DashboardMacroFunnel, MacroFunnelStage, LeadFlowStage } from '@shared/types';
+
+const STAGE_LABEL_PT: Record<LeadFlowStage, string> = {
+  incomplete: 'Incompleto',
+  complete: 'Completo',
+  dispatched: 'Disparado',
+  engaged: 'Respondeu',
+  qualified: 'Qualificado',
+  handed_off: 'No comercial',
+  lost: 'Perdido',
+};
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = seconds / 60;
+  if (minutes < 60) return `${Math.round(minutes)}min`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(1)}h`;
+  const days = hours / 24;
+  if (days < 7) return `${days.toFixed(1)}d`;
+  return `${(days / 7).toFixed(1)}sem`;
+}
 
 interface StageRow {
   key: string;
@@ -124,6 +146,27 @@ export function MacroFunnel({ data }: { data: DashboardMacroFunnel }) {
           );
         })}
       </ul>
+
+      {/* Tempo médio em cada etapa */}
+      {data.avgDurationByStage.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <h4 className="text-[10px] uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1">
+            <Clock className="h-3 w-3" /> Tempo médio em cada etapa
+          </h4>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 text-xs">
+            {data.avgDurationByStage.map((d) => (
+              <div key={d.stage} className="rounded border border-border bg-muted/20 px-2 py-1.5">
+                <div className="text-[10px] text-muted-foreground uppercase">{STAGE_LABEL_PT[d.stage] ?? d.stage}</div>
+                <div className="font-mono font-semibold">{formatDuration(d.avgSeconds)}</div>
+                <div className="text-[10px] text-muted-foreground">{d.transitionCount} amostras</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5">
+            Quanto tempo o lead "fica" em cada etapa antes de transicionar pra próxima.
+          </p>
+        </div>
+      )}
 
       {/* Sidelines (sem conversão) */}
       {(data.sidelines.incomplete.count > 0 || data.sidelines.lost.count > 0) && (

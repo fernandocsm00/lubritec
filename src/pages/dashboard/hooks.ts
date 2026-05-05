@@ -31,10 +31,16 @@ export function useDashboardWhatsapp(enabled: boolean) {
   });
 }
 
-export function useDashboardMacroFunnel(period: DashboardPeriod, enabled: boolean) {
+export interface MacroFunnelQueryArgs {
+  period?: DashboardPeriod;
+  from?: string;  // ISO datetime
+  to?: string;    // ISO datetime
+}
+
+export function useDashboardMacroFunnel(args: MacroFunnelQueryArgs, enabled: boolean) {
   return useQuery({
-    queryKey: ['dashboard', 'macro-funnel', period],
-    queryFn: () => fetchMacroFunnel(period),
+    queryKey: ['dashboard', 'macro-funnel', args.from && args.to ? `${args.from}|${args.to}` : (args.period ?? '30d')],
+    queryFn: () => fetchMacroFunnel(args),
     staleTime: 60_000,
     refetchInterval: 60_000,
     enabled,

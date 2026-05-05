@@ -611,4 +611,11 @@ export interface DashboardMacroFunnel {
     incomplete: MacroFunnelStage;   // travados sem telefone
     lost: MacroFunnelStage;         // encerrados sem conversão
   };
+  // Tempo médio que cada etapa "segurou" o lead antes da próxima transição
+  // (apenas leads do período). Sprint 6.4.
+  avgDurationByStage: Array<{
+    stage: LeadFlowStage;
+    avgSeconds: number;
+    transitionCount: number;        // quantas amostras geraram essa média
+  }>;
 }

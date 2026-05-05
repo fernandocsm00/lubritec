@@ -11,9 +11,20 @@ const attentionQuery = z.object({
   view: z.enum(['org', 'me']),
 });
 
-const macroFunnelQuery = z.object({
-  period: z.enum(['today', '7d', 'month', '30d', 'quarter']),
-});
+const macroFunnelQuery = z
+  .object({
+    period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+  })
+  .refine(
+    (d) => !!d.period || (!!d.from && !!d.to),
+    { message: 'Forneça period OU from+to' },
+  )
+  .refine(
+    (d) => !d.from || !d.to || new Date(d.from) < new Date(d.to),
+    { message: 'from precisa ser antes de to' },
+  );
 
 export async function summaryHandler(req: Request, res: Response, next: NextFunction) {
   try {
@@ -48,6 +59,10 @@ export async function macroFunnelHandler(req: Request, res: Response, next: Next
     if (req.user!.role !== 'admin') {
       return res.status(403).json({ error: 'admin only' });
     }
-    res.json(await macroFunnel({ period: q.period }));
+    res.json(await macroFunnel({
+      period: q.period,
+      rangeStart: q.from ? new Date(q.from) : undefined,
+      rangeEnd: q.to ? new Date(q.to) : undefined,
+    }));
   } catch (e) { next(e); }
 }

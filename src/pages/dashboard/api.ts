@@ -20,6 +20,13 @@ export function fetchWhatsapp() {
   return api<DashboardWhatsappStats>('/dashboard/whatsapp');
 }
 
-export function fetchMacroFunnel(period: DashboardPeriod) {
-  return api<DashboardMacroFunnel>(`/dashboard/macro-funnel?period=${period}`);
+export function fetchMacroFunnel(args: { period?: DashboardPeriod; from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (args.from && args.to) {
+    params.set('from', args.from);
+    params.set('to', args.to);
+  } else {
+    params.set('period', args.period ?? '30d');
+  }
+  return api<DashboardMacroFunnel>(`/dashboard/macro-funnel?${params.toString()}`);
 }

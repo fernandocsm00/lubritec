@@ -324,25 +324,39 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
 }
 
 // ---------------------------------------------------------------------------
-// Macro funnel (Sprint 5) — visão do fluxo end-to-end por flow_stage
+// Macro funnel (Sprint 5 + 6.4) — visão do fluxo end-to-end por flow_stage,
+// agora com date range customizado e tempo médio em cada etapa.
 // ---------------------------------------------------------------------------
 
-import type { DashboardMacroFunnel } from '../../shared/types';
+import type { DashboardMacroFunnel, LeadFlowStage } from '../../shared/types';
+import { leadStageTransitions } from '../db/schema';
 
-/**
- * Conta leads criados no período agrupando por flow_stage cumulativo.
- * Cada bucket inclui os stages "iguais ou mais avançados" — assim "completo"
- * inclui também leads que já avançaram pra dispatched/engaged/qualified/handed_off.
- *
- * `lost` é tratado como sideline (terminal sem ter convertido), contado à parte.
- */
-export async function macroFunnel(args: {
-  period: PeriodKey;
+interface MacroFunnelArgs {
+  period?: PeriodKey;
+  // Alternativa: range explícito ISO (precedência sobre period quando provided)
+  rangeStart?: Date;
+  rangeEnd?: Date;
   now?: Date;
-}): Promise<DashboardMacroFunnel> {
-  const { start, end, label } = resolvePeriod(args.period, args.now);
+}
 
-  // Uma única query com counts condicionais — mais barato que 7 round-trips.
+export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacroFunnel> {
+  // Aceita period OU range customizado.
+  let start: Date;
+  let end: Date;
+  let label: string;
+
+  if (args.rangeStart && args.rangeEnd) {
+    start = args.rangeStart;
+    end = args.rangeEnd;
+    label = `${start.toLocaleDateString('pt-BR')} – ${end.toLocaleDateString('pt-BR')}`;
+  } else {
+    const period = resolvePeriod(args.period ?? '30d', args.now);
+    start = period.start;
+    end = period.end;
+    label = period.label;
+  }
+
+  // Counts cumulativos por stage — uma query.
   const [row] = await db
     .select({
       total: sql<number>`count(*)::int`,
@@ -356,6 +370,38 @@ export async function macroFunnel(args: {
     })
     .from(leads)
     .where(and(gte(leads.createdAt, start), lt(leads.createdAt, end)));
+
+  // Tempo médio em cada etapa — janela LEAD por lead, computa diff até a próxima
+  // transição. Cohort restrita aos leads criados no mesmo período.
+  const durationRows = await db.execute<{
+    stage: string;
+    avg_seconds: string | number;
+    transition_count: string | number;
+  }>(sql`
+    WITH ranked AS (
+      SELECT
+        t.lead_id,
+        t.to_stage,
+        t.changed_at,
+        LEAD(t.changed_at) OVER (PARTITION BY t.lead_id ORDER BY t.changed_at) as next_changed_at
+      FROM ${leadStageTransitions} t
+      JOIN ${leads} l ON l.id = t.lead_id
+      WHERE l.created_at >= ${start} AND l.created_at < ${end}
+    )
+    SELECT
+      to_stage as stage,
+      AVG(EXTRACT(EPOCH FROM (next_changed_at - changed_at))) as avg_seconds,
+      COUNT(*) as transition_count
+    FROM ranked
+    WHERE next_changed_at IS NOT NULL
+    GROUP BY to_stage
+  `);
+
+  // db.execute retorna { rows: [...] } com pg driver. Em alguns paths drizzle
+  // devolve array direto. Cobrimos os dois.
+  type DurRow = { stage: string; avg_seconds: string | number; transition_count: string | number };
+  const durRaw = durationRows as unknown as DurRow[] | { rows?: DurRow[] };
+  const durArr: DurRow[] = Array.isArray(durRaw) ? durRaw : (durRaw.rows ?? []);
 
   const total = row.total;
   const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 1000) / 10);
@@ -377,6 +423,13 @@ export async function macroFunnel(args: {
       incomplete: { count: row.incomplete, pctOfTotal: pct(row.incomplete) },
       lost:       { count: row.lost,       pctOfTotal: pct(row.lost) },
     },
+    avgDurationByStage: durArr
+      .map((d) => ({
+        stage: d.stage as LeadFlowStage,
+        avgSeconds: Math.round(Number(d.avg_seconds)),
+        transitionCount: Number(d.transition_count),
+      }))
+      .sort((a, b) => a.stage.localeCompare(b.stage)),
   };
 }
 

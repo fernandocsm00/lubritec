@@ -121,4 +121,82 @@ describe('GET /api/dashboard/macro-funnel', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(r.status).toBe(400);
   });
+
+  it('aceita date range customizado via from+to', async () => {
+    const { token } = await loginAs('admin');
+    const past = new Date(Date.now() - 60_000);
+    await createLead({ flowStage: 'engaged', createdAt: past });
+
+    const from = new Date(Date.now() - 7 * 86400_000).toISOString();
+    const to = new Date(Date.now() + 86400_000).toISOString();
+    const r = await request(app)
+      .get(`/api/dashboard/macro-funnel?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(200);
+    expect(r.body.stages.engaged.count).toBeGreaterThanOrEqual(1);
+    expect(r.body.period.label).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+  });
+
+  it('400 quando from > to', async () => {
+    const { token } = await loginAs('admin');
+    const from = new Date().toISOString();
+    const to = new Date(Date.now() - 86400_000).toISOString();
+    const r = await request(app)
+      .get(`/api/dashboard/macro-funnel?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(400);
+  });
+
+  it('400 quando nem period nem from+to fornecidos', async () => {
+    const { token } = await loginAs('admin');
+    const r = await request(app)
+      .get('/api/dashboard/macro-funnel')
+      .set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('avgDurationByStage', () => {
+  it('vazio quando não há transições no período', async () => {
+    const { token } = await loginAs('admin');
+    const r = await request(app)
+      .get('/api/dashboard/macro-funnel?period=today')
+      .set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(200);
+    expect(r.body.avgDurationByStage).toEqual([]);
+  });
+
+  it('computa avgSeconds entre transições do mesmo lead', async () => {
+    const { token } = await loginAs('admin');
+    const past = new Date(Date.now() - 60_000);
+    const lead = await createLead({ flowStage: 'engaged', createdAt: past });
+
+    // Insere transições manualmente: incomplete (10 min atrás) → complete (5 min atrás) → engaged (agora)
+    const tenMin = new Date(Date.now() - 10 * 60_000);
+    const fiveMin = new Date(Date.now() - 5 * 60_000);
+    const now = new Date();
+    const { db } = await import('../db/client');
+    const { leadStageTransitions } = await import('../db/schema');
+    await db.insert(leadStageTransitions).values([
+      { leadId: lead.id, fromStage: null, toStage: 'incomplete', source: 'create', changedAt: tenMin },
+      { leadId: lead.id, fromStage: 'incomplete', toStage: 'complete', source: 'enrichment', changedAt: fiveMin },
+      { leadId: lead.id, fromStage: 'complete', toStage: 'engaged', source: 'webhook_inbound', changedAt: now },
+    ]);
+
+    const r = await request(app)
+      .get('/api/dashboard/macro-funnel?period=30d')
+      .set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(200);
+    const durations = r.body.avgDurationByStage as Array<{ stage: string; avgSeconds: number; transitionCount: number }>;
+    // Esperamos 2 entries: incomplete (5min entre as 2 primeiras) e complete (5min entre 2 últimas).
+    // engaged não tem next_changed_at, então não entra.
+    const incomplete = durations.find((d) => d.stage === 'incomplete');
+    const complete = durations.find((d) => d.stage === 'complete');
+    expect(incomplete).toBeDefined();
+    expect(complete).toBeDefined();
+    expect(incomplete!.avgSeconds).toBeGreaterThan(290); // ~300s = 5min, com tolerância
+    expect(incomplete!.avgSeconds).toBeLessThan(310);
+    expect(complete!.avgSeconds).toBeGreaterThan(290);
+    expect(complete!.avgSeconds).toBeLessThan(310);
+  });
 });

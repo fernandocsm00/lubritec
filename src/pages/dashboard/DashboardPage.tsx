@@ -28,12 +28,21 @@ export default function DashboardPage() {
 
   const [view, setView] = useState<DashboardView>(isAdmin ? 'org' : 'me');
   const [period, setPeriod] = useState<DashboardPeriod>('month');
+  // Range customizado pro macro funnel (precedência sobre o period).
+  const [funnelCustomFrom, setFunnelCustomFrom] = useState<string>('');
+  const [funnelCustomTo, setFunnelCustomTo] = useState<string>('');
+  const useCustomRange = !!funnelCustomFrom && !!funnelCustomTo;
 
   const summary   = useDashboardSummary(view, period);
   const attention = useDashboardAttention(view);
   const whatsapp  = useDashboardWhatsapp(view === 'org');
   // Macro funnel: visão organizacional do fluxo macro (admin only no backend).
-  const macroFunnel = useDashboardMacroFunnel(period, isAdmin && view === 'org');
+  const macroFunnel = useDashboardMacroFunnel(
+    useCustomRange
+      ? { from: new Date(funnelCustomFrom).toISOString(), to: new Date(funnelCustomTo).toISOString() }
+      : { period },
+    isAdmin && view === 'org',
+  );
 
   const isRefreshing = summary.isFetching || attention.isFetching || (view === 'org' && whatsapp.isFetching) || macroFunnel.isFetching;
 
@@ -93,6 +102,34 @@ export default function DashboardPage() {
       {/* FUNIL MACRO (visão completa do fluxo end-to-end — admin/org only) */}
       {isAdmin && view === 'org' && (
         <section>
+          <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs uppercase tracking-wider text-slate-500">Funil de leads</span>
+            <div className="flex items-center gap-2 text-xs">
+              <label className="text-muted-foreground">Período personalizado:</label>
+              <input
+                type="date"
+                value={funnelCustomFrom}
+                onChange={(e) => setFunnelCustomFrom(e.target.value)}
+                className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-1 text-xs"
+              />
+              <span className="text-muted-foreground">→</span>
+              <input
+                type="date"
+                value={funnelCustomTo}
+                onChange={(e) => setFunnelCustomTo(e.target.value)}
+                className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-1 text-xs"
+              />
+              {useCustomRange && (
+                <button
+                  type="button"
+                  onClick={() => { setFunnelCustomFrom(''); setFunnelCustomTo(''); }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  limpar
+                </button>
+              )}
+            </div>
+          </div>
           {macroFunnel.error ? (
             <BlockError onRetry={() => macroFunnel.refetch()} />
           ) : macroFunnel.data ? (
