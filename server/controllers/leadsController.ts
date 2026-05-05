@@ -8,6 +8,8 @@ import {
   startBulkEnrichment,
   getCurrentJob,
   cancelCurrentJob,
+  pauseCurrentJob,
+  resumeCurrentJob,
 } from '../services/enrichmentJobs';
 import { listLeadTransitions } from '../services/stageTransitions';
 
@@ -146,6 +148,20 @@ export async function bulkEnrichGetHandler(_req: Request, res: Response, next: N
 export async function bulkEnrichCancelHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const job = await cancelCurrentJob();
+    res.json({ job });
+  } catch (e) { next(e); }
+}
+
+export async function bulkEnrichPauseHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const job = await pauseCurrentJob();
+    res.json({ job });
+  } catch (e) { next(e); }
+}
+
+export async function bulkEnrichResumeHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const job = await resumeCurrentJob();
     res.json({ job });
   } catch (e) { next(e); }
 }

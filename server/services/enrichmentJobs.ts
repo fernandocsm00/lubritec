@@ -27,10 +27,11 @@ function normalizeBrasilApiPhone(raw: string): string | null {
 // ---------------------------------------------------------------------------
 
 async function loadActiveRow(): Promise<EnrichmentJob | null> {
+  // "Active" inclui paused — partial unique index garante singleton aqui também.
   const [row] = await db
     .select()
     .from(enrichmentJobs)
-    .where(inArray(enrichmentJobs.status, ['pending', 'running']))
+    .where(inArray(enrichmentJobs.status, ['pending', 'running', 'paused']))
     .limit(1);
   return row ?? null;
 }
@@ -47,9 +48,10 @@ async function loadLatestRow(): Promise<EnrichmentJob | null> {
 async function buildPublic(row: EnrichmentJob): Promise<PublicEnrichmentJob> {
   const pending = row.totalLeads - row.processedCount;
   const pct = row.totalLeads === 0 ? 100 : Math.round((row.processedCount / row.totalLeads) * 1000) / 10;
-  // Estimate: pending * 21s / 60 = minutos restantes (só faz sentido enquanto running)
+  // Estimate: pending * 21s / 60 = minutos restantes (só faz sentido enquanto running OU paused).
+  // Quando paused, mostra o tempo que VAI levar quando retomar.
   const remainingMinutes =
-    row.status === 'running' && pending > 0
+    (row.status === 'running' || row.status === 'paused') && pending > 0
       ? Math.ceil((pending * ENRICHMENT_TICK_MS) / 60_000)
       : null;
   return {
@@ -134,6 +136,34 @@ export async function cancelCurrentJob(): Promise<PublicEnrichmentJob | null> {
       cancelledAt: new Date(),
       updatedAt: new Date(),
     })
+    .where(eq(enrichmentJobs.id, active.id))
+    .returning();
+  return buildPublic(updated);
+}
+
+export async function pauseCurrentJob(): Promise<PublicEnrichmentJob | null> {
+  const active = await loadActiveRow();
+  if (!active) return null;
+  if (active.status !== 'running') {
+    throw new HttpError(400, `Job está em status '${active.status}' — não pode ser pausado`);
+  }
+  const [updated] = await db
+    .update(enrichmentJobs)
+    .set({ status: 'paused', updatedAt: new Date() })
+    .where(eq(enrichmentJobs.id, active.id))
+    .returning();
+  return buildPublic(updated);
+}
+
+export async function resumeCurrentJob(): Promise<PublicEnrichmentJob | null> {
+  const active = await loadActiveRow();
+  if (!active) return null;
+  if (active.status !== 'paused') {
+    throw new HttpError(400, `Job está em status '${active.status}' — não pode ser retomado`);
+  }
+  const [updated] = await db
+    .update(enrichmentJobs)
+    .set({ status: 'running', updatedAt: new Date() })
     .where(eq(enrichmentJobs.id, active.id))
     .returning();
   return buildPublic(updated);

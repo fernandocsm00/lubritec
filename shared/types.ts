@@ -567,7 +567,7 @@ export interface PublicLeadStageTransition {
 // Bulk enrichment job (Sprint 6.1)
 // ---------------------------------------------------------------------------
 
-export type EnrichmentJobStatus = 'pending' | 'running' | 'completed' | 'cancelled';
+export type EnrichmentJobStatus = 'pending' | 'running' | 'paused' | 'completed' | 'cancelled';
 
 export interface PublicEnrichmentJob {
   id: string;

@@ -10,6 +10,8 @@ import {
   bulkEnrichStartHandler,
   bulkEnrichGetHandler,
   bulkEnrichCancelHandler,
+  bulkEnrichPauseHandler,
+  bulkEnrichResumeHandler,
   transitionsHandler,
   markLostHandler,
 } from '../controllers/leadsController';
@@ -24,6 +26,8 @@ router.get('/', authGuard, listHandler);
 router.get('/enrich-bulk', authGuard, requireRole('admin'), bulkEnrichGetHandler);
 router.post('/enrich-bulk', authGuard, requireRole('admin'), bulkEnrichStartHandler);
 router.post('/enrich-bulk/cancel', authGuard, requireRole('admin'), bulkEnrichCancelHandler);
+router.post('/enrich-bulk/pause', authGuard, requireRole('admin'), bulkEnrichPauseHandler);
+router.post('/enrich-bulk/resume', authGuard, requireRole('admin'), bulkEnrichResumeHandler);
 router.post('/', authGuard, createHandler);
 router.patch('/:id', authGuard, updateHandler);
 router.delete('/:id', authGuard, deleteHandler);

@@ -150,6 +150,22 @@ export function useCancelBulkEnrichment() {
   });
 }
 
+export function usePauseBulkEnrichment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ job: PublicEnrichmentJob | null }>('/leads/enrich-bulk/pause', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BULK_KEY }),
+  });
+}
+
+export function useResumeBulkEnrichment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ job: PublicEnrichmentJob | null }>('/leads/enrich-bulk/resume', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BULK_KEY }),
+  });
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Lead stage transitions (Sprint 6.3)
 // ────────────────────────────────────────────────────────────────────────────

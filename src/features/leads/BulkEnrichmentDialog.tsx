@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, AlertCircle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Search, AlertCircle, CheckCircle2, XCircle, Loader2, Pause, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +24,8 @@ import {
   useBulkEnrichmentJob,
   useStartBulkEnrichment,
   useCancelBulkEnrichment,
+  usePauseBulkEnrichment,
+  useResumeBulkEnrichment,
 } from './api';
 
 export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) {
@@ -37,9 +39,13 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
   });
   const start = useStartBulkEnrichment();
   const cancel = useCancelBulkEnrichment();
+  const pause = usePauseBulkEnrichment();
+  const resume = useResumeBulkEnrichment();
 
   const job = data?.job ?? null;
-  const isActive = job && (job.status === 'running' || job.status === 'pending');
+  const isRunning = job && job.status === 'running';
+  const isPaused = job && job.status === 'paused';
+  const isActive = job && (job.status === 'running' || job.status === 'pending' || job.status === 'paused');
 
   // Notificação quando job que estava ativo agora terminou (apenas se modal estiver aberta).
   const [wasActive, setWasActive] = useState(false);
@@ -70,6 +76,24 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
       setConfirmCancelOpen(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erro ao cancelar');
+    }
+  }
+
+  async function onPause() {
+    try {
+      await pause.mutateAsync();
+      toast.info('Job pausado. Você pode retomar quando quiser.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao pausar');
+    }
+  }
+
+  async function onResume() {
+    try {
+      await resume.mutateAsync();
+      toast.success('Job retomado.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao retomar');
     }
   }
 
@@ -165,6 +189,16 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
               Atualizar
             </Button>
             <div className="flex gap-2">
+              {isRunning && (
+                <Button variant="outline" onClick={onPause} disabled={pause.isPending} className="gap-1.5">
+                  <Pause className="h-3.5 w-3.5" /> Pausar
+                </Button>
+              )}
+              {isPaused && (
+                <Button onClick={onResume} disabled={resume.isPending} className="gap-1.5">
+                  <Play className="h-3.5 w-3.5" /> Retomar
+                </Button>
+              )}
               {isActive && (
                 <Button variant="outline" onClick={() => setConfirmCancelOpen(true)} disabled={cancel.isPending}>
                   Cancelar job
@@ -204,6 +238,7 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
 function StatusBadge({ status }: { status: string }) {
   const meta: Record<string, { label: string; className: string }> = {
     running:   { label: '● EM EXECUÇÃO',  className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 animate-pulse' },
+    paused:    { label: '⏸ PAUSADO',      className: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' },
     pending:   { label: '◌ AGUARDANDO',   className: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' },
     completed: { label: '✓ CONCLUÍDO',    className: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300' },
     cancelled: { label: '× CANCELADO',    className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200' },

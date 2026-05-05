@@ -89,6 +89,51 @@ describe('cancelCurrentJob', () => {
   });
 });
 
+describe('pause/resume', () => {
+  it('pause vira paused → worker tick é no-op', async () => {
+    const { pauseCurrentJob, resumeCurrentJob } = await import('../services/enrichmentJobs');
+    const u = await createUser({ role: 'admin' });
+    await createLead({ flowStage: 'incomplete', phone: null, cnpj: '11444777000161' });
+    await startBulkEnrichment(u.id);
+
+    const paused = await pauseCurrentJob();
+    expect(paused).not.toBeNull();
+    expect(paused!.status).toBe('paused');
+
+    // Tick não deve processar nada
+    const r = await processNextEnrichment();
+    expect(r.status).toBe('no_job');
+
+    // Resume volta pra running
+    const resumed = await resumeCurrentJob();
+    expect(resumed!.status).toBe('running');
+  });
+
+  it('pause em job não-running → 400', async () => {
+    const { pauseCurrentJob } = await import('../services/enrichmentJobs');
+    await expect(pauseCurrentJob()).resolves.toBeNull(); // sem job = null
+  });
+
+  it('resume em job que não está paused → 400', async () => {
+    const { resumeCurrentJob } = await import('../services/enrichmentJobs');
+    const u = await createUser({ role: 'admin' });
+    await createLead({ flowStage: 'incomplete', phone: null });
+    await startBulkEnrichment(u.id); // status='running'
+    await expect(resumeCurrentJob()).rejects.toThrow(/não pode ser retomado/);
+  });
+
+  it('paused job ainda bloqueia start de novo (singleton index inclui paused)', async () => {
+    const { pauseCurrentJob } = await import('../services/enrichmentJobs');
+    const u = await createUser({ role: 'admin' });
+    await createLead({ flowStage: 'incomplete', phone: null });
+    await startBulkEnrichment(u.id);
+    await pauseCurrentJob();
+
+    await createLead({ flowStage: 'incomplete', phone: null });
+    await expect(startBulkEnrichment(u.id)).rejects.toThrow(/em andamento/);
+  });
+});
+
 describe('processNextEnrichment', () => {
   it('no_job quando não há job ativo', async () => {
     const r = await processNextEnrichment();
