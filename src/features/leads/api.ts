@@ -149,3 +149,18 @@ export function useCancelBulkEnrichment() {
     onSuccess: () => qc.invalidateQueries({ queryKey: BULK_KEY }),
   });
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Lead stage transitions (Sprint 6.3)
+// ────────────────────────────────────────────────────────────────────────────
+
+import type { PublicLeadStageTransition } from '@shared/types';
+
+export function useLeadTransitions(leadId: string | null) {
+  return useQuery({
+    queryKey: ['lead', leadId, 'transitions'],
+    queryFn: () => api<{ transitions: PublicLeadStageTransition[] }>(`/leads/${leadId}/transitions`),
+    enabled: !!leadId,
+    staleTime: 30_000,
+  });
+}

@@ -10,6 +10,7 @@ import {
   bulkEnrichStartHandler,
   bulkEnrichGetHandler,
   bulkEnrichCancelHandler,
+  transitionsHandler,
 } from '../controllers/leadsController';
 import { authGuard } from '../middleware/authGuard';
 import { requireRole } from '../middleware/requireRole';
@@ -26,6 +27,7 @@ router.post('/', authGuard, createHandler);
 router.patch('/:id', authGuard, updateHandler);
 router.delete('/:id', authGuard, deleteHandler);
 router.post('/:id/enrich', authGuard, enrichHandler);
+router.get('/:id/transitions', authGuard, transitionsHandler);
 router.post(
   '/import',
   (req: Request, res: Response, next: NextFunction) => {

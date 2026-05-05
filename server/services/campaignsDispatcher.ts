@@ -4,6 +4,7 @@ import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { uazapiClient } from './uazapiClient';
 import { isWithinDispatchWindow, pickVariant } from './continuousCampaign';
+import { recordTransition } from './stageTransitions';
 import type { ConversationQueue } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
@@ -152,9 +153,19 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
 
     // Promove lead.flow_stage de complete → dispatched (continuous + one-shot).
     // Só promove se ainda estiver em 'complete' — não regride stages avançados.
-    await db.update(leads)
+    const promoted = await db.update(leads)
       .set({ flowStage: 'dispatched', updatedAt: new Date() })
-      .where(and(eq(leads.id, lead.id), eq(leads.flowStage, 'complete')));
+      .where(and(eq(leads.id, lead.id), eq(leads.flowStage, 'complete')))
+      .returning({ id: leads.id });
+    if (promoted.length > 0) {
+      await recordTransition({
+        leadId: lead.id,
+        fromStage: 'complete',
+        toStage: 'dispatched',
+        source: 'campaign_dispatch',
+        metadata: { campaignId: c.id, conversationId: conv.id, isContinuous: c.isContinuous },
+      });
+    }
   } catch (err) {
     await db.update(campaignRecipients).set({
       status: 'failed',

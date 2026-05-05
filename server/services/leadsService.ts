@@ -5,6 +5,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { tryEnrollSafe } from './continuousCampaign';
+import { recordTransition } from './stageTransitions';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,6 +80,13 @@ export async function createLead(input: {
         flowStage: computeInitialStage(phone),
       })
       .returning();
+    // Audit trail: registra a transição inicial.
+    await recordTransition({
+      leadId: row.id,
+      fromStage: null,
+      toStage: row.flowStage,
+      source: 'create',
+    });
     // Lead criado com phone → enrolado automaticamente na campanha contínua.
     if (row.flowStage === 'complete') {
       await tryEnrollSafe(row.id);
@@ -161,6 +169,15 @@ export async function updateLead(input: {
   try {
     const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
     if (!row) throw new HttpError(404, 'Lead not found');
+    // Audit trail: registra mudança de stage se ocorreu (current?.flowStage carregado acima).
+    if (current && current.flowStage !== row.flowStage) {
+      await recordTransition({
+        leadId: row.id,
+        fromStage: current.flowStage as LeadFlowStage,
+        toStage: row.flowStage,
+        source: 'manual_update',
+      });
+    }
     // Se o phone foi adicionado agora, lead transicionou pra 'complete' →
     // enrola na campanha contínua.
     if (rest.phone !== undefined && row.flowStage === 'complete') {

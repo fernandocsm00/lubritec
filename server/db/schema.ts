@@ -281,6 +281,20 @@ export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
 export type EnrichmentJobLead = typeof enrichmentJobLeads.$inferSelect;
 
+// ── Lead stage transitions (Sprint 6.3) ──────────────────────────
+export const leadStageTransitions = pgTable('lead_stage_transitions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  fromStage: text('from_stage'),
+  toStage: text('to_stage').notNull(),
+  source: text('source').notNull(),
+  metadata: jsonb('metadata'),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type LeadStageTransition = typeof leadStageTransitions.$inferSelect;
+export type NewLeadStageTransition = typeof leadStageTransitions.$inferInsert;
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;

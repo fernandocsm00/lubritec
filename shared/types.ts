@@ -537,6 +537,33 @@ export interface DashboardWhatsappStats {
 }
 
 // ---------------------------------------------------------------------------
+// Lead stage transitions (Sprint 6.3) — audit trail por lead
+// ---------------------------------------------------------------------------
+
+export const TRANSITION_SOURCES = [
+  'create',            // insert inicial
+  'manual_update',     // updateLead com mudança de phone (não-IA)
+  'csv_import',        // CSV import promoveu (phone backfill)
+  'enrichment',        // enrichLead OU bulk enrichment preencheu phone
+  'webhook_inbound',   // mensagem inbound promoveu pra engaged
+  'campaign_dispatch', // dispatcher promoveu pra dispatched
+  'ai_qualification',  // IA marcou QUALIFICADO
+  'deal_created',      // deal criado promoveu pra handed_off
+  'manual_lost',       // admin marcou como perdido
+  'backfill',          // migration 019 (pré-existente)
+] as const;
+export type TransitionSource = (typeof TRANSITION_SOURCES)[number];
+
+export interface PublicLeadStageTransition {
+  id: string;
+  fromStage: LeadFlowStage | null;
+  toStage: LeadFlowStage;
+  source: TransitionSource;
+  metadata: Record<string, unknown> | null;
+  changedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Bulk enrichment job (Sprint 6.1)
 // ---------------------------------------------------------------------------
 

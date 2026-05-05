@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { useCreateLead, useUpdateLead } from './api';
 import { translateError } from './translateError';
+import { StageTimeline } from './StageTimeline';
 import { LEAD_STATUSES, type PublicLead } from '@shared/types';
 
 const cnpjDigits = (s: string) => s.replace(/\D/g, '');
@@ -253,6 +254,16 @@ export function LeadDialog({
                 </FormItem>
               )}
             />
+            {isEdit && lead && (
+              <details className="border-t pt-3 -mx-1 px-1">
+                <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
+                  Histórico de etapas do funil
+                </summary>
+                <div className="mt-3">
+                  <StageTimeline leadId={lead.id} />
+                </div>
+              </details>
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
                 Cancelar

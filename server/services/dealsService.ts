@@ -12,6 +12,7 @@ import type {
   DealStage,
   DealStageTotal,
   LossReason,
+  PublicLead,
 } from '@shared/types';
 import { DEAL_STAGES } from '@shared/types';
 
@@ -299,6 +300,13 @@ export async function createDeal(input: {
     return getDealById(existing.id);
   }
 
+  // Captura stage anterior do lead pra audit trail.
+  const [leadBefore] = await db
+    .select({ flowStage: leads.flowStage })
+    .from(leads)
+    .where(eq(leads.id, input.leadId))
+    .limit(1);
+
   const dealId = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(deals)
@@ -315,8 +323,25 @@ export async function createDeal(input: {
       actorUserId: input.source === 'auto_image' ? null : input.ownerUserId,
       metadata: { source: input.source },
     });
+    // Promove lead pra handed_off quando deal é criado (não regride 'lost').
+    await tx
+      .update(leads)
+      .set({ flowStage: 'handed_off', updatedAt: new Date() })
+      .where(and(eq(leads.id, input.leadId), sql`${leads.flowStage} <> 'lost'`));
     return created.id;
   });
+
+  // Audit trail fora do tx.
+  if (leadBefore && leadBefore.flowStage !== 'handed_off' && leadBefore.flowStage !== 'lost') {
+    const { recordTransition } = await import('./stageTransitions');
+    await recordTransition({
+      leadId: input.leadId,
+      fromStage: leadBefore.flowStage as PublicLead['flowStage'],
+      toStage: 'handed_off',
+      source: 'deal_created',
+      metadata: { dealId, source: input.source, ownerUserId: input.ownerUserId },
+    });
+  }
 
   return getDealById(dealId);
 }

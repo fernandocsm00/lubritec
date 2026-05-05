@@ -9,6 +9,7 @@ import {
   getCurrentJob,
   cancelCurrentJob,
 } from '../services/enrichmentJobs';
+import { listLeadTransitions } from '../services/stageTransitions';
 
 const phoneInput = z
   .string()
@@ -146,5 +147,13 @@ export async function bulkEnrichCancelHandler(_req: Request, res: Response, next
   try {
     const job = await cancelCurrentJob();
     res.json({ job });
+  } catch (e) { next(e); }
+}
+
+export async function transitionsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const transitions = await listLeadTransitions(id);
+    res.json({ transitions });
   } catch (e) { next(e); }
 }

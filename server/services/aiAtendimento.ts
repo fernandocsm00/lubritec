@@ -4,6 +4,7 @@ import { eq, desc } from 'drizzle-orm';
 import { generateReply, type GeminiMessage } from './geminiClient';
 import { uazapiClient } from './uazapiClient';
 import { loadOrgSettingsRow } from './orgSettingsService';
+import { recordTransition } from './stageTransitions';
 import type { OrgSettings } from '../db/schema';
 
 const MAX_HISTORY = 20;
@@ -261,6 +262,18 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
         .where(eq(leads.id, input.leadId));
     }
   });
+
+  // Audit trail fora do tx.
+  if (qualification === 'qualified') {
+    // O leadRow foi carregado antes do tx, então sabemos o stage anterior.
+    await recordTransition({
+      leadId: input.leadId,
+      fromStage: 'engaged', // assume 'engaged' já que IA só roda em queue=ia
+      toStage: 'qualified',
+      source: 'ai_qualification',
+      metadata: { conversationId: input.conversationId },
+    });
+  }
 
   return {
     status: qualification === 'qualified' ? 'qualified_and_replied' : 'replied',

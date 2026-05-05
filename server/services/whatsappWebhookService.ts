@@ -2,7 +2,8 @@ import { db } from '../db/client';
 import { conversations, messages, leads, orgSettings } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { InboundMessage } from '../lib/uazapiSchema';
-import type { ConversationQueue } from '@shared/types';
+import type { ConversationQueue, LeadFlowStage } from '@shared/types';
+import { recordTransition } from './stageTransitions';
 
 function normalizePhone(raw: string): string {
   // Remove tudo que não é dígito. Funciona pra "+55 11 9...", "5511...@s.whatsapp.net", "5511...@c.us", etc.
@@ -43,6 +44,8 @@ export async function ingestInbound(
 
   let outConversationId: string | undefined;
   let outLeadId: string | undefined;
+  // Captura mudança de stage pra registrar audit trail fora do tx.
+  let stageTransition: { from: LeadFlowStage | null; to: LeadFlowStage } | null = null;
 
   await db.transaction(async (tx) => {
     // 1. Match ou cria lead. Em caso de race (UNIQUE violation), refaz a query.
@@ -62,6 +65,7 @@ export async function ingestInbound(
       // Promove stage pra 'engaged' se ainda estiver em estágio anterior.
       if (PROMOTABLE_TO_ENGAGED.has(found[0].flowStage)) {
         updates.flowStage = 'engaged';
+        stageTransition = { from: found[0].flowStage as LeadFlowStage, to: 'engaged' };
       }
       if (Object.keys(updates).length > 0) {
         updates.updatedAt = new Date();
@@ -81,6 +85,7 @@ export async function ingestInbound(
           })
           .returning({ id: leads.id });
         leadId = created.id;
+        stageTransition = { from: null, to: 'engaged' };
       } catch (err) {
         const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
         if (pgErr?.code === '23505') {
@@ -149,6 +154,18 @@ export async function ingestInbound(
     outConversationId = conversationId;
     outLeadId = leadId;
   });
+
+  // Audit trail fora do tx (best-effort).
+  const st = stageTransition as { from: LeadFlowStage | null; to: LeadFlowStage } | null;
+  if (outLeadId && st) {
+    await recordTransition({
+      leadId: outLeadId,
+      fromStage: st.from,
+      toStage: st.to,
+      source: st.from === null ? 'create' : 'webhook_inbound',
+      metadata: { conversationId: outConversationId, messageId: m.id },
+    });
+  }
 
   return { status: 'inserted', conversationId: outConversationId, leadId: outLeadId };
 }

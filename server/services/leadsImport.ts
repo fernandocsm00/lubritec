@@ -7,6 +7,7 @@ import type { ImportReport } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { lookupCnpj } from './cnpjLookup';
 import { tryEnrollSafe } from './continuousCampaign';
+import { recordTransition } from './stageTransitions';
 
 // BrasilAPI free tier is roughly 3 req/min; adding ~21s between calls keeps us
 // under that ceiling. Larger imports are rejected up-front so a CSV with 1000
@@ -185,6 +186,9 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
   // IDs de leads que ficaram em 'complete' nessa importação — enrolam na contínua
   // depois do commit da transação (best-effort, fora do tx pra não segurar locks).
   const toEnroll: string[] = [];
+  // Audit trail: registra transições fora do tx (best-effort).
+  const newLeads: Array<{ id: string; stage: 'complete' | 'incomplete' }> = [];
+  const promoted: string[] = []; // ids de leads que foram de incomplete → complete
 
   await db.transaction(async (tx) => {
     for (const row of validRows) {
@@ -206,6 +210,7 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
           status: 'frio',
           flowStage: stage,
         }).returning({ id: leads.id });
+        newLeads.push({ id: created.id, stage });
         if (stage === 'complete') toEnroll.push(created.id);
         inserted++;
         continue;
@@ -227,6 +232,7 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
         if (existing.flowStage === 'incomplete') {
           patch.flowStage = 'complete';
           toEnroll.push(existing.id);
+          promoted.push(existing.id);
         }
       }
 
@@ -237,6 +243,24 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
       updated++;
     }
   });
+
+  // Audit trail (best-effort, fora do tx).
+  for (const nl of newLeads) {
+    await recordTransition({
+      leadId: nl.id,
+      fromStage: null,
+      toStage: nl.stage,
+      source: 'csv_import',
+    });
+  }
+  for (const leadId of promoted) {
+    await recordTransition({
+      leadId,
+      fromStage: 'incomplete',
+      toStage: 'complete',
+      source: 'csv_import',
+    });
+  }
 
   // Best-effort enroll fora da transação. Cada chamada é idempotente e safe.
   for (const leadId of toEnroll) {
