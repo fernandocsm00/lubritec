@@ -160,24 +160,26 @@ export async function deleteInstance(cfg: UazapiInstanceConfig): Promise<void> {
 /**
  * Configura o webhook. Header: `token`. Path: POST /webhook.
  *
- * Body confirmado via probe contra oriondigital.uazapi.com:
- *   { url, enabled, events, addUrlEvents, addUrlTypesMessages, excludeMessages }
+ * Body baseado no projeto APP_ORION que opera em produção contra a mesma
+ * uazapiGO (oriondigital.uazapi.com): a chave é `excludeMessages` (não
+ * `addUrlTypesMessages`). Filtros nativos do uazapiGO:
+ *   - `excludeMessages: ['wasSentByApi']` → equivalente ao filtro fromMe
+ *   - `excludeMessages: ['isGroupYes']`  → ignora grupos
  *
- * `addUrlTypesMessages` é BOOLEAN (true = entregar mensagens recebidas no webhook).
- * Mandar como array faz a UazAPI converter pra false silenciosamente — webhook
- * cadastra OK mas nenhuma mensagem chega.
+ * uazapiGO NÃO armazena secret nem envia headers de auth nos webhooks.
+ * A autenticação é via `instanceToken` na query string da URL cadastrada
+ * (vide `buildWebhookUrl()` em whatsappInstanceService).
  */
 export async function setWebhook(
   cfg: UazapiInstanceConfig,
   opts: { url: string; secret: string; events: string[] },
 ): Promise<unknown> {
-  // Cobrimos os nomes de evento usados em diferentes versões — UazAPI ignora
-  // os que não reconhece.
-  void opts.secret; // uazapiGO não armazena secret próprio; auth do webhook é via instance token no body do payload.
+  void opts.secret; // não usado — uazapiGO ignora.
   const allEventNames = Array.from(new Set([
     ...opts.events,
-    'message',
     'messages',
+    'message',
+    'message_received',
     'messages.upsert',
   ]));
 
@@ -185,9 +187,7 @@ export async function setWebhook(
     url: opts.url,
     enabled: true,
     events: allEventNames,
-    addUrlEvents: true,
-    addUrlTypesMessages: true,   // ← LIGA entrega de mensagens recebidas
-    excludeMessages: [] as string[],
+    excludeMessages: ['wasSentByApi', 'isGroupYes'],
   };
 
   return call(cfg, 'instance', 'POST', '/webhook', body);

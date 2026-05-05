@@ -79,7 +79,8 @@ describe('POST /api/whatsapp-instance/connect', () => {
     expect(vi.mocked(setWebhook)).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
-        url: 'http://localhost:3000/api/whatsapp/webhook',
+        // URL inclui instanceToken na query — uazapiGO não envia auth nos webhooks.
+        url: expect.stringContaining('http://localhost:3000/api/whatsapp/webhook?instanceToken='),
         events: ['message.received'],
       }),
     );

@@ -9,14 +9,25 @@ import {
 } from '../lib/webhookDebugBuffer';
 
 /**
- * Lê o secret enviado pela uazapiGO. Aceita várias convenções porque a
- * uazapiGO em diferentes versões usa headers/campos diferentes:
- *   - Header `X-Webhook-Token` (formato canônico que registramos)
- *   - Header `token` (uazapiGO instance token na maioria das versões)
- *   - Header `Authorization: Bearer <token>`
- *   - Body `token` / `apikey` / `webhookToken`
+ * Lê o token enviado pela uazapiGO. Aceita múltiplas convenções porque
+ * uazapiGO REALMENTE não envia headers de auth — o canônico é via QUERY STRING
+ * (`?instanceToken=XXX`), embutido na URL que cadastramos via setWebhook.
+ *
+ * Fontes (em ordem de prioridade):
+ *   1. Query string: `instanceToken`, `token`, `apikey`
+ *   2. Headers: `X-Webhook-Token`, `token`, `apikey`
+ *   3. Authorization: Bearer
+ *   4. Body: `token`, `apikey`, `webhookToken`, `secret`
  */
 function extractIncomingToken(req: Request): string | null {
+  // 1. Query string (canônico para uazapiGO)
+  const q = req.query as Record<string, unknown>;
+  for (const k of ['instanceToken', 'token', 'apikey']) {
+    const v = q[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+
+  // 2. Headers
   const h = (name: string) => {
     const v = req.header(name);
     return typeof v === 'string' && v.length > 0 ? v : null;
@@ -28,6 +39,7 @@ function extractIncomingToken(req: Request): string | null {
     h('apikey');
   if (fromHeader) return fromHeader;
 
+  // 3. Authorization
   const auth = h('Authorization') ?? h('authorization');
   if (auth) {
     const m = /^Bearer\s+(.+)$/i.exec(auth);
@@ -35,6 +47,7 @@ function extractIncomingToken(req: Request): string | null {
     return auth;
   }
 
+  // 4. Body
   const body = req.body as Record<string, unknown> | undefined;
   if (body && typeof body === 'object') {
     for (const k of ['token', 'apikey', 'webhookToken', 'secret']) {

@@ -31,15 +31,12 @@ export interface InboundMessage {
   fromMe: boolean;
 }
 
-/** Eventos que indicam mensagem recebida — varia por versão da uazapiGO. */
-const INBOUND_EVENT_NAMES = new Set([
-  'message.received',
-  'message',
-  'messages',
-  'messages.upsert',
-  'messages_upsert',
-  'MESSAGES_UPSERT',
-]);
+/** Eventos que indicam mensagem recebida — verifica por substring (uazapiGO varia). */
+function isMessageEvent(value: string | null): boolean {
+  if (!value) return true; // sem evento explícito → assume mensagem
+  const e = value.toLowerCase();
+  return e.includes('message') || e.includes('messages') || e.includes('upsert') || e.includes('receive');
+}
 
 function pickString(obj: Record<string, unknown> | undefined, keys: string[]): string | null {
   if (!obj) return null;
@@ -97,37 +94,71 @@ function parseTimestamp(v: unknown): Date {
  * - Faltam campos essenciais (id, from).
  * - É mensagem outbound (`fromMe: true`) — já gravamos via sendMessage.
  */
+/** Extrai telefone preferindo JIDs com `@` (mais confiáveis). Igual estratégia APP_ORION. */
+function extractFrom(msg: Record<string, unknown>, payload: Record<string, unknown>): string | null {
+  const key = asObj(msg.key) ?? {};
+  const chat = asObj(payload.chat) ?? {};
+
+  // 1. Campos explicitamente "phone"
+  const phoneCandidates = [
+    pickString(msg, ['phone']),
+    pickString(chat, ['phone']),
+  ].filter(Boolean) as string[];
+  if (phoneCandidates.length > 0) return phoneCandidates[0];
+
+  // 2. JIDs com @ — mais confiáveis (ex: 5511999999999@s.whatsapp.net)
+  const jidCandidates = [
+    pickString(key, ['remoteJid']),
+    pickString(msg, ['remoteJid', 'sender', 'from']),
+  ].filter(Boolean) as string[];
+  for (const cand of jidCandidates) {
+    if (cand.includes('@')) return cand;
+  }
+
+  // 3. Fallbacks (chatid, chatId, etc) — podem ser interno do uazapiGO
+  return (
+    pickString(msg, ['sender', 'from', 'chatid', 'chatId']) ??
+    pickString(key, ['participant']) ??
+    pickString(chat, ['wa_chatid', 'id'])
+  );
+}
+
 export function extractInbound(payload: UazapiInbound): InboundMessage | null {
-  const event = pickString(payload, ['event', 'EventType', 'type']);
-  // Sem evento explícito, aceita se houver objeto `message` (alguns providers omitem evento).
-  const eventOk = event ? INBOUND_EVENT_NAMES.has(event) : true;
-  if (!eventOk) return null;
+  const event = pickString(payload, ['event', 'EventType', 'type', 'eventType']);
+  if (!isMessageEvent(event)) return null;
 
   // O objeto da mensagem pode estar em `message`, `data`, `data.message` ou no root.
   const directMsg = asObj(payload.message) ?? asObj(payload.data);
   const nestedMsg = asObj(asObj(payload.data)?.message);
   const msg = nestedMsg ?? directMsg ?? payload;
 
-  const id = pickString(msg, ['id', 'messageid', 'messageId', 'key.id']);
-  const from = pickString(msg, [
-    'from', 'sender', 'chatid', 'chatId', 'remoteJid', 'jid', 'key.remoteJid',
-  ]);
+  const key = asObj(msg.key) ?? {};
+  const id = pickString(msg, ['id', 'messageid', 'messageId']) ?? pickString(key, ['id']);
+  const from = extractFrom(msg, payload);
   if (!id || !from) return null;
 
-  const fromMe = pickBool(msg, ['fromMe', 'from_me', 'isFromMe']);
+  const fromMe =
+    pickBool(msg, ['fromMe', 'from_me', 'isFromMe', 'wasSentByApi']) ||
+    pickBool(key, ['fromMe']);
   if (fromMe) return null;
+
+  // Filtra grupos (igual APP_ORION)
+  const isGroup =
+    pickBool(msg, ['isGroup']) ||
+    (pickString(key, ['remoteJid']) ?? '').includes('@g.us') ||
+    from.includes('@g.us');
+  if (isGroup) return null;
 
   const rawType = pickString(msg, ['type', 'messageType', 'message_type']);
   const kind = mapKind(rawType);
 
-  // Texto pode estar em vários lugares.
   const text =
     pickString(msg, ['text', 'body', 'conversation', 'caption']) ??
     pickString(asObj(msg.message), ['conversation', 'text']) ??
     pickString(asObj(asObj(msg.message)?.extendedTextMessage), ['text']);
 
   const mediaUrl = pickString(msg, [
-    'media_url', 'mediaUrl', 'url', 'fileUrl', 'file_url',
+    'media_url', 'mediaUrl', 'url', 'fileUrl', 'file_url', 'fileURL',
   ]);
   const mediaMime = pickString(msg, ['mimetype', 'mimeType', 'mime_type', 'mime']);
 

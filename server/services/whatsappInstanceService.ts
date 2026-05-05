@@ -44,7 +44,7 @@ async function loadOrSeed(): Promise<typeof whatsappInstance.$inferSelect | null
         instanceId,
         instanceToken: token,
         webhookSecret,
-        webhookUrl: buildWebhookUrl(),
+        webhookUrl: buildWebhookUrl(token),
         webhookSynced: true,  // Assume that env-configured webhook está ativo
       })
       .returning();
@@ -56,9 +56,15 @@ async function loadOrSeed(): Promise<typeof whatsappInstance.$inferSelect | null
   }
 }
 
-function buildWebhookUrl(): string {
+function buildWebhookUrl(instanceToken?: string | null): string {
   const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-  return `${appUrl.replace(/\/$/, '')}/api/whatsapp/webhook`;
+  const base = `${appUrl.replace(/\/$/, '')}/api/whatsapp/webhook`;
+  // uazapiGO NÃO envia headers de auth nos webhooks — coloca o token na query string
+  // (mesma estratégia do projeto APP_ORION). Nosso handler lê de lá.
+  if (instanceToken) {
+    return `${base}?instanceToken=${encodeURIComponent(instanceToken)}`;
+  }
+  return base;
 }
 
 function uazapiTokenFromEnv(): string | undefined {
@@ -221,7 +227,9 @@ export async function connect(input: {
 
   // Garante webhook_secret e registra webhook (usa instance token).
   let webhookSecret = row.webhookSecret ?? generateWebhookSecret();
-  const webhookUrl = buildWebhookUrl();
+  // URL inclui instanceToken na query — uazapiGO não envia auth nos webhooks,
+  // então a auth tem que estar embutida na URL cadastrada.
+  const webhookUrl = buildWebhookUrl(instanceToken);
 
   try {
     const setWebhookResp = await setWebhook(
