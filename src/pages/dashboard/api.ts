@@ -3,6 +3,7 @@ import type {
   DashboardSummary,
   DashboardAttentionResponse,
   DashboardWhatsappStats,
+  DashboardMacroFunnel,
   DashboardView,
   DashboardPeriod,
 } from '@shared/types';
@@ -17,4 +18,8 @@ export function fetchAttention(view: DashboardView) {
 
 export function fetchWhatsapp() {
   return api<DashboardWhatsappStats>('/dashboard/whatsapp');
+}
+
+export function fetchMacroFunnel(period: DashboardPeriod) {
+  return api<DashboardMacroFunnel>(`/dashboard/macro-funnel?period=${period}`);
 }

@@ -524,3 +524,30 @@ export interface DashboardWhatsappStats {
   noResponseToday: number;
   instanceConnected: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Macro funnel (Sprint 5) — visão de cada etapa do flow_stage no período
+// ---------------------------------------------------------------------------
+
+export interface MacroFunnelStage {
+  count: number;
+  pctOfTotal: number;          // % sobre total importado
+  convFromPrev?: number;        // % de conversão da etapa anterior (omitido em "imported")
+}
+
+export interface DashboardMacroFunnel {
+  period: { start: string; end: string; label: string };
+  total: number;                // mesmo que stages.imported.count
+  stages: {
+    imported: MacroFunnelStage;     // todos os leads criados no período
+    complete: MacroFunnelStage;     // tem telefone (ou já avançou)
+    dispatched: MacroFunnelStage;   // recebeu disparo (ou já avançou)
+    engaged: MacroFunnelStage;      // respondeu pelo menos 1x
+    qualified: MacroFunnelStage;    // IA marcou QUALIFICADO
+    handedOff: MacroFunnelStage;    // comercial assumiu (deal criado)
+  };
+  sidelines: {
+    incomplete: MacroFunnelStage;   // travados sem telefone
+    lost: MacroFunnelStage;         // encerrados sem conversão
+  };
+}

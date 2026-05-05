@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LeadFilters } from '@/features/leads/LeadFilters';
@@ -6,7 +7,7 @@ import { LeadsTable } from '@/features/leads/LeadsTable';
 import { LeadDialog } from '@/features/leads/LeadDialog';
 import { ImportCsvDialog } from '@/features/leads/ImportCsvDialog';
 import { useLeads, type ListParams } from '@/features/leads/api';
-import type { LeadStatus, LeadSource } from '@shared/types';
+import { LEAD_FLOW_STAGES, type LeadStatus, type LeadSource, type LeadFlowStage } from '@shared/types';
 
 function useDebounced<T>(value: T, ms = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -18,9 +19,17 @@ function useDebounced<T>(value: T, ms = 300): T {
 }
 
 export default function CadastrosPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Inicializa flowStage da URL (deep link do MacroFunnel do dashboard).
+  const initialFlowStage = (() => {
+    const v = searchParams.get('flowStage');
+    return v && (LEAD_FLOW_STAGES as readonly string[]).includes(v) ? (v as LeadFlowStage) : 'all';
+  })();
+
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<LeadStatus | 'all'>('all');
   const [source, setSource] = useState<LeadSource | 'all'>('all');
+  const [flowStage, setFlowStage] = useState<LeadFlowStage | 'all'>(initialFlowStage);
   const [pipeline, setPipeline] = useState<'yes' | 'no' | 'all'>('all');
   const [sort, setSort] = useState<NonNullable<ListParams['sort']>>('created_at');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
@@ -34,6 +43,7 @@ export default function CadastrosPage() {
     q: debouncedQ || undefined,
     status: status === 'all' ? undefined : status,
     source: source === 'all' ? undefined : source,
+    flowStage: flowStage === 'all' ? undefined : flowStage,
     pipeline: pipeline === 'all' ? undefined : pipeline,
     sort,
     order,
@@ -42,7 +52,17 @@ export default function CadastrosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, source, pipeline]);
+  }, [debouncedQ, status, source, flowStage, pipeline]);
+
+  // Sincroniza flowStage de volta na URL (assim refresh preserva o filtro).
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (flowStage === 'all') next.delete('flowStage');
+    else next.set('flowStage', flowStage);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [flowStage, searchParams, setSearchParams]);
 
   const { data, isLoading } = useLeads(params);
 
@@ -75,10 +95,12 @@ export default function CadastrosPage() {
         q={q}
         status={status}
         source={source}
+        flowStage={flowStage}
         pipeline={pipeline}
         onQChange={setQ}
         onStatusChange={setStatus}
         onSourceChange={setSource}
+        onFlowStageChange={setFlowStage}
         onPipelineChange={setPipeline}
       />
 

@@ -2,7 +2,7 @@ import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { tryEnrollSafe } from './continuousCampaign';
 
@@ -200,6 +200,7 @@ export async function listLeads(params: {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
+  flowStage?: LeadFlowStage;
   pipeline?: 'yes' | 'no';
   sort?: SortKey;
   order?: 'asc' | 'desc';
@@ -213,6 +214,7 @@ export async function listLeads(params: {
   const conditions = [];
   if (params.status) conditions.push(eq(leads.status, params.status));
   if (params.source) conditions.push(eq(leads.source, params.source));
+  if (params.flowStage) conditions.push(eq(leads.flowStage, params.flowStage));
   if (params.pipeline === 'yes') {
     conditions.push(sql`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`);
   }

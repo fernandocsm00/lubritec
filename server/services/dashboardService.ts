@@ -323,6 +323,63 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Macro funnel (Sprint 5) — visão do fluxo end-to-end por flow_stage
+// ---------------------------------------------------------------------------
+
+import type { DashboardMacroFunnel } from '../../shared/types';
+
+/**
+ * Conta leads criados no período agrupando por flow_stage cumulativo.
+ * Cada bucket inclui os stages "iguais ou mais avançados" — assim "completo"
+ * inclui também leads que já avançaram pra dispatched/engaged/qualified/handed_off.
+ *
+ * `lost` é tratado como sideline (terminal sem ter convertido), contado à parte.
+ */
+export async function macroFunnel(args: {
+  period: PeriodKey;
+  now?: Date;
+}): Promise<DashboardMacroFunnel> {
+  const { start, end, label } = resolvePeriod(args.period, args.now);
+
+  // Uma única query com counts condicionais — mais barato que 7 round-trips.
+  const [row] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      incomplete: sql<number>`count(*) filter (where ${leads.flowStage} = 'incomplete')::int`,
+      complete: sql<number>`count(*) filter (where ${leads.flowStage} in ('complete','dispatched','engaged','qualified','handed_off'))::int`,
+      dispatched: sql<number>`count(*) filter (where ${leads.flowStage} in ('dispatched','engaged','qualified','handed_off'))::int`,
+      engaged: sql<number>`count(*) filter (where ${leads.flowStage} in ('engaged','qualified','handed_off'))::int`,
+      qualified: sql<number>`count(*) filter (where ${leads.flowStage} in ('qualified','handed_off'))::int`,
+      handedOff: sql<number>`count(*) filter (where ${leads.flowStage} = 'handed_off')::int`,
+      lost: sql<number>`count(*) filter (where ${leads.flowStage} = 'lost')::int`,
+    })
+    .from(leads)
+    .where(and(gte(leads.createdAt, start), lt(leads.createdAt, end)));
+
+  const total = row.total;
+  const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 1000) / 10);
+  const conv = (numerator: number, denominator: number) =>
+    denominator === 0 ? 0 : Math.round((numerator / denominator) * 1000) / 10;
+
+  return {
+    period: { start: start.toISOString(), end: end.toISOString(), label },
+    total,
+    stages: {
+      imported:   { count: total,         pctOfTotal: 100 },
+      complete:   { count: row.complete,   pctOfTotal: pct(row.complete),   convFromPrev: conv(row.complete, total) },
+      dispatched: { count: row.dispatched, pctOfTotal: pct(row.dispatched), convFromPrev: conv(row.dispatched, row.complete) },
+      engaged:    { count: row.engaged,    pctOfTotal: pct(row.engaged),    convFromPrev: conv(row.engaged, row.dispatched) },
+      qualified:  { count: row.qualified,  pctOfTotal: pct(row.qualified),  convFromPrev: conv(row.qualified, row.engaged) },
+      handedOff:  { count: row.handedOff,  pctOfTotal: pct(row.handedOff),  convFromPrev: conv(row.handedOff, row.qualified) },
+    },
+    sidelines: {
+      incomplete: { count: row.incomplete, pctOfTotal: pct(row.incomplete) },
+      lost:       { count: row.lost,       pctOfTotal: pct(row.lost) },
+    },
+  };
+}
+
 export async function whatsappStats(): Promise<DashboardWhatsappStats> {
   const [instRow] = await db
     .select({ lastStatus: whatsappInstance.lastStatus })

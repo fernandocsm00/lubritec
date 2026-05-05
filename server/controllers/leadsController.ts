@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { LEAD_STATUSES, LEAD_SOURCES } from '../../shared/types';
+import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES } from '../../shared/types';
 import { createLead, listLeads, updateLead, deleteLead } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
@@ -51,6 +51,7 @@ const listQuery = z.object({
   q: z.string().optional(),
   status: z.enum(LEAD_STATUSES).optional(),
   source: z.enum(LEAD_SOURCES).optional(),
+  flowStage: z.enum(LEAD_FLOW_STAGES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
   sort: z.enum(['name', 'created_at']).optional(),
   order: z.enum(['asc', 'desc']).optional(),

@@ -1,6 +1,6 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import type { DashboardView, DashboardPeriod } from '@shared/types';
-import { fetchSummary, fetchAttention, fetchWhatsapp } from './api';
+import { fetchSummary, fetchAttention, fetchWhatsapp, fetchMacroFunnel } from './api';
 
 export function useDashboardSummary(view: DashboardView, period: DashboardPeriod) {
   return useQuery({
@@ -28,5 +28,16 @@ export function useDashboardWhatsapp(enabled: boolean) {
     staleTime: 15_000,
     refetchInterval: 15_000,
     enabled,
+  });
+}
+
+export function useDashboardMacroFunnel(period: DashboardPeriod, enabled: boolean) {
+  return useQuery({
+    queryKey: ['dashboard', 'macro-funnel', period],
+    queryFn: () => fetchMacroFunnel(period),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    enabled,
+    placeholderData: keepPreviousData,
   });
 }

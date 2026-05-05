@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
-import type { PublicLead, ImportReport, LeadStatus, LeadSource } from '@shared/types';
+import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
 
 export interface ListParams {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
+  flowStage?: LeadFlowStage;
   pipeline?: 'yes' | 'no';
   sort?: 'name' | 'created_at';
   order?: 'asc' | 'desc';

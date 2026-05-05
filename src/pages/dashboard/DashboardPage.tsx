@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '@/features/auth/store';
 import type { DashboardView, DashboardPeriod, DashboardSummary } from '@shared/types';
-import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp } from './hooks';
+import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp, useDashboardMacroFunnel } from './hooks';
 import { ViewToggle } from './components/ViewToggle';
 import { PeriodPicker } from './components/PeriodPicker';
 import { BlockSkeleton } from './components/BlockSkeleton';
@@ -9,6 +9,7 @@ import { BlockError } from './components/BlockError';
 import { KpiRow } from './components/KpiRow';
 import { AttentionList } from './components/AttentionList';
 import { FunnelChart } from './components/FunnelChart';
+import { MacroFunnel } from './components/MacroFunnel';
 import { PipelineOpen } from './components/PipelineOpen';
 import { WhatsappStats } from './components/WhatsappStats';
 import { Leaderboard } from './components/Leaderboard';
@@ -31,13 +32,16 @@ export default function DashboardPage() {
   const summary   = useDashboardSummary(view, period);
   const attention = useDashboardAttention(view);
   const whatsapp  = useDashboardWhatsapp(view === 'org');
+  // Macro funnel: visão organizacional do fluxo macro (admin only no backend).
+  const macroFunnel = useDashboardMacroFunnel(period, isAdmin && view === 'org');
 
-  const isRefreshing = summary.isFetching || attention.isFetching || (view === 'org' && whatsapp.isFetching);
+  const isRefreshing = summary.isFetching || attention.isFetching || (view === 'org' && whatsapp.isFetching) || macroFunnel.isFetching;
 
   function refreshAll() {
     summary.refetch();
     attention.refetch();
     if (view === 'org') whatsapp.refetch();
+    if (isAdmin && view === 'org') macroFunnel.refetch();
   }
 
   return (
@@ -86,7 +90,20 @@ export default function DashboardPage() {
         ) : null}
       </section>
 
-      {/* FUNIL + PIPELINE */}
+      {/* FUNIL MACRO (visão completa do fluxo end-to-end — admin/org only) */}
+      {isAdmin && view === 'org' && (
+        <section>
+          {macroFunnel.error ? (
+            <BlockError onRetry={() => macroFunnel.refetch()} />
+          ) : macroFunnel.data ? (
+            <MacroFunnel data={macroFunnel.data} />
+          ) : (
+            <BlockSkeleton height={400} />
+          )}
+        </section>
+      )}
+
+      {/* FUNIL DE VENDAS + PIPELINE */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {summary.error ? (
           <>
