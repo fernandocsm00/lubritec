@@ -13,6 +13,7 @@ import whatsappInstanceRoutes from './routes/whatsappInstance';
 import orgSettingsRoutes from './routes/orgSettings';
 import campaignRoutes from './routes/campaigns';
 import dashboardRoutes from './routes/dashboard';
+import notificationsRoutes from './routes/notifications';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -40,6 +41,7 @@ export function createApp() {
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/campaigns', campaignRoutes);
+  app.use('/api/notifications', notificationsRoutes);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 

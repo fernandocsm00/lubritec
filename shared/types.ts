@@ -537,6 +537,35 @@ export interface DashboardWhatsappStats {
 }
 
 // ---------------------------------------------------------------------------
+// Notifications (Sprint 6.8)
+// ---------------------------------------------------------------------------
+
+export const NOTIFICATION_KINDS = [
+  'enrichment_completed',   // bulk enrichment job terminou
+  'enrichment_cancelled',
+  'lead_qualified',         // IA marcou lead como QUALIFICADO
+  'dispatch_failed',        // disparo de campanha falhou
+  'whatsapp_disconnected',  // instância UazAPI caiu
+  'system',                 // generic
+] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+
+export interface PublicNotification {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  actionUrl: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationsListResponse {
+  items: PublicNotification[];
+  unreadCount: number;
+}
+
+// ---------------------------------------------------------------------------
 // AI metrics (Sprint 6.7)
 // ---------------------------------------------------------------------------
 

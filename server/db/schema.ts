@@ -281,6 +281,28 @@ export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
 export type EnrichmentJobLead = typeof enrichmentJobLeads.$inferSelect;
 
+// ── Notifications (Sprint 6.8) ───────────────────────────────────
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    actionUrl: text('action_url'),
+    metadata: jsonb('metadata'),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userCreatedIdx: index('idx_notifications_user_created').on(t.userId, t.createdAt),
+  }),
+);
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+
 // ── AI call logs (Sprint 6.7) ────────────────────────────────────
 export const aiCallLogs = pgTable('ai_call_logs', {
   id: uuid('id').primaryKey().defaultRandom(),

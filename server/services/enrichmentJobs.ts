@@ -10,6 +10,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { PublicEnrichmentJob } from '@shared/types';
 import { lookupCnpj } from './cnpjLookup';
 import { updateLead } from './leadsService';
+import { emitNotification } from './notifications';
 
 // BrasilAPI free tier ~3 req/min → 21s entre chamadas (margem de segurança).
 export const ENRICHMENT_TICK_MS = 21_000;
@@ -199,9 +200,21 @@ export async function processNextEnrichment(): Promise<TickResult> {
 
   if (!next) {
     // Tudo processado → completed
-    await db.update(enrichmentJobs)
+    const [done] = await db.update(enrichmentJobs)
       .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
-      .where(eq(enrichmentJobs.id, job.id));
+      .where(eq(enrichmentJobs.id, job.id))
+      .returning();
+    // Notifica o admin que iniciou o job.
+    if (done) {
+      await emitNotification({
+        userIds: [done.createdByUserId],
+        kind: 'enrichment_completed',
+        title: 'Enriquecimento concluído',
+        body: `${done.succeededCount} telefone${done.succeededCount === 1 ? '' : 's'} encontrado${done.succeededCount === 1 ? '' : 's'} de ${done.totalLeads} leads.`,
+        actionUrl: '/cadastros',
+        metadata: { jobId: done.id, totalLeads: done.totalLeads, succeeded: done.succeededCount, failed: done.failedCount },
+      });
+    }
     return { status: 'job_completed', jobId: job.id };
   }
 
