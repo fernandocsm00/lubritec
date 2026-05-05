@@ -1,0 +1,196 @@
+import { useEffect, useState } from 'react';
+import { Bot } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { getOrgSettings, updateOrgSettings } from './api';
+import type { PublicOrgSettings, UpdateOrgSettingsInput } from '@shared/types';
+
+type FormState = Pick<PublicOrgSettings,
+  | 'aiEnabled' | 'aiAgentName' | 'aiBusinessName' | 'aiBusinessDesc' | 'aiProducts'
+  | 'aiTargetAudience' | 'aiTone' | 'aiObjective' | 'aiDontTalk' | 'aiAlwaysAsk'
+  | 'aiQualifyWhen' | 'aiBusinessHours' | 'aiAfterHoursMsg'>;
+
+const EMPTY: FormState = {
+  aiEnabled: false,
+  aiAgentName: '',
+  aiBusinessName: '',
+  aiBusinessDesc: '',
+  aiProducts: '',
+  aiTargetAudience: '',
+  aiTone: '',
+  aiObjective: '',
+  aiDontTalk: '',
+  aiAlwaysAsk: '',
+  aiQualifyWhen: '',
+  aiBusinessHours: '',
+  aiAfterHoursMsg: '',
+};
+
+export default function AiTab() {
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getOrgSettings()
+      .then((s) => {
+        setForm({
+          aiEnabled: s.aiEnabled,
+          aiAgentName: s.aiAgentName,
+          aiBusinessName: s.aiBusinessName,
+          aiBusinessDesc: s.aiBusinessDesc,
+          aiProducts: s.aiProducts,
+          aiTargetAudience: s.aiTargetAudience,
+          aiTone: s.aiTone,
+          aiObjective: s.aiObjective,
+          aiDontTalk: s.aiDontTalk,
+          aiAlwaysAsk: s.aiAlwaysAsk,
+          aiQualifyWhen: s.aiQualifyWhen,
+          aiBusinessHours: s.aiBusinessHours,
+          aiAfterHoursMsg: s.aiAfterHoursMsg,
+        });
+        setLoaded(true);
+      })
+      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Erro ao carregar'));
+  }, []);
+
+  function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function onSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload: UpdateOrgSettingsInput = { ...form };
+      await updateOrgSettings(payload);
+      toast.success('Configuração da IA salva.');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao salvar');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) return <div className="p-4 text-sm text-muted-foreground">Carregando…</div>;
+
+  return (
+    <form onSubmit={onSave} className="max-w-3xl mx-auto space-y-6 overflow-y-auto h-full pb-6 p-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Bot className="h-5 w-5" /> IA de Atendimento
+          </h2>
+          <p className="text-sm text-muted-foreground max-w-xl">
+            A IA responde automaticamente as conversas que entram na fila <strong>IA</strong>.
+            Quando ela qualifica o lead, a conversa é movida pra fila <strong>Comercial</strong>
+            e o lead vai pro estágio <strong>Qualificado</strong>.
+          </p>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-border p-3">
+          <input
+            type="checkbox"
+            checked={form.aiEnabled}
+            onChange={(e) => patch('aiEnabled', e.target.checked)}
+            className="h-4 w-4"
+          />
+          <span className="text-sm font-medium">
+            {form.aiEnabled ? 'IA Ativa' : 'IA Desligada'}
+          </span>
+        </label>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div className="text-sm font-semibold border-b pb-2">Identidade do agente</div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="ai-agent-name">Nome do agente</Label>
+            <Input id="ai-agent-name" value={form.aiAgentName} onChange={(e) => patch('aiAgentName', e.target.value)} />
+            <p className="text-[11px] text-muted-foreground mt-1">Como a IA se apresenta ao cliente.</p>
+          </div>
+          <div>
+            <Label htmlFor="ai-business-name">Nome da empresa</Label>
+            <Input id="ai-business-name" value={form.aiBusinessName} onChange={(e) => patch('aiBusinessName', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div className="text-sm font-semibold border-b pb-2">Sobre o negócio</div>
+        <div>
+          <Label htmlFor="ai-desc">Descrição do negócio</Label>
+          <Textarea id="ai-desc" rows={3} value={form.aiBusinessDesc} onChange={(e) => patch('aiBusinessDesc', e.target.value)}
+            placeholder="Ex: Distribuidora de óleos lubrificantes para frotas de caminhões e ônibus em Caxias do Sul." />
+        </div>
+        <div>
+          <Label htmlFor="ai-products">Produtos e serviços</Label>
+          <Textarea id="ai-products" rows={3} value={form.aiProducts} onChange={(e) => patch('aiProducts', e.target.value)}
+            placeholder="Ex: óleos sintéticos e minerais Mobil/Shell, lubrificantes industriais, atendimento técnico..." />
+        </div>
+        <div>
+          <Label htmlFor="ai-audience">Público-alvo</Label>
+          <Textarea id="ai-audience" rows={2} value={form.aiTargetAudience} onChange={(e) => patch('aiTargetAudience', e.target.value)}
+            placeholder="Ex: oficinas de troca de óleo, transportadoras com frota própria, indústrias com maquinário pesado." />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="ai-hours">Horário de atendimento</Label>
+            <Input id="ai-hours" value={form.aiBusinessHours} onChange={(e) => patch('aiBusinessHours', e.target.value)}
+              placeholder="Ex: Seg-Sex 8h-18h, Sáb 8h-12h" />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div className="text-sm font-semibold border-b pb-2">Comportamento</div>
+        <div>
+          <Label htmlFor="ai-objective">Objetivo principal</Label>
+          <Textarea id="ai-objective" rows={2} value={form.aiObjective} onChange={(e) => patch('aiObjective', e.target.value)} />
+        </div>
+        <div>
+          <Label htmlFor="ai-tone">Tom de voz</Label>
+          <Input id="ai-tone" value={form.aiTone} onChange={(e) => patch('aiTone', e.target.value)}
+            placeholder="Ex: profissional e cordial / informal e amigável / consultivo e técnico" />
+        </div>
+        <div>
+          <Label htmlFor="ai-dont">NÃO falar sobre</Label>
+          <Textarea id="ai-dont" rows={2} value={form.aiDontTalk} onChange={(e) => patch('aiDontTalk', e.target.value)}
+            placeholder="Ex: política, religião, descontos sem aprovação..." />
+        </div>
+        <div>
+          <Label htmlFor="ai-ask">SEMPRE perguntar</Label>
+          <Textarea id="ai-ask" rows={2} value={form.aiAlwaysAsk} onChange={(e) => patch('aiAlwaysAsk', e.target.value)}
+            placeholder="Ex: nome da empresa, tamanho da frota, marca/modelo dos veículos..." />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div className="text-sm font-semibold border-b pb-2">Critério de qualificação</div>
+        <div>
+          <Label htmlFor="ai-qualify">Quando considerar o lead QUALIFICADO</Label>
+          <Textarea id="ai-qualify" rows={3} value={form.aiQualifyWhen} onChange={(e) => patch('aiQualifyWhen', e.target.value)}
+            placeholder="Ex: cliente pediu orçamento, demonstrou interesse claro de compra, ou solicitou agendamento de visita técnica" />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Quando esse critério bater, a IA marca a conversa como qualificada e move automaticamente
+            pra fila Comercial.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="ai-after-hours">Mensagem fora do horário (opcional)</Label>
+          <Textarea id="ai-after-hours" rows={2} value={form.aiAfterHoursMsg} onChange={(e) => patch('aiAfterHoursMsg', e.target.value)}
+            placeholder="Ex: Olá! Nosso atendimento está pausado, mas voltamos amanhã às 8h. Sua mensagem foi recebida." />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-3">
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Salvando…' : 'Salvar configuração'}
+        </Button>
+      </div>
+    </form>
+  );
+}

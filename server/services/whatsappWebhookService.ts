@@ -1,17 +1,28 @@
 import { db } from '../db/client';
-import { conversations, messages, leads } from '../db/schema';
+import { conversations, messages, leads, orgSettings } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { InboundMessage } from '../lib/uazapiSchema';
+import type { ConversationQueue } from '@shared/types';
 
 function normalizePhone(raw: string): string {
   // Remove tudo que não é dígito. Funciona pra "+55 11 9...", "5511...@s.whatsapp.net", "5511...@c.us", etc.
   return raw.replace(/\D/g, '');
 }
 
+/**
+ * Decide a fila inicial pra uma conversa nova:
+ *   - se ai_enabled na org_settings → 'ia' (IA atende primeiro)
+ *   - senão → 'recepcao' (humano atende)
+ */
+async function defaultInboundQueue(): Promise<ConversationQueue> {
+  const [s] = await db.select({ aiEnabled: orgSettings.aiEnabled }).from(orgSettings).limit(1);
+  return s?.aiEnabled ? 'ia' : 'recepcao';
+}
+
 export async function ingestInbound(
   m: InboundMessage,
   rawPayload: unknown,
-): Promise<{ status: 'inserted' | 'duplicate' | 'ignored' }> {
+): Promise<{ status: 'inserted' | 'duplicate' | 'ignored'; conversationId?: string; leadId?: string }> {
   // Idempotência por uazapi_msg_id
   const existing = await db
     .select({ id: messages.id })
@@ -24,10 +35,14 @@ export async function ingestInbound(
   if (phone.length < 8) return { status: 'ignored' };
 
   const sentAt = m.timestamp;
+  const initialQueue = await defaultInboundQueue();
 
   // Stages "anteriores" a engaged — recebimento de inbound deve promover daqui pra engaged.
   // Stages mais avançados (qualified, handed_off, lost) são preservados.
   const PROMOTABLE_TO_ENGAGED = new Set(['incomplete', 'complete', 'dispatched']);
+
+  let outConversationId: string | undefined;
+  let outLeadId: string | undefined;
 
   await db.transaction(async (tx) => {
     // 1. Match ou cria lead. Em caso de race (UNIQUE violation), refaz a query.
@@ -92,7 +107,7 @@ export async function ingestInbound(
         .values({
           phone,
           leadId,
-          queue: 'recepcao',
+          queue: initialQueue,
           status: 'aguardando_atendimento',
           originKind: 'organic',
           lastMessageAt: sentAt,
@@ -130,7 +145,10 @@ export async function ingestInbound(
       rawPayload: rawPayload as object,
       sentAt,
     });
+
+    outConversationId = conversationId;
+    outLeadId = leadId;
   });
 
-  return { status: 'inserted' };
+  return { status: 'inserted', conversationId: outConversationId, leadId: outLeadId };
 }

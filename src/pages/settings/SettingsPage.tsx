@@ -3,10 +3,11 @@ import { lazy, Suspense } from 'react';
 
 const WhatsappConnectionTab = lazy(() => import('./WhatsappConnectionTab'));
 const OrganizationTab = lazy(() => import('./OrganizationTab'));
+const AiTab = lazy(() => import('./AiTab'));
 
 const Loader = () => <div className="p-6 text-muted-foreground text-sm">Carregando…</div>;
 
-type Tab = 'whatsapp' | 'organization';
+type Tab = 'whatsapp' | 'organization' | 'ai';
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,12 +47,23 @@ export default function SettingsPage() {
         >
           Organização
         </button>
+        <button
+          className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+            tab === 'ai'
+              ? 'border-primary text-primary font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setTab('ai')}
+        >
+          IA de Atendimento
+        </button>
       </div>
 
       <div className="flex-1 overflow-hidden">
         <Suspense fallback={<Loader />}>
           {tab === 'whatsapp' && <WhatsappConnectionTab />}
           {tab === 'organization' && <OrganizationTab />}
+          {tab === 'ai' && <AiTab />}
         </Suspense>
       </div>
     </div>

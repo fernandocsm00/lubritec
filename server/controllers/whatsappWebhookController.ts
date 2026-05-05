@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
 import { loadValidWebhookTokens } from '../services/whatsappInstanceService';
+import { processInboundWithAi } from '../services/aiAtendimento';
 import {
   pushDebugEntry,
   summarizeHeaders,
@@ -138,6 +139,35 @@ export async function whatsappWebhookHandler(
     const ingestResult = await ingestInbound(inbound, parsed.data);
     debug.result = { kind: ingestResult.status, messageId: inbound.id };
     pushDebugEntry(debug);
+
+    // Dispara IA de atendimento em background (fire-and-forget) — não trava
+    // a resposta pra UazAPI (que tem timeout curto e retry agressivo).
+    // Só pra mensagens de TEXTO com kind=text recém inseridas. Se a IA estiver
+    // desligada ou conversa não estiver na fila IA, o orchestrator faz no-op.
+    if (
+      ingestResult.status === 'inserted' &&
+      ingestResult.conversationId &&
+      ingestResult.leadId &&
+      inbound.kind === 'text' &&
+      inbound.text
+    ) {
+      const convId = ingestResult.conversationId;
+      const leadId = ingestResult.leadId;
+      const phone = inbound.from.replace(/\D/g, '');
+      const text = inbound.text;
+      // Não await: roda em background, log de erros via console.
+      processInboundWithAi({ conversationId: convId, leadId, phone, inboundText: text })
+        .then((r) => {
+          if (r.status === 'gemini_error' || r.status === 'send_error') {
+            console.error('[ai] processInbound failed:', r.status, r.errorMessage);
+          } else {
+            console.log('[ai] processInbound:', r.status);
+          }
+        })
+        .catch((err) => {
+          console.error('[ai] processInbound threw:', err);
+        });
+    }
 
     return res.status(200).end();
   } catch (e) {

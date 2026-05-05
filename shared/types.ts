@@ -345,7 +345,38 @@ export interface PublicCampaignRecipient {
 
 export interface PublicOrgSettings {
   monthlySalesGoal: number | null;
+  // ── IA de atendimento (Sprint 2) ──
+  aiEnabled: boolean;
+  aiAgentName: string;
+  aiBusinessName: string;
+  aiBusinessDesc: string;
+  aiProducts: string;
+  aiTargetAudience: string;
+  aiTone: string;
+  aiObjective: string;
+  aiDontTalk: string;
+  aiAlwaysAsk: string;
+  aiQualifyWhen: string;
+  aiBusinessHours: string;
+  aiAfterHoursMsg: string;
   updatedAt: string;
+}
+
+export interface UpdateOrgSettingsInput {
+  monthlySalesGoal?: number | null;
+  aiEnabled?: boolean;
+  aiAgentName?: string;
+  aiBusinessName?: string;
+  aiBusinessDesc?: string;
+  aiProducts?: string;
+  aiTargetAudience?: string;
+  aiTone?: string;
+  aiObjective?: string;
+  aiDontTalk?: string;
+  aiAlwaysAsk?: string;
+  aiQualifyWhen?: string;
+  aiBusinessHours?: string;
+  aiAfterHoursMsg?: string;
 }
 
 // ---------------------------------------------------------------------------
