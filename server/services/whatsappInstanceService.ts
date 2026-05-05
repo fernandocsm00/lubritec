@@ -224,10 +224,11 @@ export async function connect(input: {
   const webhookUrl = buildWebhookUrl();
 
   try {
-    await setWebhook(
+    const setWebhookResp = await setWebhook(
       { baseUrl: row.baseUrl, token: instanceToken },
       { url: webhookUrl, secret: webhookSecret, events: ['message.received'] },
     );
+    console.log('[whatsapp:connect] setWebhook response:', JSON.stringify(setWebhookResp));
     [row] = await db
       .update(whatsappInstance)
       .set({
@@ -239,6 +240,7 @@ export async function connect(input: {
       .where(eq(whatsappInstance.id, row.id))
       .returning();
   } catch (err) {
+    console.error('[whatsapp:connect] setWebhook FAILED:', err instanceof Error ? err.message : err);
     // Webhook pode falhar mas instância já existe — marca como não sincronizado.
     [row] = await db
       .update(whatsappInstance)
