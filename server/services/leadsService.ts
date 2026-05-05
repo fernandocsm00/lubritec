@@ -4,6 +4,7 @@ import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm'
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
+import { tryEnrollSafe } from './continuousCampaign';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,6 +79,10 @@ export async function createLead(input: {
         flowStage: computeInitialStage(phone),
       })
       .returning();
+    // Lead criado com phone → enrolado automaticamente na campanha contínua.
+    if (row.flowStage === 'complete') {
+      await tryEnrollSafe(row.id);
+    }
     return toPublic({ ...row, hasDeal: false });
   } catch (err) {
     const pgErr = (
@@ -156,6 +161,11 @@ export async function updateLead(input: {
   try {
     const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
     if (!row) throw new HttpError(404, 'Lead not found');
+    // Se o phone foi adicionado agora, lead transicionou pra 'complete' →
+    // enrola na campanha contínua.
+    if (rest.phone !== undefined && row.flowStage === 'complete') {
+      await tryEnrollSafe(row.id);
+    }
     return toPublic({ ...row, hasDeal: false });
   } catch (err) {
     const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string; constraint?: string };

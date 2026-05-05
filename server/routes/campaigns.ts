@@ -16,10 +16,17 @@ import {
   recipientsHandler,
   uploadMediaHandler,
 } from '../controllers/campaignsController';
+import {
+  getHandler as continuousGetHandler,
+  upsertHandler as continuousUpsertHandler,
+} from '../controllers/continuousCampaignController';
 
 const router = Router();
 const guard = [authGuard, requireRole('admin', 'comercial')];
 const adminOnly = [authGuard, requireRole('admin')];
+
+router.get('/continuous', ...guard, continuousGetHandler);
+router.put('/continuous', ...adminOnly, continuousUpsertHandler);
 
 router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);

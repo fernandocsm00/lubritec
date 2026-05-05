@@ -1,8 +1,10 @@
 import { db } from '../db/client';
-import { campaigns, campaignRecipients, conversations, messages, leads } from '../db/schema';
+import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings } from '../db/schema';
 import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { uazapiClient } from './uazapiClient';
+import { isWithinDispatchWindow, pickVariant } from './continuousCampaign';
+import type { ConversationQueue } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
 let isProcessing = false;
@@ -41,7 +43,15 @@ export async function tick(): Promise<void> {
 
     const running = await db.select().from(campaigns).where(eq(campaigns.status, 'running'));
 
+    // Janela horária — só calcula 1x por tick.
+    const window = await isWithinDispatchWindow();
+
     for (const c of running) {
+      // Campanhas contínuas respeitam horário comercial.
+      // Campanhas one-shot (manuais) seguem como antes (controle pelo admin).
+      if (c.isContinuous && !window.ok) {
+        continue;
+      }
       await processCampaign(c);
     }
   } finally {
@@ -60,7 +70,9 @@ export async function processCampaign(c: Campaign): Promise<void> {
     .limit(limit);
 
   if (recipients.length === 0) {
-    // Tudo processado → completed
+    // Continuous campaigns nunca terminam — ficam aguardando novos enrolls.
+    if (c.isContinuous) return;
+    // One-shot: tudo processado → completed.
     await db.update(campaigns).set({
       status: 'completed',
       completedAt: new Date(),
@@ -87,15 +99,17 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
     const [lead] = await db.select().from(leads).where(eq(leads.id, r.leadId)).limit(1);
     if (!lead) throw new Error('Lead not found');
 
-    const interpolated = interpolatePlaceholders(c.messageBody, lead);
+    // Continuous: escolhe variant random (A/B). One-shot: usa messageBody.
+    const variant = c.isContinuous ? pickVariant(c) : { body: c.messageBody, mediaUrl: c.mediaUrl, mediaMime: c.mediaMime };
+    const interpolated = interpolatePlaceholders(variant.body, lead);
     const conv = await getOrCreateConversationForCampaign(r.phone, lead.id, c.id);
 
-    const resp = c.mediaUrl
+    const resp = variant.mediaUrl
       ? await uazapiClient.sendMessage({
           to: r.phone,
           kind: 'image',
-          mediaUrl: absoluteUrl(c.mediaUrl),
-          mediaMime: c.mediaMime ?? undefined,
+          mediaUrl: absoluteUrl(variant.mediaUrl),
+          mediaMime: variant.mediaMime ?? undefined,
           text: interpolated,
         })
       : await uazapiClient.sendMessage({
@@ -108,13 +122,13 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
     const [msg] = await db.insert(messages).values({
       conversationId: conv.id,
       direction: 'out',
-      kind: c.mediaUrl ? 'image' : 'text',
+      kind: variant.mediaUrl ? 'image' : 'text',
       body: interpolated,
-      mediaUrl: c.mediaUrl ?? null,
-      mediaMime: c.mediaMime ?? null,
+      mediaUrl: variant.mediaUrl ?? null,
+      mediaMime: variant.mediaMime ?? null,
       sentByUserId: c.createdByUserId,
       uazapiMsgId: resp.messageId,
-      rawPayload: resp.rawPayload as object,
+      rawPayload: { ...(resp.rawPayload as object), variantBody: variant.body } as object,
       sentAt,
     }).returning();
 
@@ -135,6 +149,12 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
       lastMessageAt: sentAt,
       updatedAt: new Date(),
     }).where(eq(conversations.id, conv.id));
+
+    // Promove lead.flow_stage de complete → dispatched (continuous + one-shot).
+    // Só promove se ainda estiver em 'complete' — não regride stages avançados.
+    await db.update(leads)
+      .set({ flowStage: 'dispatched', updatedAt: new Date() })
+      .where(and(eq(leads.id, lead.id), eq(leads.flowStage, 'complete')));
   } catch (err) {
     await db.update(campaignRecipients).set({
       status: 'failed',
@@ -148,15 +168,24 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
   }
 }
 
+async function defaultCampaignQueue(): Promise<ConversationQueue> {
+  // Quando IA está ativa, conversa vai pra fila IA (alinhado ao fluxo macro:
+  // disparo → cliente responde → IA qualifica → comercial). Quando IA off,
+  // cai em recepcao pra humanos atenderem.
+  const [s] = await db.select({ aiEnabled: orgSettings.aiEnabled }).from(orgSettings).limit(1);
+  return s?.aiEnabled ? 'ia' : 'recepcao';
+}
+
 async function getOrCreateConversationForCampaign(phone: string, leadId: string, campaignId: string) {
   const [existing] = await db.select().from(conversations).where(eq(conversations.phone, phone)).limit(1);
   if (existing) return existing;
 
+  const queue = await defaultCampaignQueue();
   const [created] = await db.insert(conversations).values({
     phone,
     leadId,
-    queue: 'comercial',  // disparos vão pra Comercial
-    status: 'em_atendimento',
+    queue,
+    status: queue === 'ia' ? 'aguardando_atendimento' : 'em_atendimento',
     originKind: 'campaign',
     originCampaignId: campaignId,
     lastMessageAt: new Date(),

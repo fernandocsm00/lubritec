@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -37,9 +37,14 @@ export default function CampaignsPage() {
           <h1 className="text-2xl font-semibold">Campanhas</h1>
           <p className="text-sm text-muted-foreground">Disparo em massa de mensagens WhatsApp</p>
         </div>
-        <Button asChild>
-          <Link to="/campanhas/nova"><Plus className="h-4 w-4 mr-1" /> Nova campanha</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/campanhas/automatico"><Zap className="h-4 w-4 mr-1" /> Disparo automático</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/campanhas/nova"><Plus className="h-4 w-4 mr-1" /> Nova campanha</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4 flex-wrap">

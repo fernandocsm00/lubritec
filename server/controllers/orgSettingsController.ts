@@ -17,6 +17,10 @@ const putBody = z.object({
   aiQualifyWhen: z.string().min(1).max(2000).optional(),
   aiBusinessHours: z.string().max(200).optional(),
   aiAfterHoursMsg: z.string().max(2000).optional(),
+  dispatchStartHour: z.number().int().min(0).max(23).optional(),
+  dispatchEndHour: z.number().int().min(0).max(24).optional(),
+  dispatchSkipWeekends: z.boolean().optional(),
+  dispatchTimezone: z.string().min(1).max(64).optional(),
 });
 
 export async function getHandler(_req: Request, res: Response, next: NextFunction) {

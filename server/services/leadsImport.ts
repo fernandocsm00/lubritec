@@ -6,6 +6,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { ImportReport } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { lookupCnpj } from './cnpjLookup';
+import { tryEnrollSafe } from './continuousCampaign';
 
 // BrasilAPI free tier is roughly 3 req/min; adding ~21s between calls keeps us
 // under that ceiling. Larger imports are rejected up-front so a CSV with 1000
@@ -181,6 +182,9 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
 
   let inserted = 0;
   let updated = 0;
+  // IDs de leads que ficaram em 'complete' nessa importação — enrolam na contínua
+  // depois do commit da transação (best-effort, fora do tx pra não segurar locks).
+  const toEnroll: string[] = [];
 
   await db.transaction(async (tx) => {
     for (const row of validRows) {
@@ -191,7 +195,8 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
         .limit(1);
 
       if (!existing) {
-        await tx.insert(leads).values({
+        const stage = row.phone ? 'complete' : 'incomplete';
+        const [created] = await tx.insert(leads).values({
           name: row.name,
           phone: row.phone,
           cnpj: row.cnpj,
@@ -199,8 +204,9 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
           notes: row.notes,
           source: 'csv',
           status: 'frio',
-          flowStage: row.phone ? 'complete' : 'incomplete',
-        });
+          flowStage: stage,
+        }).returning({ id: leads.id });
+        if (stage === 'complete') toEnroll.push(created.id);
         inserted++;
         continue;
       }
@@ -220,6 +226,7 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
         patch.phone = row.phone;
         if (existing.flowStage === 'incomplete') {
           patch.flowStage = 'complete';
+          toEnroll.push(existing.id);
         }
       }
 
@@ -230,6 +237,11 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
       updated++;
     }
   });
+
+  // Best-effort enroll fora da transação. Cada chamada é idempotente e safe.
+  for (const leadId of toEnroll) {
+    await tryEnrollSafe(leadId);
+  }
 
   return { inserted, updated, skipped: 0, rejected };
 }

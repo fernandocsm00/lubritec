@@ -359,6 +359,11 @@ export interface PublicOrgSettings {
   aiQualifyWhen: string;
   aiBusinessHours: string;
   aiAfterHoursMsg: string;
+  // ── Janela de envio (Sprint 4 — auto-disparo respeitando horário comercial) ──
+  dispatchStartHour: number;
+  dispatchEndHour: number;
+  dispatchSkipWeekends: boolean;
+  dispatchTimezone: string;
   updatedAt: string;
 }
 
@@ -377,6 +382,44 @@ export interface UpdateOrgSettingsInput {
   aiQualifyWhen?: string;
   aiBusinessHours?: string;
   aiAfterHoursMsg?: string;
+  dispatchStartHour?: number;
+  dispatchEndHour?: number;
+  dispatchSkipWeekends?: boolean;
+  dispatchTimezone?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Continuous campaign (Sprint 4)
+// ---------------------------------------------------------------------------
+
+export interface CampaignMessageVariant {
+  name?: string;
+  body: string;
+  mediaUrl?: string | null;
+  mediaMime?: string | null;
+}
+
+export interface PublicContinuousCampaign {
+  id: string;
+  name: string;
+  status: CampaignStatus;
+  messageBody: string;                       // fallback se variants vazio
+  messageVariants: CampaignMessageVariant[]; // 0+ variantes A/B
+  ratePerMinute: number;
+  enrolledTotal: number;
+  sentCount: number;
+  failedCount: number;
+  pendingCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertContinuousCampaignInput {
+  name?: string;
+  status?: 'running' | 'paused';
+  messageBody?: string;
+  messageVariants?: CampaignMessageVariant[];
+  ratePerMinute?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,10 @@ function toPublic(row: OrgSettings): PublicOrgSettings {
     aiQualifyWhen: row.aiQualifyWhen,
     aiBusinessHours: row.aiBusinessHours,
     aiAfterHoursMsg: row.aiAfterHoursMsg,
+    dispatchStartHour: row.dispatchStartHour,
+    dispatchEndHour: row.dispatchEndHour,
+    dispatchSkipWeekends: row.dispatchSkipWeekends,
+    dispatchTimezone: row.dispatchTimezone,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -63,6 +67,21 @@ export async function updateOrgSettings(
   if (input.aiQualifyWhen !== undefined) patch.aiQualifyWhen = input.aiQualifyWhen;
   if (input.aiBusinessHours !== undefined) patch.aiBusinessHours = input.aiBusinessHours;
   if (input.aiAfterHoursMsg !== undefined) patch.aiAfterHoursMsg = input.aiAfterHoursMsg;
+
+  if (input.dispatchStartHour !== undefined) {
+    if (input.dispatchStartHour < 0 || input.dispatchStartHour > 23) {
+      throw new HttpError(400, 'dispatchStartHour deve estar entre 0 e 23');
+    }
+    patch.dispatchStartHour = input.dispatchStartHour;
+  }
+  if (input.dispatchEndHour !== undefined) {
+    if (input.dispatchEndHour < 0 || input.dispatchEndHour > 24) {
+      throw new HttpError(400, 'dispatchEndHour deve estar entre 0 e 24');
+    }
+    patch.dispatchEndHour = input.dispatchEndHour;
+  }
+  if (input.dispatchSkipWeekends !== undefined) patch.dispatchSkipWeekends = input.dispatchSkipWeekends;
+  if (input.dispatchTimezone !== undefined) patch.dispatchTimezone = input.dispatchTimezone;
 
   const [row] = await db
     .update(orgSettings)

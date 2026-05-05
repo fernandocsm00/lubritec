@@ -186,6 +186,11 @@ export const orgSettings = pgTable(
     aiQualifyWhen: text('ai_qualify_when').notNull().default('cliente demonstrou interesse claro em comprar, pediu orçamento, ou solicitou agendamento'),
     aiBusinessHours: text('ai_business_hours').notNull().default(''),
     aiAfterHoursMsg: text('ai_after_hours_msg').notNull().default(''),
+    // ── Janela de envio (auto-disparo Sprint 4) ──
+    dispatchStartHour: integer('dispatch_start_hour').notNull().default(8),
+    dispatchEndHour: integer('dispatch_end_hour').notNull().default(18),
+    dispatchSkipWeekends: boolean('dispatch_skip_weekends').notNull().default(true),
+    dispatchTimezone: text('dispatch_timezone').notNull().default('America/Sao_Paulo'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({ singletonUniq: uniqueIndex('idx_org_settings_singleton').on(t.singleton) }),
@@ -209,10 +214,22 @@ export const campaigns = pgTable('campaigns', {
   failedCount: integer('failed_count').notNull().default(0),
   skippedCount: integer('skipped_count').notNull().default(0),
   ratePerMinute: integer('rate_per_minute').notNull().default(20),
+  // Campanha contínua: nunca termina, auto-enrola novos leads complete.
+  // Apenas UMA pode existir ativa (partial unique index na migration).
+  isContinuous: boolean('is_continuous').notNull().default(false),
+  // A/B testing: array de variantes. Quando null/vazio, usa messageBody legado.
+  messageVariants: jsonb('message_variants').$type<CampaignMessageVariant[] | null>(),
   createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export interface CampaignMessageVariant {
+  name?: string;
+  body: string;
+  mediaUrl?: string | null;
+  mediaMime?: string | null;
+}
 
 export const campaignRecipients = pgTable('campaign_recipients', {
   id: uuid('id').primaryKey().defaultRandom(),
