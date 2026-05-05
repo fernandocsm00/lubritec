@@ -194,6 +194,23 @@ export async function updateLead(input: {
 }
 
 // ---------------------------------------------------------------------------
+// getLeadById — usado pelo modal de edição inline (whatsapp inbox, deal drawer)
+// ---------------------------------------------------------------------------
+
+export async function getLeadById(id: string): Promise<PublicLead> {
+  const [row] = await db
+    .select({
+      lead: leads,
+      hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`,
+    })
+    .from(leads)
+    .where(eq(leads.id, id))
+    .limit(1);
+  if (!row) throw new HttpError(404, 'Lead not found');
+  return toPublic({ ...row.lead, hasDeal: Boolean(row.hasDeal) });
+}
+
+// ---------------------------------------------------------------------------
 // markLost — admin marca lead como perdido manualmente
 // ---------------------------------------------------------------------------
 

@@ -11,6 +11,8 @@ import { ActivityLog } from './ActivityLog';
 import { ValueInput } from './ValueInput';
 import { avatarInitials, formatCurrency, STAGE_LABELS, STAGE_COLORS } from './helpers';
 import { formatCnpj } from '@/lib/utils';
+import { useLead } from '@/features/leads/api';
+import { LeadDialog } from '@/features/leads/LeadDialog';
 
 interface Props {
   dealId: string | null;
@@ -23,6 +25,9 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
   const patch = usePatchDeal();
   const [valueDraft, setValueDraft] = useState<number | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
+  const [editLeadOpen, setEditLeadOpen] = useState(false);
+  // Carrega lead completo lazy quando modal abre.
+  const { data: fullLead } = useLead(editLeadOpen && deal ? deal.lead.id : null);
 
   useEffect(() => {
     if (deal) {
@@ -131,13 +136,27 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-2 p-4 border-t border-border">
+            {/* Abrir conversa: deep-link com queue=comercial (típico pra deals) +
+                statusChips ampliado pra incluir encerradas — maximiza chance da
+                conv aparecer no filtro inicial. WhatsappPage faz auto-select. */}
             <Button asChild variant="outline" size="sm">
-              <Link to={`/whatsapp?conv=${deal.lead.id}`}>Abrir conversa</Link>
+              <Link to={`/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento,encerradas&assignment=all&origin=organic,campaign&lead=${deal.lead.id}`}>
+                Abrir conversa
+              </Link>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/cadastros">Editar lead</Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditLeadOpen(true)}
+              disabled={editLeadOpen && !fullLead}
+            >
+              {editLeadOpen && !fullLead ? 'Carregando…' : 'Editar lead'}
             </Button>
           </div>
+
+          {fullLead && (
+            <LeadDialog lead={fullLead} open={editLeadOpen} onOpenChange={setEditLeadOpen} />
+          )}
 
           {!readOnly && valueDraft !== deal.proposalValue && (
             <div className="p-2 border-t border-border bg-muted/30">

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,8 @@ import { useCreateDeal } from '@/features/inside-sales/api';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import { formatCnpj } from '@/lib/utils';
+import { useLead } from '@/features/leads/api';
+import { LeadDialog } from '@/features/leads/LeadDialog';
 import type { ConversationFilters, PublicConversation } from './types';
 
 interface Props {
@@ -32,6 +34,9 @@ export function LeadSidebar({ conversationId, filters }: Props) {
   // Reaproveita a lista para evitar request extra — encontra a conv selecionada lá.
   const { data, isLoading } = useConversations(filters);
   const conv = data?.items.find((c) => c.id === conversationId);
+  const [editLeadOpen, setEditLeadOpen] = useState(false);
+  // Carrega lead completo só quando modal abre (lazy).
+  const { data: fullLead } = useLead(editLeadOpen ? (conv?.lead.id ?? null) : null);
 
   if (isLoading || !conv) {
     return (
@@ -73,10 +78,19 @@ export function LeadSidebar({ conversationId, filters }: Props) {
       <PipelineSection leadId={conv.lead.id} />
 
       <div className="mt-auto p-4 space-y-2">
-        <Button asChild variant="default" className="w-full">
-          <Link to="/cadastros">Editar lead →</Link>
+        <Button variant="default" className="w-full" onClick={() => setEditLeadOpen(true)} disabled={editLeadOpen && !fullLead}>
+          {editLeadOpen && !fullLead ? 'Carregando…' : 'Editar lead →'}
         </Button>
       </div>
+
+      {/* Modal só abre depois que o lead completo carregar — evita flash de "Novo lead". */}
+      {fullLead && (
+        <LeadDialog
+          lead={fullLead}
+          open={editLeadOpen}
+          onOpenChange={setEditLeadOpen}
+        />
+      )}
     </div>
   );
 }

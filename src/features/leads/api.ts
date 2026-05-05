@@ -37,6 +37,15 @@ export function useLeads(params: ListParams) {
   });
 }
 
+export function useLead(id: string | null) {
+  return useQuery({
+    queryKey: ['lead', id],
+    queryFn: () => api<PublicLead>(`/leads/${id}`),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+}
+
 export function useCreateLead() {
   const qc = useQueryClient();
   return useMutation({

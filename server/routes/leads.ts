@@ -14,6 +14,7 @@ import {
   bulkEnrichResumeHandler,
   transitionsHandler,
   markLostHandler,
+  getByIdHandler,
 } from '../controllers/leadsController';
 import { authGuard } from '../middleware/authGuard';
 import { requireRole } from '../middleware/requireRole';
@@ -29,6 +30,7 @@ router.post('/enrich-bulk/cancel', authGuard, requireRole('admin'), bulkEnrichCa
 router.post('/enrich-bulk/pause', authGuard, requireRole('admin'), bulkEnrichPauseHandler);
 router.post('/enrich-bulk/resume', authGuard, requireRole('admin'), bulkEnrichResumeHandler);
 router.post('/', authGuard, createHandler);
+router.get('/:id', authGuard, getByIdHandler);
 router.patch('/:id', authGuard, updateHandler);
 router.delete('/:id', authGuard, deleteHandler);
 router.post('/:id/enrich', authGuard, enrichHandler);

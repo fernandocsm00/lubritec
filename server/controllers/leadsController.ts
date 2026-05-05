@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES } from '../../shared/types';
-import { createLead, listLeads, updateLead, deleteLead, markLeadLost } from '../services/leadsService';
+import { createLead, listLeads, updateLead, deleteLead, markLeadLost, getLeadById } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
 import {
@@ -163,6 +163,14 @@ export async function bulkEnrichResumeHandler(_req: Request, res: Response, next
   try {
     const job = await resumeCurrentJob();
     res.json({ job });
+  } catch (e) { next(e); }
+}
+
+export async function getByIdHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const lead = await getLeadById(id);
+    res.json(lead);
   } catch (e) { next(e); }
 }
 
