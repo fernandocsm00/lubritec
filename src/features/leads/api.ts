@@ -156,6 +156,18 @@ export function useCancelBulkEnrichment() {
 
 import type { PublicLeadStageTransition } from '@shared/types';
 
+export function useMarkLeadLost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api<PublicLead>(`/leads/${id}/lost`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+  });
+}
+
 export function useLeadTransitions(leadId: string | null) {
   return useQuery({
     queryKey: ['lead', leadId, 'transitions'],

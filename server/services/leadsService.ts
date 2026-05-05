@@ -194,6 +194,43 @@ export async function updateLead(input: {
 }
 
 // ---------------------------------------------------------------------------
+// markLost — admin marca lead como perdido manualmente
+// ---------------------------------------------------------------------------
+
+export async function markLeadLost(input: {
+  id: string;
+  reason?: string | null;
+}): Promise<PublicLead> {
+  const [current] = await db
+    .select({ flowStage: leads.flowStage })
+    .from(leads)
+    .where(eq(leads.id, input.id))
+    .limit(1);
+  if (!current) throw new HttpError(404, 'Lead not found');
+  if (current.flowStage === 'lost') throw new HttpError(400, 'Lead já está marcado como perdido');
+  if (current.flowStage === 'handed_off') {
+    throw new HttpError(400, 'Lead já foi pro comercial — feche o deal pra marcar como perdido');
+  }
+
+  const [row] = await db
+    .update(leads)
+    .set({ flowStage: 'lost', updatedAt: new Date() })
+    .where(eq(leads.id, input.id))
+    .returning();
+  if (!row) throw new HttpError(404, 'Lead not found');
+
+  await recordTransition({
+    leadId: input.id,
+    fromStage: current.flowStage as PublicLead['flowStage'],
+    toStage: 'lost',
+    source: 'manual_lost',
+    metadata: input.reason ? { reason: input.reason } : undefined,
+  });
+
+  return toPublic({ ...row, hasDeal: false });
+}
+
+// ---------------------------------------------------------------------------
 // deleteLead
 // ---------------------------------------------------------------------------
 

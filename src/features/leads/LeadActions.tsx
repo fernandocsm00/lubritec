@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MoreHorizontal, Search } from 'lucide-react';
+import { MoreHorizontal, Search, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { LeadDialog } from './LeadDialog';
-import { useDeleteLead, useEnrichLead, type EnrichmentStatus } from './api';
+import { useDeleteLead, useEnrichLead, useMarkLeadLost, type EnrichmentStatus } from './api';
+import { Textarea } from '@/components/ui/textarea';
 import { translateError } from './translateError';
 import type { PublicLead } from '@shared/types';
 
@@ -50,10 +51,15 @@ const ENRICH_MESSAGES: Record<EnrichmentStatus, { type: 'success' | 'info' | 'er
 export function LeadActions({ lead }: { lead: PublicLead }) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [lostOpen, setLostOpen] = useState(false);
+  const [lostReason, setLostReason] = useState('');
   const del = useDeleteLead();
   const enrich = useEnrichLead();
+  const markLost = useMarkLeadLost();
   // Disponibilizamos enriquecimento só pra leads sem phone E com cnpj.
   const canEnrich = !lead.phone && !!lead.cnpj;
+  // Marcar como perdido: só permite se ainda não está em handed_off OR lost.
+  const canMarkLost = lead.flowStage !== 'lost' && lead.flowStage !== 'handed_off';
 
   async function onDelete() {
     try {
@@ -62,6 +68,17 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
     } catch (e) {
       const msg = e instanceof Error ? translateError(e.message) : 'Erro ao excluir.';
       toast.error(msg);
+    }
+  }
+
+  async function onMarkLost() {
+    try {
+      await markLost.mutateAsync({ id: lead.id, reason: lostReason.trim() || undefined });
+      toast.success('Lead marcado como perdido.');
+      setLostOpen(false);
+      setLostReason('');
+    } catch (e) {
+      toast.error(e instanceof Error ? translateError(e.message) : 'Erro ao marcar como perdido.');
     }
   }
 
@@ -98,6 +115,15 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
               </DropdownMenuItem>
             </>
           )}
+          {canMarkLost && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setLostOpen(true)}>
+                <Ban className="mr-2 h-4 w-4" />
+                Marcar como perdido
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive">
             Excluir
@@ -106,6 +132,38 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
       </DropdownMenu>
 
       <LeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />
+
+      <AlertDialog open={lostOpen} onOpenChange={setLostOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Marcar {lead.name} como perdido?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O lead será movido pra etapa "Perdido" e sairá das filas ativas.
+              Isso é registrado no histórico do lead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Motivo (opcional)</label>
+            <Textarea
+              value={lostReason}
+              onChange={(e) => setLostReason(e.target.value)}
+              placeholder="Ex: cliente disse que não tem interesse no momento"
+              rows={3}
+              maxLength={500}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onMarkLost}
+              disabled={markLost.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Marcar como perdido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES } from '../../shared/types';
-import { createLead, listLeads, updateLead, deleteLead } from '../services/leadsService';
+import { createLead, listLeads, updateLead, deleteLead, markLeadLost } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
 import {
@@ -155,5 +155,18 @@ export async function transitionsHandler(req: Request, res: Response, next: Next
     const { id } = idParams.parse(req.params);
     const transitions = await listLeadTransitions(id);
     res.json({ transitions });
+  } catch (e) { next(e); }
+}
+
+const lostBody = z.object({
+  reason: z.string().max(500).optional(),
+});
+
+export async function markLostHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const body = lostBody.parse(req.body ?? {});
+    const lead = await markLeadLost({ id, reason: body.reason ?? null });
+    res.json(lead);
   } catch (e) { next(e); }
 }
