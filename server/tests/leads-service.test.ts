@@ -147,10 +147,22 @@ describe('parseLeadsCsv', () => {
   });
 
   it('reporta missingHeaders quando faltam obrigatórias', async () => {
-    const csv = `nome,email\nA,a@x.com\n`;
+    // Phone NÃO é mais obrigatório (leads CNPJ-only vão pra enriquecimento).
+    // Apenas name + cnpj são exigidos no header.
+    const csv = `email\na@x.com\n`;
     const { missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
-    expect(missingHeaders).toContain('phone');
+    expect(missingHeaders).toContain('name');
     expect(missingHeaders).toContain('cnpj');
+    expect(missingHeaders).not.toContain('phone');
+  });
+
+  it('aceita CSV sem coluna phone — leads viram flowStage=incomplete', async () => {
+    const csv = `name,cnpj\nEmpresa Sem Telefone,${VALID_CNPJ_1}\n`;
+    const { rows, rejected, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
+    expect(missingHeaders).toEqual([]);
+    expect(rejected).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].phone).toBeNull();
   });
 
   it('aceita arquivo com BOM UTF-8 (Excel)', async () => {

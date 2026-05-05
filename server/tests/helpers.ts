@@ -1,7 +1,7 @@
 import { db } from '../db/client';
 import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance, campaigns, campaignRecipients } from '../db/schema';
 import { hashPassword } from '../lib/hash';
-import type { Role, LeadStatus, LeadSource } from '@shared/types';
+import type { Role, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
 import type {
   ConversationQueue,
   ConversationStatus,
@@ -48,24 +48,27 @@ export async function createUser(opts: {
 
 export async function createLead(opts: {
   name?: string;
-  phone?: string;
+  phone?: string | null;
   cnpj?: string;
   email?: string | null;
   notes?: string | null;
   status?: LeadStatus;
   source?: LeadSource;
+  flowStage?: LeadFlowStage;
   createdAt?: Date;
 }) {
+  const phone = opts.phone === null ? null : (opts.phone ?? `5511${String(++_phoneSeq).padStart(8, '0')}`);
   const [l] = await db
     .insert(leads)
     .values({
       name: opts.name ?? 'Lead Test',
-      phone: opts.phone ?? `5511${String(++_phoneSeq).padStart(8, '0')}`,
+      phone,
       cnpj: opts.cnpj ?? nextTestCnpj(),
       email: opts.email ?? null,
       notes: opts.notes ?? null,
       status: opts.status ?? 'frio',
       source: opts.source ?? 'manual',
+      flowStage: opts.flowStage ?? (phone ? 'complete' : 'incomplete'),
       ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     })
     .returning();

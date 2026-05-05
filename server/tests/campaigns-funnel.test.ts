@@ -28,7 +28,7 @@ describe('getCampaignFunnel', () => {
     const c = await createCampaign({ createdByUserId: u.id });
     const lead = await createLead({ phone: '5511000201001' });
 
-    const conv = await createConversation({ phone: lead.phone, leadId: lead.id });
+    const conv = await createConversation({ phone: lead.phone ?? undefined, leadId: lead.id });
     const sentAt = new Date(Date.now() - 60 * 1000);
     await createCampaignRecipient({
       campaignId: c.id, leadId: lead.id, status: 'sent', sentAt,

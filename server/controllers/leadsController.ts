@@ -27,7 +27,8 @@ const editableCoreUpdate = {
 };
 
 const createSchema = z.object({
-  phone: phoneInput,
+  // Phone agora opcional — leads CNPJ-only são suportados (vão pra enriquecimento).
+  phone: phoneInput.optional(),
   cnpj: cnpjInput,
   ...editableCoreCreate,
 });
@@ -35,9 +36,10 @@ const updateSchema = z
   .object({
     ...editableCoreUpdate,
     status: z.enum(LEAD_STATUSES).optional(),
-    // CNPJ é editável no payload, mas o service só permite quando o lead atual
-    // ainda não tem CNPJ (caso de leads criados via WhatsApp inbound).
+    // CNPJ e phone são editáveis no payload, mas o service só permite quando o
+    // lead atual ainda NÃO tem o campo. Uma vez setado, viram imutáveis.
     cnpj: cnpjInput.optional(),
+    phone: phoneInput.optional(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field required' });
@@ -76,12 +78,8 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
 
 export async function updateHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    if (req.body && typeof req.body === 'object') {
-      if ('phone' in req.body) {
-        return res.status(400).json({ error: 'Phone cannot be edited' });
-      }
-      // CNPJ pode vir no payload — o service decide se aceita (só quando atual é null).
-    }
+    // CNPJ e phone podem vir no payload — o service decide se aceita
+    // (só quando o atual é null). Nada a barrar aqui.
     const { id } = idParams.parse(req.params);
     const body = updateSchema.parse(req.body);
     const lead = await updateLead({ id, ...body });

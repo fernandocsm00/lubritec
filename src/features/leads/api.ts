@@ -41,7 +41,7 @@ export function useCreateLead() {
   return useMutation({
     mutationFn: (input: {
       name: string;
-      phone: string;
+      phone?: string;
       cnpj: string;
       email?: string | null;
       notes?: string | null;
@@ -60,6 +60,7 @@ export function useUpdateLead() {
       notes?: string | null;
       status?: LeadStatus;
       cnpj?: string;
+      phone?: string;
     }) => {
       const { id, ...body } = input;
       return api<PublicLead>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) });

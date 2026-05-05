@@ -33,15 +33,38 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const LEAD_SOURCES = ['manual', 'csv', 'whatsapp'] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
+/**
+ * Etapas do fluxo macro do lead (orthogonal ao `status` quente/morno/frio).
+ *
+ *   incomplete   — sem telefone; aguarda enriquecimento (BrasilAPI/scraping/IA)
+ *   complete     — telefone presente e válido; pronto pra entrar no disparo
+ *   dispatched   — recebeu disparo automático/campanha; aguarda resposta
+ *   engaged      — respondeu pelo menos uma mensagem inbound
+ *   qualified    — IA de atendimento marcou como pronto pra comercial
+ *   handed_off   — comercial assumiu (deal criado e atribuído)
+ *   lost         — encerrado sem conversão
+ */
+export const LEAD_FLOW_STAGES = [
+  'incomplete',
+  'complete',
+  'dispatched',
+  'engaged',
+  'qualified',
+  'handed_off',
+  'lost',
+] as const;
+export type LeadFlowStage = (typeof LEAD_FLOW_STAGES)[number];
+
 export interface PublicLead {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   cnpj: string | null;
   email: string | null;
   notes: string | null;
   status: LeadStatus;
   source: LeadSource;
+  flowStage: LeadFlowStage;
   hasDeal: boolean;
   createdAt: string;
   updatedAt: string;
@@ -179,7 +202,7 @@ export interface PublicDeal {
   lead: {
     id: string;
     name: string;
-    phone: string;
+    phone: string | null;
     cnpj: string | null;
     status: LeadStatus;
   };

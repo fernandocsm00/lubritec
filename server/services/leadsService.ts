@@ -23,10 +23,20 @@ function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): Publi
     notes: row.notes,
     status: row.status,
     source: row.source,
+    flowStage: row.flowStage,
     hasDeal: row.hasDeal ?? false,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Calcula o flow_stage inicial pra um lead novo baseado nos dados disponíveis.
+ * Útil pra createLead manual e CSV import. Webhook usa lógica própria
+ * (sempre tem phone → 'engaged' ou 'complete' dependendo do contexto).
+ */
+function computeInitialStage(phone: string | null | undefined): 'incomplete' | 'complete' {
+  return phone && phone.length >= 8 ? 'complete' : 'incomplete';
 }
 
 // ---------------------------------------------------------------------------
@@ -35,13 +45,17 @@ function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): Publi
 
 export async function createLead(input: {
   name: string;
-  phone: string;
+  phone?: string | null;
   cnpj: string;
   email?: string | null;
   notes?: string | null;
 }): Promise<PublicLead> {
-  const phone = normalizePhone(input.phone);
-  if (phone.length < 8) throw new HttpError(400, 'Phone must have at least 8 digits');
+  // Phone agora é opcional pra suportar leads CNPJ-only (vão pra enriquecimento).
+  const phoneRaw = input.phone ?? '';
+  const phone = phoneRaw ? normalizePhone(phoneRaw) : null;
+  if (phone !== null && phone.length < 8) {
+    throw new HttpError(400, 'Phone must have at least 8 digits');
+  }
 
   const cnpj = normalizeCnpj(input.cnpj);
   if (!isValidCnpjFormat(cnpj)) throw new HttpError(400, 'CNPJ inválido');
@@ -61,6 +75,7 @@ export async function createLead(input: {
         cnpj,
         email: input.email ?? null,
         notes: input.notes ?? null,
+        flowStage: computeInitialStage(phone),
       })
       .returning();
     return toPublic({ ...row, hasDeal: false });
@@ -91,6 +106,9 @@ export async function updateLead(input: {
   // CNPJ é editável APENAS se o lead ainda não tem CNPJ (caso de leads criados
   // automaticamente via WhatsApp inbound). Uma vez setado, vira imutável.
   cnpj?: string;
+  // Phone é editável APENAS se o lead ainda não tem phone (caso de leads
+  // CNPJ-only do CSV aguardando enriquecimento). Uma vez setado, imutável.
+  phone?: string;
 }): Promise<PublicLead> {
   const { id, ...rest } = input;
   const patch: Partial<NewLead> = { updatedAt: new Date() };
@@ -99,10 +117,20 @@ export async function updateLead(input: {
   if (rest.notes !== undefined) patch.notes = rest.notes;
   if (rest.status !== undefined) patch.status = rest.status;
 
-  if (rest.cnpj !== undefined) {
-    const [current] = await db.select({ cnpj: leads.cnpj }).from(leads).where(eq(leads.id, id)).limit(1);
+  // Carrega o estado atual uma vez se vamos validar phone OU cnpj.
+  const needsCurrent = rest.cnpj !== undefined || rest.phone !== undefined;
+  let current: { cnpj: string | null; phone: string | null; flowStage: string } | undefined;
+  if (needsCurrent) {
+    [current] = await db
+      .select({ cnpj: leads.cnpj, phone: leads.phone, flowStage: leads.flowStage })
+      .from(leads)
+      .where(eq(leads.id, id))
+      .limit(1);
     if (!current) throw new HttpError(404, 'Lead not found');
-    if (current.cnpj && current.cnpj.length > 0) {
+  }
+
+  if (rest.cnpj !== undefined) {
+    if (current!.cnpj && current!.cnpj.length > 0) {
       throw new HttpError(400, 'CNPJ cannot be edited');
     }
     const cnpj = normalizeCnpj(rest.cnpj);
@@ -110,6 +138,19 @@ export async function updateLead(input: {
     const [dup] = await db.select({ id: leads.id }).from(leads).where(eq(leads.cnpj, cnpj)).limit(1);
     if (dup && dup.id !== id) throw new HttpError(409, 'CNPJ já cadastrado');
     patch.cnpj = cnpj;
+  }
+
+  if (rest.phone !== undefined) {
+    if (current!.phone && current!.phone.length > 0) {
+      throw new HttpError(400, 'Phone cannot be edited');
+    }
+    const phone = normalizePhone(rest.phone);
+    if (phone.length < 8) throw new HttpError(400, 'Phone must have at least 8 digits');
+    patch.phone = phone;
+    // Promove o stage de incomplete → complete quando phone é adicionado.
+    if (current!.flowStage === 'incomplete') {
+      patch.flowStage = 'complete';
+    }
   }
 
   try {

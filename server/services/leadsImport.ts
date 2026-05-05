@@ -30,12 +30,14 @@ const HEADER_ALIASES: Record<string, string> = {
   'observações': 'notes',
 };
 
-const REQUIRED = ['name', 'phone', 'cnpj'] as const;
+// Phone NÃO é mais obrigatório: leads CNPJ-only são aceitos como 'incomplete'
+// e vão pra fila de enriquecimento (BrasilAPI/scraping/IA).
+const REQUIRED = ['name', 'cnpj'] as const;
 
 export interface CsvRow {
   line: number;
   name: string;
-  phone: string;
+  phone: string | null;
   cnpj: string;
   email: string | null;
   notes: string | null;
@@ -95,10 +97,17 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       continue;
     }
 
-    const phone = normalizePhone((obj.phone ?? '').trim());
-    if (!phone || phone.length < 8) {
-      rejected.push({ line, reason: 'telefone vazio ou inválido' });
-      continue;
+    // Telefone agora é OPCIONAL. Linhas sem telefone viram leads 'incomplete'
+    // e vão pra enriquecimento. Inválido (com lixo mas <8 dígitos) ainda rejeita.
+    const phoneRaw = (obj.phone ?? '').trim();
+    let phone: string | null = null;
+    if (phoneRaw) {
+      const cleaned = normalizePhone(phoneRaw);
+      if (cleaned.length < 8) {
+        rejected.push({ line, reason: 'telefone inválido (precisa ter ao menos 8 dígitos)' });
+        continue;
+      }
+      phone = cleaned;
     }
 
     const cnpj = normalizeCnpj((obj.cnpj ?? '').trim());
@@ -190,19 +199,28 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
           notes: row.notes,
           source: 'csv',
           status: 'frio',
+          flowStage: row.phone ? 'complete' : 'incomplete',
         });
         inserted++;
         continue;
       }
 
       // Existing lead with this CNPJ: backfill empty fields only. Never
-      // overwrite name, phone, or source already set by previous interactions.
+      // overwrite name, source already set by previous interactions.
+      // Phone PODE ser preenchido se está vazio (ex: lead criado sem phone no CSV
+      // anterior, agora veio com phone num re-import) — promove stage também.
       const patch: Partial<NewLead> = {};
       if (row.email != null && (existing.email == null || existing.email === '')) {
         patch.email = row.email;
       }
       if (row.notes != null && (existing.notes == null || existing.notes === '')) {
         patch.notes = row.notes;
+      }
+      if (row.phone && (existing.phone == null || existing.phone === '')) {
+        patch.phone = row.phone;
+        if (existing.flowStage === 'incomplete') {
+          patch.flowStage = 'complete';
+        }
       }
 
       if (Object.keys(patch).length > 0) {

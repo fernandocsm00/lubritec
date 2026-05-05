@@ -25,19 +25,32 @@ export async function ingestInbound(
 
   const sentAt = m.timestamp;
 
+  // Stages "anteriores" a engaged — recebimento de inbound deve promover daqui pra engaged.
+  // Stages mais avançados (qualified, handed_off, lost) são preservados.
+  const PROMOTABLE_TO_ENGAGED = new Set(['incomplete', 'complete', 'dispatched']);
+
   await db.transaction(async (tx) => {
     // 1. Match ou cria lead. Em caso de race (UNIQUE violation), refaz a query.
     let leadId: string;
-    const found = await tx.select({ id: leads.id, name: leads.name }).from(leads).where(eq(leads.phone, phone)).limit(1);
+    const found = await tx
+      .select({ id: leads.id, name: leads.name, flowStage: leads.flowStage })
+      .from(leads)
+      .where(eq(leads.phone, phone))
+      .limit(1);
     if (found.length) {
       leadId = found[0].id;
-      // Se o nome atual é o telefone (auto-gerado) e agora temos contactName real,
-      // promove pra nome de verdade. Não sobrescreve nome customizado pelo usuário.
+      const updates: Partial<typeof leads.$inferInsert> = {};
+      // Promove nome auto-gerado pro pushName real (não sobrescreve customizado).
       if (m.contactName && found[0].name === phone) {
-        await tx
-          .update(leads)
-          .set({ name: m.contactName, updatedAt: new Date() })
-          .where(eq(leads.id, leadId));
+        updates.name = m.contactName;
+      }
+      // Promove stage pra 'engaged' se ainda estiver em estágio anterior.
+      if (PROMOTABLE_TO_ENGAGED.has(found[0].flowStage)) {
+        updates.flowStage = 'engaged';
+      }
+      if (Object.keys(updates).length > 0) {
+        updates.updatedAt = new Date();
+        await tx.update(leads).set(updates).where(eq(leads.id, leadId));
       }
     } else {
       try {
@@ -48,6 +61,8 @@ export async function ingestInbound(
             phone,
             source: 'whatsapp',
             status: 'frio',
+            // Lead novo via inbound: já interagiu por definição.
+            flowStage: 'engaged',
           })
           .returning({ id: leads.id });
         leadId = created.id;

@@ -36,7 +36,13 @@ const cnpjDigits = (s: string) => s.replace(/\D/g, '');
 
 const baseSchema = z.object({
   name: z.string().min(2, 'Nome muito curto').max(120),
-  phone: z.string().min(8, 'Telefone muito curto'),
+  // Phone agora opcional — leads CNPJ-only viram 'incomplete' até enriquecimento.
+  // Quando preenchido, valida 8+ dígitos.
+  phone: z
+    .string()
+    .refine((v) => v === '' || v.replace(/\D/g, '').length >= 8, 'Telefone muito curto')
+    .optional()
+    .or(z.literal('')),
   cnpj: z
     .string()
     .refine((v) => cnpjDigits(v).length === 14, 'CNPJ deve ter 14 dígitos'),
@@ -66,6 +72,8 @@ export function LeadDialog({
   // Lead criado via WhatsApp inbound vem sem CNPJ. Liberamos a edição nesses
   // casos. Uma vez setado, vira imutável (regra do backend).
   const cnpjEditable = !isEdit || !lead?.cnpj;
+  // Lead CNPJ-only do CSV vem sem phone. Mesmo padrão do CNPJ.
+  const phoneEditable = !isEdit || !lead?.phone;
 
   const form = useForm<FormData>({
     resolver: zodResolver(baseSchema),
@@ -84,7 +92,7 @@ export function LeadDialog({
       if (lead) {
         form.reset({
           name: lead.name,
-          phone: lead.phone,
+          phone: lead.phone ?? '',
           cnpj: lead.cnpj ?? '',
           email: lead.email ?? '',
           notes: lead.notes ?? '',
@@ -111,17 +119,21 @@ export function LeadDialog({
     };
     try {
       if (isEdit && lead) {
+        const phoneTrim = (values.phone ?? '').trim();
         await update.mutateAsync({
           id: lead.id,
           ...payload,
           status: values.status,
           // Só envia CNPJ no update se for editável (lead sem CNPJ atual).
           ...(cnpjEditable ? { cnpj: cnpjDigits(values.cnpj) } : {}),
+          // Mesmo padrão pra phone — só envia se editável e preenchido.
+          ...(phoneEditable && phoneTrim ? { phone: phoneTrim } : {}),
         });
         toast.success('Lead atualizado.');
       } else {
+        const phoneTrim = (values.phone ?? '').trim();
         await create.mutateAsync({
-          phone: values.phone,
+          phone: phoneTrim || undefined,
           cnpj: cnpjDigits(values.cnpj),
           ...payload,
         });
@@ -182,11 +194,16 @@ export function LeadDialog({
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Telefone *</FormLabel>
-                    <FormControl><Input {...field} disabled={isEdit} /></FormControl>
-                    {isEdit && (
+                    <FormLabel>Telefone {!isEdit && '*'}</FormLabel>
+                    <FormControl><Input {...field} disabled={!phoneEditable} placeholder="55 11 98765-4321" /></FormControl>
+                    {!phoneEditable && (
                       <p className="text-xs text-muted-foreground">
-                        Telefone não pode ser alterado.
+                        Telefone não pode ser alterado depois de salvo.
+                      </p>
+                    )}
+                    {isEdit && phoneEditable && (
+                      <p className="text-xs text-muted-foreground">
+                        Lead sem telefone — informe manualmente ou aguarde enriquecimento automático.
                       </p>
                     )}
                     <FormMessage />

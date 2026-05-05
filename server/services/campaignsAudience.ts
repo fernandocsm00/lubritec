@@ -1,12 +1,17 @@
 import { db } from '../db/client';
 import { leads } from '../db/schema';
-import { and, or, eq, lte, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, or, eq, isNotNull, lte, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { AudienceFilters, CampaignDryRunResponse } from '@shared/types';
+
+void eq; void lte;
 
 const PREVIEW_LIMIT = 5;
 
 function buildWhere(filter: AudienceFilters): SQL | undefined {
-  const conds: SQL[] = [];
+  const conds: SQL[] = [
+    // Campanhas SEMPRE excluem leads sem telefone (não dá pra disparar).
+    isNotNull(leads.phone),
+  ];
 
   if (filter.status?.length) conds.push(inArray(leads.status, filter.status));
   if (filter.source?.length) conds.push(inArray(leads.source, filter.source));
@@ -18,15 +23,15 @@ function buildWhere(filter: AudienceFilters): SQL | undefined {
   }
 
   if (filter.phoneCsv?.length) {
-    const baseCondition = conds.length ? and(...conds) : undefined;
-    const phoneCondition = inArray(leads.phone, filter.phoneCsv);
+    const baseCondition = and(...conds);
+    const phoneCondition = and(isNotNull(leads.phone), inArray(leads.phone, filter.phoneCsv));
     if (baseCondition) {
       return or(baseCondition, phoneCondition);
     }
     return phoneCondition;
   }
 
-  return conds.length ? and(...conds) : undefined;
+  return and(...conds);
 }
 
 export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunResponse> {
@@ -51,13 +56,16 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
 
   return {
     total,
-    preview: previewRows.map((r) => ({
-      leadId: r.leadId,
-      name: r.name,
-      phone: r.phone,
-      cnpj: r.cnpj,
-      createdAt: r.createdAt.toISOString(),
-    })),
+    // O where filtra `phone IS NOT NULL` — assert é seguro aqui.
+    preview: previewRows
+      .filter((r): r is typeof r & { phone: string } => r.phone !== null)
+      .map((r) => ({
+        leadId: r.leadId,
+        name: r.name,
+        phone: r.phone,
+        cnpj: r.cnpj,
+        createdAt: r.createdAt.toISOString(),
+      })),
   };
 }
 
@@ -67,5 +75,7 @@ export async function resolveAudience(filter: AudienceFilters): Promise<Array<{ 
     .select({ id: leads.id, phone: leads.phone })
     .from(leads)
     .where(where);
-  return rows.map((r) => ({ leadId: r.id, phone: r.phone }));
+  return rows
+    .filter((r): r is typeof r & { phone: string } => r.phone !== null)
+    .map((r) => ({ leadId: r.id, phone: r.phone }));
 }

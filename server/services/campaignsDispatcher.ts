@@ -165,7 +165,8 @@ async function getOrCreateConversationForCampaign(phone: string, leadId: string,
 }
 
 export function interpolatePlaceholders(body: string, lead: Lead): string {
-  const phoneFormatted = formatPhoneBR(lead.phone);
+  // Lead com phone null não chega aqui (resolveAudience filtra). Defensivo:
+  const phoneFormatted = lead.phone ? formatPhoneBR(lead.phone) : '';
   return body
     .replaceAll('{{nome}}', lead.name)
     .replaceAll('{{telefone}}', phoneFormatted)

@@ -316,6 +316,62 @@ describe('POST /api/whatsapp/webhook', () => {
     expect(lead.name).toBe('Maria Santos');
   });
 
+  it('lead novo via inbound entra com flow_stage=engaged', async () => {
+    await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-FLOW-001',
+          sender: '5511955551111@s.whatsapp.net',
+          messageType: 'conversation',
+          text: 'oi',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    const [lead] = await db.select().from(leads).where(eq(leads.phone, '5511955551111'));
+    expect(lead.flowStage).toBe('engaged');
+  });
+
+  it('promove flow_stage de complete pra engaged em lead pré-existente', async () => {
+    await createLead({ phone: '5511944442222', flowStage: 'complete' });
+    await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-FLOW-002',
+          sender: '5511944442222',
+          messageType: 'conversation',
+          text: 'oi',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    const [lead] = await db.select().from(leads).where(eq(leads.phone, '5511944442222'));
+    expect(lead.flowStage).toBe('engaged');
+  });
+
+  it('NÃO regride flow_stage de qualified pra engaged', async () => {
+    await createLead({ phone: '5511933333333', flowStage: 'qualified' });
+    await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send({
+        EventType: 'messages',
+        message: {
+          messageid: 'UAZGO-FLOW-003',
+          sender: '5511933333333',
+          messageType: 'conversation',
+          text: 'oi',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      });
+    const [lead] = await db.select().from(leads).where(eq(leads.phone, '5511933333333'));
+    expect(lead.flowStage).toBe('qualified');
+  });
+
   it('NÃO sobrescreve nome customizado quando chega pushName diferente', async () => {
     await createLead({ phone: '5511966665555', name: 'Cliente Importante (custom)' });
 

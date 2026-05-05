@@ -174,7 +174,7 @@ describe('POST /api/leads/import', () => {
       .set('Authorization', `Bearer ${token}`)
       .attach('file', Buffer.from('nome\nA\n'), 'bad.csv');
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Missing required column/);
+    expect(res.body.error).toMatch(/Coluna obrigatória ausente/);
   });
 
   it('400 quando mime inválido', async () => {

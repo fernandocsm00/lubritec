@@ -15,6 +15,7 @@ import {
   ROLES,
   LEAD_STATUSES,
   LEAD_SOURCES,
+  LEAD_FLOW_STAGES,
   CONVERSATION_QUEUES,
   CONVERSATION_STATUSES,
   MESSAGE_DIRECTIONS,
@@ -75,12 +76,13 @@ export const sessions = pgTable(
 export const leads = pgTable('leads', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
-  phone: text('phone').notNull(),
+  phone: text('phone'),  // nullable: leads CNPJ-only aguardam enriquecimento
   cnpj: text('cnpj').unique(),
   email: text('email'),
   notes: text('notes'),
   status: text('status', { enum: LEAD_STATUSES }).notNull().default('frio'),
   source: text('source', { enum: LEAD_SOURCES }).notNull().default('manual'),
+  flowStage: text('flow_stage', { enum: LEAD_FLOW_STAGES }).notNull().default('incomplete'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
