@@ -167,6 +167,21 @@ export function WebhookDebugPanel() {
             </div>
           )}
 
+          {probe.isPending && (
+            <div className="rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
+              Consultando UazAPI… (pode levar até 40s, tentamos 5 paths)
+            </div>
+          )}
+
+          {probe.isError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+              <div className="font-semibold mb-1">Falha ao consultar UazAPI</div>
+              <pre className="bg-muted/40 p-2 rounded overflow-x-auto text-foreground">
+                {probe.error instanceof Error ? probe.error.message : String(probe.error)}
+              </pre>
+            </div>
+          )}
+
           {probe.data && (
             <div className="rounded-md border border-border bg-background p-3 space-y-2">
               <div className="text-xs font-semibold">Webhook cadastrado na UazAPI</div>
