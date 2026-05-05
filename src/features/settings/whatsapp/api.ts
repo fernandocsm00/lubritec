@@ -94,3 +94,25 @@ export function useProbeWebhook() {
     mutationFn: () => api<ProbeWebhookResult>('/whatsapp-instance/probe-webhook'),
   });
 }
+
+export interface ProbeMessagesResult {
+  uazapi: Array<{ path: string; method: string; status: number; body: unknown }>;
+}
+
+export function useProbeMessages() {
+  return useMutation({
+    mutationFn: () => api<ProbeMessagesResult>('/whatsapp-instance/probe-messages'),
+  });
+}
+
+export interface SelfTestResult {
+  posted: { url: string; bodyPreview: Record<string, unknown> };
+  response: { status: number; body: unknown };
+}
+
+export function useSelfTest() {
+  return useMutation({
+    mutationFn: () =>
+      api<SelfTestResult>('/whatsapp-instance/self-test', { method: 'POST' }),
+  });
+}

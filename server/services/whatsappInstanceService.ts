@@ -422,3 +422,71 @@ export async function probeWebhook(): Promise<{
     uazapi,
   };
 }
+
+/**
+ * Diagnóstico — busca mensagens recentes direto da UazAPI (sem usar webhook).
+ * Se a UazAPI tiver mensagens armazenadas mas webhook não disparou, isolou o bug.
+ */
+export async function probeMessages(): Promise<{
+  uazapi: Array<{ path: string; method: string; status: number; body: unknown }>;
+}> {
+  const [row] = await db.select().from(whatsappInstance).limit(1);
+  if (!row || !row.instanceToken) return { uazapi: [] };
+  const { probeRecentMessages } = await import('./uazapiInstanceClient');
+  const uazapi = await probeRecentMessages({
+    baseUrl: row.baseUrl,
+    token: row.instanceToken,
+  });
+  return { uazapi };
+}
+
+/**
+ * Diagnóstico — auto-fire de um payload sintético na nossa própria URL de webhook.
+ * Usa o secret correto. Permite validar TODO o pipeline de ingest sem depender da UazAPI.
+ */
+export async function selfTestWebhook(): Promise<{
+  posted: { url: string; bodyPreview: Record<string, unknown> };
+  response: { status: number; body: unknown };
+}> {
+  const [row] = await db.select().from(whatsappInstance).limit(1);
+  if (!row) {
+    throw new HttpError(503, 'WhatsApp instance not configured');
+  }
+  const url = row.webhookUrl
+    ?? `${(process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')}/api/whatsapp/webhook`;
+  const token = row.instanceToken ?? row.webhookSecret;
+  if (!token) {
+    throw new HttpError(503, 'No instance token or webhook secret available');
+  }
+
+  const fakeMsgId = `selftest-${Date.now()}`;
+  const fakePhone = `5511${String(Date.now()).slice(-8)}`;
+  const body: Record<string, unknown> = {
+    EventType: 'messages',
+    instance: row.instanceId,
+    token,
+    message: {
+      messageid: fakeMsgId,
+      sender: `${fakePhone}@s.whatsapp.net`,
+      messageType: 'conversation',
+      text: 'self-test payload',
+      timestamp: Math.floor(Date.now() / 1000),
+      fromMe: false,
+    },
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await res.text().catch(() => '');
+  let respBody: unknown = text;
+  try { respBody = JSON.parse(text); } catch { /* keep raw */ }
+
+  return {
+    posted: { url, bodyPreview: body },
+    response: { status: res.status, body: respBody },
+  };
+}

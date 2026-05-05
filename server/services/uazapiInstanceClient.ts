@@ -236,3 +236,46 @@ export async function probeWebhookConfig(
   }
   return out;
 }
+
+/**
+ * DIAGNÓSTICO — busca mensagens recentes direto da UazAPI (sem depender de webhook).
+ * Tenta vários endpoints porque uazapiGO varia. Retorna o cru de cada tentativa.
+ */
+export async function probeRecentMessages(
+  cfg: UazapiInstanceConfig,
+): Promise<Array<{ path: string; method: string; status: number; body: unknown }>> {
+  const attempts: Array<{ method: 'GET' | 'POST'; path: string; body?: unknown }> = [
+    { method: 'POST', path: '/message/find', body: { limit: 10 } },
+    { method: 'POST', path: '/messages/find', body: { limit: 10 } },
+    { method: 'GET', path: '/message/find?limit=10' },
+    { method: 'POST', path: '/chat/find', body: { limit: 10 } },
+    { method: 'GET', path: '/chats?limit=10' },
+  ];
+  const out: Array<{ path: string; method: string; status: number; body: unknown }> = [];
+  for (const a of attempts) {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        token: cfg.token,
+      };
+      const res = await fetch(`${cfg.baseUrl}${a.path}`, {
+        method: a.method,
+        headers,
+        body: a.body ? JSON.stringify(a.body) : undefined,
+        signal: AbortSignal.timeout(8_000),
+      });
+      const text = await res.text().catch(() => '');
+      let body: unknown = text;
+      try { body = JSON.parse(text); } catch { /* keep raw text */ }
+      out.push({ path: a.path, method: a.method, status: res.status, body });
+    } catch (err) {
+      out.push({
+        path: a.path,
+        method: a.method,
+        status: 0,
+        body: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+  return out;
+}

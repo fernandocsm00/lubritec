@@ -1,7 +1,13 @@
 import { useState } from 'react';
-import { Bug, RefreshCw, Trash2, Copy, Check, Search } from 'lucide-react';
+import { Bug, RefreshCw, Trash2, Copy, Check, Search, Inbox, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useWebhookDebugEvents, useClearWebhookDebugEvents, useProbeWebhook } from './api';
+import {
+  useWebhookDebugEvents,
+  useClearWebhookDebugEvents,
+  useProbeWebhook,
+  useProbeMessages,
+  useSelfTest,
+} from './api';
 
 const RESULT_BADGE: Record<string, string> = {
   inserted: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
@@ -30,6 +36,8 @@ export function WebhookDebugPanel() {
   const { data, isLoading, refetch } = useWebhookDebugEvents({ enabled: open });
   const clear = useClearWebhookDebugEvents();
   const probe = useProbeWebhook();
+  const probeMessages = useProbeMessages();
+  const selfTest = useSelfTest();
   const events = data?.events ?? [];
 
   async function copyAll() {
@@ -107,16 +115,38 @@ export function WebhookDebugPanel() {
                 <br />
                 Mande uma mensagem de teste pro WhatsApp conectado e aguarde alguns segundos.
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => probe.mutate()}
-                disabled={probe.isPending}
-                className="gap-1.5"
-              >
-                <Search className={`h-3.5 w-3.5 ${probe.isPending ? 'animate-pulse' : ''}`} />
-                Inspecionar webhook na UazAPI
-              </Button>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => probe.mutate()}
+                  disabled={probe.isPending}
+                  className="gap-1.5"
+                >
+                  <Search className={`h-3.5 w-3.5 ${probe.isPending ? 'animate-pulse' : ''}`} />
+                  Inspecionar webhook na UazAPI
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => selfTest.mutate()}
+                  disabled={selfTest.isPending}
+                  className="gap-1.5"
+                >
+                  <Zap className={`h-3.5 w-3.5 ${selfTest.isPending ? 'animate-pulse' : ''}`} />
+                  Simular webhook real
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => probeMessages.mutate()}
+                  disabled={probeMessages.isPending}
+                  className="gap-1.5"
+                >
+                  <Inbox className={`h-3.5 w-3.5 ${probeMessages.isPending ? 'animate-pulse' : ''}`} />
+                  Buscar mensagens da UazAPI
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3 max-h-[600px] overflow-y-auto">
@@ -178,6 +208,55 @@ export function WebhookDebugPanel() {
               <div className="font-semibold mb-1">Falha ao consultar UazAPI</div>
               <pre className="bg-muted/40 p-2 rounded overflow-x-auto text-foreground">
                 {probe.error instanceof Error ? probe.error.message : String(probe.error)}
+              </pre>
+            </div>
+          )}
+
+          {selfTest.isPending && (
+            <div className="rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
+              Disparando webhook fake pra própria URL…
+            </div>
+          )}
+          {selfTest.isError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+              <div className="font-semibold mb-1">Falha no self-test</div>
+              <pre className="bg-muted/40 p-2 rounded overflow-x-auto text-foreground">
+                {selfTest.error instanceof Error ? selfTest.error.message : String(selfTest.error)}
+              </pre>
+            </div>
+          )}
+          {selfTest.data && (
+            <div className="rounded-md border border-border bg-background p-3 space-y-2">
+              <div className="text-xs font-semibold">Resultado do self-test</div>
+              <div className="text-[11px]">
+                <div className="font-medium mb-1">Resposta do nosso webhook:</div>
+                <pre className="bg-muted/40 p-2 rounded overflow-x-auto">
+                  {JSON.stringify(selfTest.data.response, null, 2)}
+                </pre>
+              </div>
+              <div className="text-[11px]">
+                <div className="font-medium mb-1 mt-2">Payload enviado:</div>
+                <pre className="bg-muted/40 p-2 rounded overflow-x-auto max-h-64">
+                  {JSON.stringify(selfTest.data.posted, null, 2)}
+                </pre>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Status 200 + recarrega o painel: deve aparecer um evento <code>inserted</code> e
+                uma conversa nova na inbox <code>/whatsapp</code>.
+              </p>
+            </div>
+          )}
+
+          {probeMessages.isPending && (
+            <div className="rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
+              Buscando mensagens recentes na UazAPI…
+            </div>
+          )}
+          {probeMessages.data && (
+            <div className="rounded-md border border-border bg-background p-3 space-y-2">
+              <div className="text-xs font-semibold">Mensagens armazenadas na UazAPI</div>
+              <pre className="text-[11px] bg-muted/40 p-2 rounded overflow-x-auto max-h-96">
+                {JSON.stringify(probeMessages.data.uazapi, null, 2)}
               </pre>
             </div>
           )}
