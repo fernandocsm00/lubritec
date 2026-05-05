@@ -6,6 +6,7 @@ import { recordAiCall } from './aiMetrics';
 import { uazapiClient } from './uazapiClient';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
+import { emitNotification } from './notifications';
 import type { OrgSettings } from '../db/schema';
 
 const MAX_HISTORY = 20;
@@ -292,6 +293,15 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       toStage: 'qualified',
       source: 'ai_qualification',
       metadata: { conversationId: input.conversationId },
+    });
+    // Notifica admins/comerciais que tem lead qualificado pra atender.
+    await emitNotification({
+      toRoles: ['admin', 'comercial'],
+      kind: 'lead_qualified',
+      title: 'Lead qualificado pela IA',
+      body: `${leadRow?.name ?? input.phone} foi qualificado e enviado pra fila Comercial.`,
+      actionUrl: `/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`,
+      metadata: { leadId: input.leadId, conversationId: input.conversationId },
     });
   }
   await recordAiCall({

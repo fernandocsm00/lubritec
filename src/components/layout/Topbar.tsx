@@ -9,7 +9,7 @@ import {
 import { useAuthStore } from '@/features/auth/store';
 import { useLogout } from '@/features/auth/api';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { NotificationBell } from '@/features/notifications/NotificationBell';
 
 const ROUTE_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -54,10 +54,7 @@ export function Topbar() {
         operação online · 12s atrás
       </div>
 
-      <button className="w-9 h-9 rounded-md border border-border bg-card flex items-center justify-center relative hover:bg-muted">
-        <Bell className="h-4 w-4 text-muted-foreground" />
-        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive ring-2 ring-card" />
-      </button>
+      <NotificationBell />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
