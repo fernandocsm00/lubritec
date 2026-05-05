@@ -4,6 +4,7 @@ import type {
   DashboardAttentionResponse,
   DashboardWhatsappStats,
   DashboardMacroFunnel,
+  AiMetricsSummary,
   DashboardView,
   DashboardPeriod,
 } from '@shared/types';
@@ -29,4 +30,15 @@ export function fetchMacroFunnel(args: { period?: DashboardPeriod; from?: string
     params.set('period', args.period ?? '30d');
   }
   return api<DashboardMacroFunnel>(`/dashboard/macro-funnel?${params.toString()}`);
+}
+
+export function fetchAiMetrics(args: { period?: DashboardPeriod; from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (args.from && args.to) {
+    params.set('from', args.from);
+    params.set('to', args.to);
+  } else {
+    params.set('period', args.period ?? '30d');
+  }
+  return api<AiMetricsSummary>(`/dashboard/ai-metrics?${params.toString()}`);
 }

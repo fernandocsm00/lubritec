@@ -20,6 +20,14 @@ export interface GeminiCallInput {
   maxOutputTokens?: number;
 }
 
+export interface GeminiCallResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+  latencyMs: number;
+}
+
 export class GeminiError extends Error {
   constructor(public reason: string, public cause?: unknown) {
     super(`GeminiError: ${reason}`);
@@ -39,13 +47,25 @@ function getClient(): GoogleGenAI {
 
 const MODEL = 'gemini-2.5-flash';
 
+/**
+ * Backwards-compat — código antigo só queria texto.
+ */
 export async function generateReply(input: GeminiCallInput): Promise<string> {
+  const r = await generateReplyDetailed(input);
+  return r.text;
+}
+
+/**
+ * Versão completa — retorna texto + tokens + latência pra logging/billing.
+ */
+export async function generateReplyDetailed(input: GeminiCallInput): Promise<GeminiCallResult> {
   const client = getClient();
   const contents = [
     ...input.history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
     { role: 'user' as const, parts: [{ text: input.userMessage }] },
   ];
 
+  const startedAt = Date.now();
   try {
     const response = await client.models.generateContent({
       model: MODEL,
@@ -60,7 +80,14 @@ export async function generateReply(input: GeminiCallInput): Promise<string> {
     if (!text.trim()) {
       throw new GeminiError('empty response from Gemini');
     }
-    return text.trim();
+    const usage = response.usageMetadata ?? {};
+    return {
+      text: text.trim(),
+      inputTokens: Number(usage.promptTokenCount ?? 0),
+      outputTokens: Number(usage.candidatesTokenCount ?? 0),
+      model: MODEL,
+      latencyMs: Date.now() - startedAt,
+    };
   } catch (err) {
     if (err instanceof GeminiError) throw err;
     throw new GeminiError(err instanceof Error ? err.message : String(err), err);

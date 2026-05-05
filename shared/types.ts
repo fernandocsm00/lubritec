@@ -537,6 +537,25 @@ export interface DashboardWhatsappStats {
 }
 
 // ---------------------------------------------------------------------------
+// AI metrics (Sprint 6.7)
+// ---------------------------------------------------------------------------
+
+export interface AiMetricsSummary {
+  period: { start: string; end: string };
+  totalCalls: number;
+  qualifiedCount: number;
+  qualifyRate: number;
+  humanIntentCount: number;
+  errorCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+  avgLatencyMs: number;
+  avgCostPerCallUsd: number;
+  avgCostPerQualifiedUsd: number | null;
+}
+
+// ---------------------------------------------------------------------------
 // Lead stage transitions (Sprint 6.3) — audit trail por lead
 // ---------------------------------------------------------------------------
 

@@ -1,7 +1,8 @@
 import { db } from '../db/client';
 import { conversations, messages, leads } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
-import { generateReply, type GeminiMessage } from './geminiClient';
+import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
+import { recordAiCall } from './aiMetrics';
 import { uazapiClient } from './uazapiClient';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
@@ -162,6 +163,17 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       .update(conversations)
       .set({ queue: 'recepcao', status: 'aguardando_atendimento', updatedAt: new Date() })
       .where(eq(conversations.id, input.conversationId));
+    // Registra no log mesmo sem chamar Gemini — pra métrica "human intent rate".
+    await recordAiCall({
+      conversationId: input.conversationId,
+      leadId: input.leadId,
+      model: 'none',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: 0,
+      qualified: false,
+      humanIntent: true,
+    });
     return { status: 'transferred_to_human' };
   }
 
@@ -195,19 +207,28 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     leadRow?.phone ?? null,
   );
 
-  let rawReply: string;
+  let geminiResult;
   try {
-    rawReply = await generateReply({
+    geminiResult = await generateReplyDetailed({
       systemInstruction,
       history,
       userMessage: input.inboundText,
     });
   } catch (err) {
-    return {
-      status: 'gemini_error',
-      errorMessage: err instanceof Error ? err.message : String(err),
-    };
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    await recordAiCall({
+      conversationId: input.conversationId,
+      leadId: input.leadId,
+      model: 'gemini-2.5-flash',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: 0,
+      qualified: false,
+      error: errorMessage,
+    });
+    return { status: 'gemini_error', errorMessage };
   }
+  const rawReply = geminiResult.text;
 
   const { cleanReply, qualification } = parseQualificationTag(rawReply);
   if (!cleanReply) {
@@ -263,17 +284,25 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     }
   });
 
-  // Audit trail fora do tx.
+  // Audit trail + métricas de IA fora do tx.
   if (qualification === 'qualified') {
-    // O leadRow foi carregado antes do tx, então sabemos o stage anterior.
     await recordTransition({
       leadId: input.leadId,
-      fromStage: 'engaged', // assume 'engaged' já que IA só roda em queue=ia
+      fromStage: 'engaged',
       toStage: 'qualified',
       source: 'ai_qualification',
       metadata: { conversationId: input.conversationId },
     });
   }
+  await recordAiCall({
+    conversationId: input.conversationId,
+    leadId: input.leadId,
+    model: geminiResult.model,
+    inputTokens: geminiResult.inputTokens,
+    outputTokens: geminiResult.outputTokens,
+    latencyMs: geminiResult.latencyMs,
+    qualified: qualification === 'qualified',
+  });
 
   return {
     status: qualification === 'qualified' ? 'qualified_and_replied' : 'replied',

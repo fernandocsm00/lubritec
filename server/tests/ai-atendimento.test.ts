@@ -12,6 +12,7 @@ import { createLead, createConversation } from './helpers';
 
 vi.mock('../services/geminiClient', () => ({
   generateReply: vi.fn(),
+  generateReplyDetailed: vi.fn(),
   GeminiError: class extends Error {
     constructor(public reason: string) { super(`GeminiError: ${reason}`); }
   },
@@ -24,13 +25,26 @@ vi.mock('../services/uazapiClient', () => ({
   },
 }));
 
-import { generateReply } from '../services/geminiClient';
+import { generateReply, generateReplyDetailed } from '../services/geminiClient';
 import { uazapiClient } from '../services/uazapiClient';
 
 beforeEach(() => {
   vi.mocked(generateReply).mockReset();
+  vi.mocked(generateReplyDetailed).mockReset();
   vi.mocked(uazapiClient.sendMessage).mockReset();
 });
+
+// Mocks de Gemini agora retornam shape {text, inputTokens, outputTokens, model, latencyMs}.
+// Helper pra reduzir verbosidade nos testes.
+function mockGeminiText(text: string) {
+  vi.mocked(generateReplyDetailed).mockResolvedValueOnce({
+    text,
+    inputTokens: 100,
+    outputTokens: 50,
+    model: 'gemini-2.5-flash',
+    latencyMs: 500,
+  });
+}
 
 async function enableAi() {
   await db.update(orgSettings).set({
@@ -126,7 +140,7 @@ describe('processInboundWithAi', () => {
       inboundText: 'oi',
     });
     expect(r.status).toBe('ai_disabled');
-    expect(vi.mocked(generateReply)).not.toHaveBeenCalled();
+    expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
   });
 
   it('no-op quando conversa não está na fila IA', async () => {
@@ -140,7 +154,7 @@ describe('processInboundWithAi', () => {
       inboundText: 'oi',
     });
     expect(r.status).toBe('queue_not_ia');
-    expect(vi.mocked(generateReply)).not.toHaveBeenCalled();
+    expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
   });
 
   it('move pra Recepção quando cliente pede humano', async () => {
@@ -154,14 +168,14 @@ describe('processInboundWithAi', () => {
       inboundText: 'quero falar com um humano',
     });
     expect(r.status).toBe('transferred_to_human');
-    expect(vi.mocked(generateReply)).not.toHaveBeenCalled();
+    expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
     const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
     expect(updated.queue).toBe('recepcao');
   });
 
   it('chama Gemini, manda resposta via UazAPI, persiste msg out', async () => {
     await enableAi();
-    vi.mocked(generateReply).mockResolvedValueOnce('Olá! Posso te ajudar. Qual o tamanho da sua frota?');
+    mockGeminiText('Olá! Posso te ajudar. Qual o tamanho da sua frota?');
     vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
       messageId: 'uazapi-ai-001',
       rawPayload: {},
@@ -188,9 +202,7 @@ describe('processInboundWithAi', () => {
 
   it('quando Gemini retorna [QUALIFICADO], move conversa pra Comercial + lead pra qualified', async () => {
     await enableAi();
-    vi.mocked(generateReply).mockResolvedValueOnce(
-      'Perfeito, vou conectar você com nosso comercial agora. [QUALIFICADO]'
-    );
+    mockGeminiText('Perfeito, vou conectar você com nosso comercial agora. [QUALIFICADO]');
     vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
       messageId: 'uazapi-ai-002',
       rawPayload: {},
@@ -218,7 +230,7 @@ describe('processInboundWithAi', () => {
 
   it('gemini_error não persiste mensagem nem altera fila', async () => {
     await enableAi();
-    vi.mocked(generateReply).mockRejectedValueOnce(new Error('rate limit'));
+    vi.mocked(generateReplyDetailed).mockRejectedValueOnce(new Error('rate limit'));
 
     const lead = await createLead({ phone: '5511900000006' });
     const conv = await createConversation({ phone: '5511900000006', leadId: lead.id, queue: 'ia' });

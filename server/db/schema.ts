@@ -281,6 +281,25 @@ export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
 export type EnrichmentJobLead = typeof enrichmentJobLeads.$inferSelect;
 
+// ── AI call logs (Sprint 6.7) ────────────────────────────────────
+export const aiCallLogs = pgTable('ai_call_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  model: text('model').notNull(),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  costUsd: numeric('cost_usd', { precision: 10, scale: 6 }).notNull().default('0'),
+  latencyMs: integer('latency_ms').notNull().default(0),
+  qualified: boolean('qualified').notNull().default(false),
+  humanIntent: boolean('human_intent').notNull().default(false),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AiCallLog = typeof aiCallLogs.$inferSelect;
+export type NewAiCallLog = typeof aiCallLogs.$inferInsert;
+
 // ── Lead stage transitions (Sprint 6.3) ──────────────────────────
 export const leadStageTransitions = pgTable('lead_stage_transitions', {
   id: uuid('id').primaryKey().defaultRandom(),

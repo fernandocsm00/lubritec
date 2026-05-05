@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { summary, attention, whatsappStats, macroFunnel } from '../services/dashboardService';
+import { getAiMetricsSummary } from '../services/aiMetrics';
+import { resolvePeriod } from '../lib/period';
 
 const summaryQuery = z.object({
   view: z.enum(['org', 'me']),
@@ -49,6 +51,32 @@ export async function attentionHandler(req: Request, res: Response, next: NextFu
 export async function whatsappHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await whatsappStats());
+  } catch (e) { next(e); }
+}
+
+const aiMetricsQuery = z
+  .object({
+    period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+  })
+  .refine((d) => !!d.period || (!!d.from && !!d.to), { message: 'Forneça period OU from+to' });
+
+export async function aiMetricsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (req.user!.role !== 'admin') return res.status(403).json({ error: 'admin only' });
+    const q = aiMetricsQuery.parse(req.query);
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    if (q.from && q.to) {
+      rangeStart = new Date(q.from);
+      rangeEnd = new Date(q.to);
+    } else {
+      const p = resolvePeriod(q.period ?? '30d');
+      rangeStart = p.start;
+      rangeEnd = p.end;
+    }
+    res.json(await getAiMetricsSummary({ rangeStart, rangeEnd }));
   } catch (e) { next(e); }
 }
 

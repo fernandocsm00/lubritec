@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '@/features/auth/store';
 import type { DashboardView, DashboardPeriod, DashboardSummary } from '@shared/types';
-import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp, useDashboardMacroFunnel } from './hooks';
+import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp, useDashboardMacroFunnel, useDashboardAiMetrics } from './hooks';
 import { ViewToggle } from './components/ViewToggle';
 import { PeriodPicker } from './components/PeriodPicker';
 import { BlockSkeleton } from './components/BlockSkeleton';
@@ -10,6 +10,7 @@ import { KpiRow } from './components/KpiRow';
 import { AttentionList } from './components/AttentionList';
 import { FunnelChart } from './components/FunnelChart';
 import { MacroFunnel } from './components/MacroFunnel';
+import { AiMetricsCard } from './components/AiMetricsCard';
 import { PipelineOpen } from './components/PipelineOpen';
 import { WhatsappStats } from './components/WhatsappStats';
 import { Leaderboard } from './components/Leaderboard';
@@ -37,12 +38,11 @@ export default function DashboardPage() {
   const attention = useDashboardAttention(view);
   const whatsapp  = useDashboardWhatsapp(view === 'org');
   // Macro funnel: visão organizacional do fluxo macro (admin only no backend).
-  const macroFunnel = useDashboardMacroFunnel(
-    useCustomRange
-      ? { from: new Date(funnelCustomFrom).toISOString(), to: new Date(funnelCustomTo).toISOString() }
-      : { period },
-    isAdmin && view === 'org',
-  );
+  const funnelArgs = useCustomRange
+    ? { from: new Date(funnelCustomFrom).toISOString(), to: new Date(funnelCustomTo).toISOString() }
+    : { period };
+  const macroFunnel = useDashboardMacroFunnel(funnelArgs, isAdmin && view === 'org');
+  const aiMetrics = useDashboardAiMetrics(funnelArgs, isAdmin && view === 'org');
 
   const isRefreshing = summary.isFetching || attention.isFetching || (view === 'org' && whatsapp.isFetching) || macroFunnel.isFetching;
 
@@ -136,6 +136,19 @@ export default function DashboardPage() {
             <MacroFunnel data={macroFunnel.data} />
           ) : (
             <BlockSkeleton height={400} />
+          )}
+        </section>
+      )}
+
+      {/* MÉTRICAS DE IA (admin/org only — usa o mesmo período do funil) */}
+      {isAdmin && view === 'org' && (
+        <section>
+          {aiMetrics.error ? (
+            <BlockError onRetry={() => aiMetrics.refetch()} />
+          ) : aiMetrics.data ? (
+            <AiMetricsCard data={aiMetrics.data} />
+          ) : (
+            <BlockSkeleton height={200} />
           )}
         </section>
       )}
