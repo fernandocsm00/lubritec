@@ -27,16 +27,16 @@ describe('campaignsAudience.dryRun', () => {
     expect(r.total).toBe(2);
   });
 
-  it('filtra por lastPurchaseDaysAgo (inclui null e antigos)', async () => {
+  it('filtra por daysSinceCreated (cadastro antigo)', async () => {
     const today = new Date();
-    const old = new Date(today.getTime() - 100 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const recent = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const oldDate = new Date(today.getTime() - 100 * 24 * 60 * 60 * 1000);
+    const recentDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    await createLead({ phone: '5511000030001', lastPurchaseDate: old });
-    await createLead({ phone: '5511000030002', lastPurchaseDate: recent });
-    await createLead({ phone: '5511000030003', lastPurchaseDate: null });
+    await createLead({ phone: '5511000030001', createdAt: oldDate });
+    await createLead({ phone: '5511000030002', createdAt: oldDate });
+    await createLead({ phone: '5511000030003', createdAt: recentDate });
 
-    const r = await dryRun({ lastPurchaseDaysAgo: 60 });
+    const r = await dryRun({ daysSinceCreated: 60 });
     expect(r.total).toBe(2);
   });
 

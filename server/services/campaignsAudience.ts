@@ -10,11 +10,8 @@ function buildWhere(filter: AudienceFilters): SQL | undefined {
 
   if (filter.status?.length) conds.push(inArray(leads.status, filter.status));
   if (filter.source?.length) conds.push(inArray(leads.source, filter.source));
-  if (filter.lastPurchaseDaysAgo != null && filter.lastPurchaseDaysAgo >= 0) {
-    conds.push(sql`(
-      ${leads.lastPurchaseDate} IS NULL
-      OR ${leads.lastPurchaseDate} <= now() - interval '${sql.raw(String(filter.lastPurchaseDaysAgo))} days'
-    )`);
+  if (filter.daysSinceCreated != null && filter.daysSinceCreated >= 0) {
+    conds.push(sql`${leads.createdAt} <= now() - interval '${sql.raw(String(filter.daysSinceCreated))} days'`);
   }
   if (filter.excludeLeadIds?.length) {
     conds.push(notInArray(leads.id, filter.excludeLeadIds));
@@ -45,9 +42,8 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
       leadId: leads.id,
       name: leads.name,
       phone: leads.phone,
-      vehicleModel: leads.vehicleModel,
-      vehiclePlate: leads.vehiclePlate,
-      lastPurchaseDate: leads.lastPurchaseDate,
+      cnpj: leads.cnpj,
+      createdAt: leads.createdAt,
     })
     .from(leads)
     .where(where)
@@ -59,9 +55,8 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
       leadId: r.leadId,
       name: r.name,
       phone: r.phone,
-      vehicleModel: r.vehicleModel,
-      vehiclePlate: r.vehiclePlate,
-      lastPurchaseDate: r.lastPurchaseDate,
+      cnpj: r.cnpj,
+      createdAt: r.createdAt.toISOString(),
     })),
   };
 }

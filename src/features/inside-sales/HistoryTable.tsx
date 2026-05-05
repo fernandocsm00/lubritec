@@ -12,6 +12,7 @@ import {
 import { useHistory } from './api';
 import { DealDrawer } from './DealDrawer';
 import { formatCurrency, LOSS_REASON_LABELS, STAGE_LABELS } from './helpers';
+import { formatCnpj } from '@/lib/utils';
 import { LOSS_REASONS } from '@shared/types';
 import type { LossReason } from './types';
 
@@ -53,7 +54,7 @@ export function HistoryTable() {
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex flex-wrap gap-2 mb-3 items-center">
         <Input
-          placeholder="Buscar nome / telefone / placa…"
+          placeholder="Buscar nome / telefone / CNPJ…"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onBlur={() => patch({ q: searchInput || null })}
@@ -107,7 +108,7 @@ export function HistoryTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Cliente</TableHead>
-              <TableHead>Veículo</TableHead>
+              <TableHead>CNPJ</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Motivo</TableHead>
@@ -127,8 +128,8 @@ export function HistoryTable() {
               : data?.items.map((d) => (
                   <TableRow key={d.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setSelectedId(d.id)}>
                     <TableCell className="font-medium">{d.lead.name}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {[d.lead.vehicleModel, d.lead.vehiclePlate].filter(Boolean).join(' · ') || '—'}
+                    <TableCell className="text-muted-foreground text-sm font-mono">
+                      {formatCnpj(d.lead.cnpj)}
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(d.proposalValue)}</TableCell>
                     <TableCell>{STAGE_LABELS[d.stage]}</TableCell>

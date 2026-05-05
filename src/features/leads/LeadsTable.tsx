@@ -11,9 +11,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { PublicLead } from '@shared/types';
+import { formatCnpj } from '@/lib/utils';
 import { LeadActions } from './LeadActions';
 
-type SortKey = 'name' | 'created_at' | 'last_purchase_date';
+type SortKey = 'name' | 'created_at';
 
 interface Props {
   items: PublicLead[];
@@ -39,10 +40,9 @@ const SOURCE_LABEL: Record<PublicLead['source'], string> = {
   whatsapp: 'WhatsApp',
 };
 
-function fmtDate(s: string | null): string {
-  if (!s) return '—';
-  const [y, m, d] = s.split('-');
-  return `${d}/${m}/${y}`;
+function fmtDateTime(s: string): string {
+  const d = new Date(s);
+  return d.toLocaleDateString('pt-BR');
 }
 
 function SortHeader({
@@ -80,17 +80,18 @@ export function LeadsTable(props: Props) {
               <TableHead>
                 <SortHeader label="Nome" myKey="name" sort={sort} order={order} onClick={() => onSortChange('name')} />
               </TableHead>
+              <TableHead>CNPJ</TableHead>
               <TableHead>Telefone</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Pipeline</TableHead>
               <TableHead>Origem</TableHead>
               <TableHead>
                 <SortHeader
-                  label="Última compra"
-                  myKey="last_purchase_date"
+                  label="Cadastro"
+                  myKey="created_at"
                   sort={sort}
                   order={order}
-                  onClick={() => onSortChange('last_purchase_date')}
+                  onClick={() => onSortChange('created_at')}
                 />
               </TableHead>
               <TableHead className="w-12" />
@@ -100,7 +101,7 @@ export function LeadsTable(props: Props) {
             {loading
               ? Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
@@ -108,7 +109,7 @@ export function LeadsTable(props: Props) {
               : items.length === 0
                 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
                       Nenhum lead encontrado.
                     </TableCell>
                   </TableRow>
@@ -116,6 +117,7 @@ export function LeadsTable(props: Props) {
                 : items.map((l) => (
                   <TableRow key={l.id}>
                     <TableCell className="font-medium">{l.name}</TableCell>
+                    <TableCell className="font-mono text-xs">{formatCnpj(l.cnpj)}</TableCell>
                     <TableCell>{l.phone}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_LABEL[l.status].variant}>{STATUS_LABEL[l.status].label}</Badge>
@@ -128,7 +130,7 @@ export function LeadsTable(props: Props) {
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{SOURCE_LABEL[l.source]}</TableCell>
-                    <TableCell>{fmtDate(l.lastPurchaseDate)}</TableCell>
+                    <TableCell>{fmtDateTime(l.createdAt)}</TableCell>
                     <TableCell><LeadActions lead={l} /></TableCell>
                   </TableRow>
                 ))}

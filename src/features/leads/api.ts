@@ -7,7 +7,7 @@ export interface ListParams {
   status?: LeadStatus;
   source?: LeadSource;
   pipeline?: 'yes' | 'no';
-  sort?: 'name' | 'created_at' | 'last_purchase_date';
+  sort?: 'name' | 'created_at';
   order?: 'asc' | 'desc';
   page?: number;
 }
@@ -42,12 +42,9 @@ export function useCreateLead() {
     mutationFn: (input: {
       name: string;
       phone: string;
+      cnpj: string;
       email?: string | null;
       notes?: string | null;
-      vehiclePlate?: string | null;
-      vehicleModel?: string | null;
-      lastPurchaseDate?: string | null;
-      avgMileagePerDay?: number | null;
     }) => api<PublicLead>('/leads', { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   });
@@ -61,10 +58,6 @@ export function useUpdateLead() {
       name?: string;
       email?: string | null;
       notes?: string | null;
-      vehiclePlate?: string | null;
-      vehicleModel?: string | null;
-      lastPurchaseDate?: string | null;
-      avgMileagePerDay?: number | null;
       status?: LeadStatus;
     }) => {
       const { id, ...body } = input;

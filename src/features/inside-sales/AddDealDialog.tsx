@@ -87,7 +87,7 @@ export function AddDealDialog({ open, onOpenChange }: Props) {
                   >
                     <div className="font-medium">{l.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {l.phone} {l.vehiclePlate ? `· ${l.vehiclePlate}` : ''}
+                      {l.phone} · {l.cnpj}
                     </div>
                   </button>
                 ))}

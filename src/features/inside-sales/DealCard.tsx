@@ -1,8 +1,8 @@
 import { useDraggable } from '@dnd-kit/core';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Car } from 'lucide-react';
 import { avatarInitials, formatCurrency, relativeTime, LOSS_REASON_LABELS } from './helpers';
+import { formatCnpj } from '@/lib/utils';
 import type { PublicDeal } from './types';
 
 interface Props {
@@ -68,10 +68,9 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-2.5 min-w-0">
-        <Car className="h-3 w-3 shrink-0" />
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-2.5 min-w-0 font-mono">
         <span className="truncate">
-          {[deal.lead.vehicleModel, deal.lead.vehiclePlate].filter(Boolean).join(' · ') || '—'}
+          {formatCnpj(deal.lead.cnpj)}
         </span>
       </div>
 

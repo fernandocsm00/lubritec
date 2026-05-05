@@ -39,8 +39,7 @@ function toPublic(row: RawDealRow): PublicDeal {
       id: lead.id,
       name: lead.name,
       phone: lead.phone,
-      vehicleModel: lead.vehicleModel,
-      vehiclePlate: lead.vehiclePlate,
+      cnpj: lead.cnpj,
       status: lead.status,
     },
     stage: row.deal.stage,
@@ -118,7 +117,7 @@ export async function listBoard(input: {
   if (input.q) {
     const escaped = input.q.replace(/[%_\\]/g, '\\$&');
     const pat = `%${escaped}%`;
-    const search = or(ilike(leads.name, pat), ilike(leads.phone, pat), ilike(leads.vehiclePlate, pat));
+    const search = or(ilike(leads.name, pat), ilike(leads.phone, pat), ilike(leads.cnpj, pat));
     if (search) conds.push(search);
   }
 
@@ -193,7 +192,7 @@ export async function listHistory(input: {
   if (input.q) {
     const escaped = input.q.replace(/[%_\\]/g, '\\$&');
     const pat = `%${escaped}%`;
-    const search = or(ilike(leads.name, pat), ilike(leads.phone, pat), ilike(leads.vehiclePlate, pat));
+    const search = or(ilike(leads.name, pat), ilike(leads.phone, pat), ilike(leads.cnpj, pat));
     if (search) conds.push(search);
   }
 

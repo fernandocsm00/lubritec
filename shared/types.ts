@@ -37,12 +37,9 @@ export interface PublicLead {
   id: string;
   name: string;
   phone: string;
+  cnpj: string | null;
   email: string | null;
   notes: string | null;
-  vehiclePlate: string | null;
-  vehicleModel: string | null;
-  lastPurchaseDate: string | null;
-  avgMileagePerDay: number | null;
   status: LeadStatus;
   source: LeadSource;
   hasDeal: boolean;
@@ -88,8 +85,7 @@ export interface PublicConversation {
   lead: {
     id: string;
     name: string;
-    vehiclePlate: string | null;
-    vehicleModel: string | null;
+    cnpj: string | null;
     status: LeadStatus;
   };
   queue: ConversationQueue;
@@ -184,8 +180,7 @@ export interface PublicDeal {
     id: string;
     name: string;
     phone: string;
-    vehicleModel: string | null;
-    vehiclePlate: string | null;
+    cnpj: string | null;
     status: LeadStatus;
   };
   stage: DealStage;
@@ -259,7 +254,7 @@ export type CampaignRecipientStatus = (typeof CAMPAIGN_RECIPIENT_STATUSES)[numbe
 export interface AudienceFilters {
   status?: LeadStatus[];
   source?: LeadSource[];
-  lastPurchaseDaysAgo?: number;
+  daysSinceCreated?: number;
   excludeLeadIds?: string[];
   phoneCsv?: string[];
 }
@@ -270,9 +265,8 @@ export interface CampaignDryRunResponse {
     leadId: string;
     name: string;
     phone: string;
-    vehicleModel: string | null;
-    vehiclePlate: string | null;
-    lastPurchaseDate: string | null;
+    cnpj: string | null;
+    createdAt: string;
   }>;
 }
 

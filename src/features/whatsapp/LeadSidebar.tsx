@@ -8,6 +8,7 @@ import { useAuthStore } from '@/features/auth/store';
 import { useCreateDeal } from '@/features/inside-sales/api';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
+import { formatCnpj } from '@/lib/utils';
 import type { ConversationFilters, PublicConversation } from './types';
 
 interface Props {
@@ -57,9 +58,8 @@ export function LeadSidebar({ conversationId, filters }: Props) {
       </div>
 
       <div className="px-4 py-3 border-b border-border">
-        <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Veículo</h4>
-        <Row label="Modelo" value={conv.lead.vehicleModel ?? '—'} />
-        <Row label="Placa" value={conv.lead.vehiclePlate ?? '—'} />
+        <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Empresa</h4>
+        <Row label="CNPJ" value={formatCnpj(conv.lead.cnpj)} />
       </div>
 
       <div className="px-4 py-3 border-b border-border">

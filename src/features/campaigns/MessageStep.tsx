@@ -25,9 +25,7 @@ export function MessageStep(p: Props) {
   const { data: templates } = useTemplates();
   const dryRun = useDryRun();
   const [previewLead, setPreviewLead] = useState<{
-    name: string; phone: string;
-    vehicleModel: string | null; vehiclePlate: string | null;
-    lastPurchaseDate: string | null;
+    name: string; phone: string; cnpj: string | null;
   } | null>(null);
 
   // Carrega 5 leads de preview da audiência atual
@@ -39,9 +37,7 @@ export function MessageStep(p: Props) {
           setPreviewLead({
             name: first.name,
             phone: first.phone,
-            vehicleModel: first.vehicleModel,
-            vehiclePlate: first.vehiclePlate,
-            lastPurchaseDate: first.lastPurchaseDate,
+            cnpj: first.cnpj,
           });
         }
       },
@@ -85,13 +81,12 @@ export function MessageStep(p: Props) {
           <Textarea
             value={p.messageBody}
             onChange={(e) => p.onMessageBodyChange(e.target.value)}
-            placeholder="Olá {{nome}}, sua última troca foi em {{ultima_compra}}…"
+            placeholder="Olá {{nome}}, temos uma proposta especial para a {{cnpj}}…"
             rows={8}
             maxLength={4000}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Placeholders disponíveis: <code>{'{{nome}}'}</code>, <code>{'{{telefone}}'}</code>,{' '}
-            <code>{'{{placa}}'}</code>, <code>{'{{modelo}}'}</code>, <code>{'{{ultima_compra}}'}</code>
+            Placeholders disponíveis: <code>{'{{nome}}'}</code>, <code>{'{{telefone}}'}</code>, <code>{'{{cnpj}}'}</code>
           </p>
         </div>
 
@@ -115,9 +110,7 @@ export function MessageStep(p: Props) {
                 setPreviewLead({
                   name: found.name,
                   phone: found.phone,
-                  vehicleModel: found.vehicleModel,
-                  vehiclePlate: found.vehiclePlate,
-                  lastPurchaseDate: found.lastPurchaseDate,
+                  cnpj: found.cnpj,
                 });
               }
             }}

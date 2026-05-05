@@ -14,7 +14,6 @@
     "test:watch": "vitest",
     "migrate": "tsx server/scripts/migrate.ts",
     "seed": "tsx server/scripts/seed.ts",
-    "import:legacy": "tsx server/scripts/import-legacy-customers.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down"
   },

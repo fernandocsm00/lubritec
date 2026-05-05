@@ -165,16 +165,11 @@ async function getOrCreateConversationForCampaign(phone: string, leadId: string,
 }
 
 export function interpolatePlaceholders(body: string, lead: Lead): string {
-  const lastPurchase = lead.lastPurchaseDate
-    ? formatDateBR(lead.lastPurchaseDate)
-    : 'sem registro';
   const phoneFormatted = formatPhoneBR(lead.phone);
   return body
     .replaceAll('{{nome}}', lead.name)
     .replaceAll('{{telefone}}', phoneFormatted)
-    .replaceAll('{{placa}}', lead.vehiclePlate ?? '')
-    .replaceAll('{{modelo}}', lead.vehicleModel ?? '')
-    .replaceAll('{{ultima_compra}}', lastPurchase);
+    .replaceAll('{{cnpj}}', lead.cnpj ?? '');
 }
 
 function formatDateBR(iso: string): string {

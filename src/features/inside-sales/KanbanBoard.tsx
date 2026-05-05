@@ -106,7 +106,7 @@ export function KanbanBoard() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome, telefone, placa…"
+            placeholder="Buscar por nome, telefone, CNPJ…"
             className="pl-8 h-9 text-sm"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}

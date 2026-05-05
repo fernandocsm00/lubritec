@@ -34,7 +34,7 @@ export function LeadFilters({
       <Input
         value={q}
         onChange={(e) => onQChange(e.target.value)}
-        placeholder="Buscar por nome, telefone ou placa..."
+        placeholder="Buscar por nome, telefone ou CNPJ..."
         className="max-w-sm"
       />
       <Select value={status} onValueChange={(v) => onStatusChange(v as LeadStatus | 'all')}>

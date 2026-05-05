@@ -20,7 +20,7 @@ const idParams = z.object({ id: z.string().uuid() });
 const audienceFilterSchema = z.object({
   status: z.array(z.enum(LEAD_STATUSES)).optional(),
   source: z.array(z.enum(LEAD_SOURCES)).optional(),
-  lastPurchaseDaysAgo: z.number().int().min(0).max(3650).optional(),
+  daysSinceCreated: z.number().int().min(0).max(3650).optional(),
   excludeLeadIds: z.array(z.string().uuid()).optional(),
   phoneCsv: z.array(z.string().min(8).max(20)).optional(),
 });

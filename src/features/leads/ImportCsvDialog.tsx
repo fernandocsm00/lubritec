@@ -100,7 +100,7 @@ export function ImportCsvDialog({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Colunas reconhecidas: nome/name, telefone/phone (obrigatórios), email, observacoes, placa, modelo, ultima_compra, km_dia. Tamanho máx: 5MB.
+              Colunas reconhecidas: <strong>nome, telefone, cnpj</strong> (obrigatórios), email, observacoes. Tamanho máx: 5MB. Cada CNPJ é validado na Receita Federal via BrasilAPI — limite de 200 linhas por importação.
             </p>
           </div>
         ) : (

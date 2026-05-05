@@ -120,8 +120,7 @@ export async function listConversations(input: ListInput): Promise<{
       lead: {
         id: lead.id,
         name: lead.name,
-        vehiclePlate: lead.vehiclePlate,
-        vehicleModel: lead.vehicleModel,
+        cnpj: lead.cnpj,
         status: lead.status,
       },
       queue: r.conv.queue,

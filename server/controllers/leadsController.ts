@@ -9,27 +9,28 @@ const phoneInput = z
   .transform((v) => v.replace(/\D/g, ''))
   .pipe(z.string().min(8, 'Phone must have at least 8 digits'));
 
+const cnpjInput = z
+  .string()
+  .transform((v) => v.replace(/\D/g, ''))
+  .pipe(z.string().length(14, 'CNPJ deve ter 14 dígitos'));
+
 const editableCoreCreate = {
   name: z.string().min(2).max(120),
   email: z.string().email().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
-  vehiclePlate: z.string().max(10).nullable().optional(),
-  vehicleModel: z.string().max(60).nullable().optional(),
-  lastPurchaseDate: z.string().date().nullable().optional(),
-  avgMileagePerDay: z.number().int().nonnegative().nullable().optional(),
 };
 
 const editableCoreUpdate = {
   name: z.string().min(1).max(120),
   email: z.string().email().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
-  vehiclePlate: z.string().max(10).nullable().optional(),
-  vehicleModel: z.string().max(60).nullable().optional(),
-  lastPurchaseDate: z.string().date().nullable().optional(),
-  avgMileagePerDay: z.number().int().nonnegative().nullable().optional(),
 };
 
-const createSchema = z.object({ phone: phoneInput, ...editableCoreCreate });
+const createSchema = z.object({
+  phone: phoneInput,
+  cnpj: cnpjInput,
+  ...editableCoreCreate,
+});
 const updateSchema = z
   .object({
     ...editableCoreUpdate,
@@ -45,7 +46,7 @@ const listQuery = z.object({
   status: z.enum(LEAD_STATUSES).optional(),
   source: z.enum(LEAD_SOURCES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
-  sort: z.enum(['name', 'created_at', 'last_purchase_date']).optional(),
+  sort: z.enum(['name', 'created_at']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });
@@ -72,8 +73,13 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
 
 export async function updateHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    if (req.body && typeof req.body === 'object' && 'phone' in req.body) {
-      return res.status(400).json({ error: 'Phone cannot be edited' });
+    if (req.body && typeof req.body === 'object') {
+      if ('phone' in req.body) {
+        return res.status(400).json({ error: 'Phone cannot be edited' });
+      }
+      if ('cnpj' in req.body) {
+        return res.status(400).json({ error: 'CNPJ cannot be edited' });
+      }
     }
     const { id } = idParams.parse(req.params);
     const body = updateSchema.parse(req.body);

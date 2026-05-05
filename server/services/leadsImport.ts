@@ -4,38 +4,41 @@ import { leads, type NewLead } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { ImportReport } from '@shared/types';
+import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
+import { lookupCnpj } from './cnpjLookup';
+
+// BrasilAPI free tier is roughly 3 req/min; adding ~21s between calls keeps us
+// under that ceiling. Larger imports are rejected up-front so a CSV with 1000
+// rows doesn't quietly take 6 hours to process.
+const BRASILAPI_THROTTLE_MS = 21_000;
+const MAX_CNPJ_LOOKUPS_PER_IMPORT = 200;
 
 const HEADER_ALIASES: Record<string, string> = {
   name: 'name',
   nome: 'name',
+  empresa: 'name',
+  razao_social: 'name',
+  'razão_social': 'name',
   phone: 'phone',
   telefone: 'phone',
+  celular: 'phone',
+  contato: 'phone',
+  cnpj: 'cnpj',
   email: 'email',
   notes: 'notes',
   observacoes: 'notes',
-  observações: 'notes',
-  vehicle_plate: 'vehiclePlate',
-  placa: 'vehiclePlate',
-  vehicle_model: 'vehicleModel',
-  modelo: 'vehicleModel',
-  last_purchase_date: 'lastPurchaseDate',
-  ultima_compra: 'lastPurchaseDate',
-  última_compra: 'lastPurchaseDate',
-  avg_mileage_per_day: 'avgMileagePerDay',
-  km_dia: 'avgMileagePerDay',
+  'observações': 'notes',
 };
 
-const REQUIRED = ['name', 'phone'] as const;
+const REQUIRED = ['name', 'phone', 'cnpj'] as const;
 
 export interface CsvRow {
+  line: number;
   name: string;
   phone: string;
+  cnpj: string;
   email: string | null;
   notes: string | null;
-  vehiclePlate: string | null;
-  vehicleModel: string | null;
-  lastPurchaseDate: string | null;
-  avgMileagePerDay: number | null;
 }
 
 function detectDelimiter(buf: Buffer): ',' | ';' {
@@ -49,20 +52,12 @@ function normalizeHeader(h: string): string | null {
   return HEADER_ALIASES[key] ?? null;
 }
 
-function parseDateBR(raw: string): string | null {
-  const s = raw.trim();
-  if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) {
-    const [, d, mo, y] = m;
-    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-  return null;
-}
-
 function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, '');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function parseLeadsCsv(buf: Buffer): Promise<{
@@ -84,6 +79,7 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
 
   const rows: CsvRow[] = [];
   const rejected: { line: number; reason: string }[] = [];
+  const cnpjsSeen = new Set<string>();
 
   for (let i = 1; i < records.length; i++) {
     const line = i + 1;
@@ -95,16 +91,30 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
 
     const name = (obj.name ?? '').trim();
     if (!name) {
-      rejected.push({ line, reason: 'name vazio' });
+      rejected.push({ line, reason: 'nome vazio' });
       continue;
     }
 
-    const phoneRaw = (obj.phone ?? '').trim();
-    const phone = normalizePhone(phoneRaw);
-    if (!phone) {
-      rejected.push({ line, reason: 'phone vazio ou inválido' });
+    const phone = normalizePhone((obj.phone ?? '').trim());
+    if (!phone || phone.length < 8) {
+      rejected.push({ line, reason: 'telefone vazio ou inválido' });
       continue;
     }
+
+    const cnpj = normalizeCnpj((obj.cnpj ?? '').trim());
+    if (!cnpj) {
+      rejected.push({ line, reason: 'CNPJ vazio' });
+      continue;
+    }
+    if (!isValidCnpjFormat(cnpj)) {
+      rejected.push({ line, reason: 'CNPJ inválido (dígitos verificadores)' });
+      continue;
+    }
+    if (cnpjsSeen.has(cnpj)) {
+      rejected.push({ line, reason: 'CNPJ duplicado no arquivo' });
+      continue;
+    }
+    cnpjsSeen.add(cnpj);
 
     const email = (obj.email ?? '').trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -112,36 +122,13 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       continue;
     }
 
-    let lastPurchaseDate: string | null = null;
-    const dateRaw = (obj.lastPurchaseDate ?? '').trim();
-    if (dateRaw) {
-      lastPurchaseDate = parseDateBR(dateRaw);
-      if (!lastPurchaseDate) {
-        rejected.push({ line, reason: 'data inválida' });
-        continue;
-      }
-    }
-
-    let avgMileagePerDay: number | null = null;
-    const mileageRaw = (obj.avgMileagePerDay ?? '').trim();
-    if (mileageRaw) {
-      const n = Number(mileageRaw);
-      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
-        rejected.push({ line, reason: 'avg_mileage_per_day inválido' });
-        continue;
-      }
-      avgMileagePerDay = n;
-    }
-
     rows.push({
+      line,
       name,
       phone,
+      cnpj,
       email,
       notes: (obj.notes ?? '').trim() || null,
-      vehiclePlate: (obj.vehiclePlate ?? '').trim() || null,
-      vehicleModel: (obj.vehicleModel ?? '').trim() || null,
-      lastPurchaseDate,
-      avgMileagePerDay,
     });
   }
 
@@ -151,29 +138,56 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
 export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
   const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
   if (missingHeaders.length > 0) {
-    throw new HttpError(400, `Missing required column: ${missingHeaders.join(', ')}`);
+    throw new HttpError(400, `Coluna obrigatória ausente: ${missingHeaders.join(', ')}`);
   }
+  if (rows.length > MAX_CNPJ_LOOKUPS_PER_IMPORT) {
+    throw new HttpError(
+      400,
+      `Importação limitada a ${MAX_CNPJ_LOOKUPS_PER_IMPORT} linhas válidas (validação de CNPJ via BrasilAPI tem rate limit gratuito).`,
+    );
+  }
+
+  // Validate each CNPJ against the Receita Federal (via BrasilAPI). Any row
+  // whose CNPJ is inactive, not found, or fails the lookup is rejected with a
+  // descriptive reason. We throttle between calls to stay under the free tier.
+  const validRows: CsvRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (i > 0) await sleep(BRASILAPI_THROTTLE_MS);
+    const row = rows[i];
+    const result = await lookupCnpj(row.cnpj);
+    if (result.status === 'inactive') {
+      rejected.push({ line: row.line, reason: `CNPJ baixado/inapto (${result.situacaoCadastral ?? 'situação desconhecida'})` });
+      continue;
+    }
+    if (result.status === 'not_found') {
+      rejected.push({ line: row.line, reason: 'CNPJ não encontrado na Receita Federal' });
+      continue;
+    }
+    if (result.status === 'error') {
+      rejected.push({ line: row.line, reason: `falha ao consultar BrasilAPI: ${result.errorMessage ?? 'erro desconhecido'}` });
+      continue;
+    }
+    validRows.push(row);
+  }
+
   let inserted = 0;
   let updated = 0;
 
   await db.transaction(async (tx) => {
-    for (const row of rows) {
+    for (const row of validRows) {
       const [existing] = await tx
         .select()
         .from(leads)
-        .where(eq(leads.phone, row.phone))
+        .where(eq(leads.cnpj, row.cnpj))
         .limit(1);
 
       if (!existing) {
         await tx.insert(leads).values({
           name: row.name,
           phone: row.phone,
+          cnpj: row.cnpj,
           email: row.email,
           notes: row.notes,
-          vehiclePlate: row.vehiclePlate,
-          vehicleModel: row.vehicleModel,
-          lastPurchaseDate: row.lastPurchaseDate,
-          avgMileagePerDay: row.avgMileagePerDay,
           source: 'csv',
           status: 'frio',
         });
@@ -181,6 +195,8 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
         continue;
       }
 
+      // Existing lead with this CNPJ: backfill empty fields only. Never
+      // overwrite name, phone, or source already set by previous interactions.
       const patch: Partial<NewLead> = {};
       if (row.email != null && (existing.email == null || existing.email === '')) {
         patch.email = row.email;
@@ -188,20 +204,6 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
       if (row.notes != null && (existing.notes == null || existing.notes === '')) {
         patch.notes = row.notes;
       }
-      if (row.vehiclePlate != null && (existing.vehiclePlate == null || existing.vehiclePlate === '')) {
-        patch.vehiclePlate = row.vehiclePlate;
-      }
-      if (row.vehicleModel != null && (existing.vehicleModel == null || existing.vehicleModel === '')) {
-        patch.vehicleModel = row.vehicleModel;
-      }
-      if (row.lastPurchaseDate && existing.lastPurchaseDate == null) {
-        patch.lastPurchaseDate = row.lastPurchaseDate;
-      }
-      if (row.avgMileagePerDay != null && existing.avgMileagePerDay == null) {
-        patch.avgMileagePerDay = row.avgMileagePerDay;
-      }
-      // name is intentionally NOT in the patch — never overwrite an existing name on import.
-      // source is intentionally NOT in the patch — preserves manual/whatsapp source on existing rows.
 
       if (Object.keys(patch).length > 0) {
         patch.updatedAt = new Date();

@@ -11,6 +11,7 @@ import { api } from '@/lib/apiClient';
 import type { ListResult } from '@/features/leads/api';
 import type { PublicLead } from '@shared/types';
 import type { AudienceFilters } from '../campaigns/types';
+import { formatCnpj } from '@/lib/utils';
 
 interface Props {
   open: boolean;
@@ -68,8 +69,8 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
                 <TableRow>
                   <TableHead className="w-12">Incluir</TableHead>
                   <TableHead>Nome</TableHead>
+                  <TableHead>CNPJ</TableHead>
                   <TableHead>Telefone</TableHead>
-                  <TableHead>Veículo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -83,10 +84,8 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
                       />
                     </TableCell>
                     <TableCell>{l.name}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{formatCnpj(l.cnpj)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{l.phone}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {[l.vehicleModel, l.vehiclePlate].filter(Boolean).join(' · ') || '—'}
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

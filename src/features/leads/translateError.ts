@@ -1,5 +1,7 @@
 const MAP: Record<string, string> = {
-  'Phone already in use': 'Telefone já cadastrado.',
+  'CNPJ já cadastrado': 'CNPJ já cadastrado.',
+  'CNPJ inválido': 'CNPJ inválido (dígitos verificadores não conferem).',
+  'CNPJ cannot be edited': 'CNPJ não pode ser alterado.',
   'Phone cannot be edited': 'Telefone não pode ser alterado.',
   'Phone must have at least 8 digits': 'Telefone precisa ter pelo menos 8 dígitos.',
   'Lead not found': 'Lead não encontrado.',
@@ -9,8 +11,7 @@ const MAP: Record<string, string> = {
 };
 
 export function translateError(msg: string): string {
-  if (msg.startsWith('Missing required column')) {
-    return `Coluna obrigatória ausente no CSV: ${msg.split(': ')[1]}.`;
-  }
+  if (msg.startsWith('Coluna obrigatória ausente')) return msg;
+  if (msg.startsWith('Importação limitada')) return msg;
   return MAP[msg] ?? msg;
 }

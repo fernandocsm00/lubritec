@@ -89,18 +89,18 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
       </div>
 
       <div>
-        <Label>Última compra há mais de N dias</Label>
+        <Label>Cadastrado há mais de N dias</Label>
         <Input
           type="number"
           min={0}
           max={3650}
           placeholder="Ex: 90"
-          value={filters.lastPurchaseDaysAgo ?? ''}
+          value={filters.daysSinceCreated ?? ''}
           onChange={(e) => {
             const n = parseInt(e.target.value, 10);
             onFiltersChange({
               ...filters,
-              lastPurchaseDaysAgo: isNaN(n) ? undefined : n,
+              daysSinceCreated: isNaN(n) ? undefined : n,
             });
           }}
           className="max-w-xs"

@@ -1,20 +1,15 @@
+import { formatCnpj } from '@/lib/utils';
+
 interface PreviewLead {
   name: string;
   phone: string;
-  vehicleModel: string | null;
-  vehiclePlate: string | null;
-  lastPurchaseDate: string | null;
+  cnpj: string | null;
 }
 
 interface Props {
   body: string;
   mediaUrl: string | null;
   lead: PreviewLead | null;
-}
-
-function formatDateBR(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
 }
 
 function formatPhoneBR(phone: string): string {
@@ -25,13 +20,10 @@ function formatPhoneBR(phone: string): string {
 }
 
 function interpolate(body: string, lead: PreviewLead): string {
-  const last = lead.lastPurchaseDate ? formatDateBR(lead.lastPurchaseDate) : 'sem registro';
   return body
     .replaceAll('{{nome}}', lead.name)
     .replaceAll('{{telefone}}', formatPhoneBR(lead.phone))
-    .replaceAll('{{placa}}', lead.vehiclePlate ?? '')
-    .replaceAll('{{modelo}}', lead.vehicleModel ?? '')
-    .replaceAll('{{ultima_compra}}', last);
+    .replaceAll('{{cnpj}}', lead.cnpj ? formatCnpj(lead.cnpj) : '');
 }
 
 export function PreviewMessage({ body, mediaUrl, lead }: Props) {

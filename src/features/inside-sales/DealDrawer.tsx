@@ -10,6 +10,7 @@ import { useDeal, usePatchDeal } from './api';
 import { ActivityLog } from './ActivityLog';
 import { ValueInput } from './ValueInput';
 import { avatarInitials, formatCurrency, STAGE_LABELS, STAGE_COLORS } from './helpers';
+import { formatCnpj } from '@/lib/utils';
 
 interface Props {
   dealId: string | null;
@@ -69,7 +70,7 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
             <div>
               <div className="font-semibold text-sm">{deal.lead.name}</div>
               <div className="text-xs text-muted-foreground">
-                {[deal.lead.phone, deal.lead.vehicleModel, deal.lead.vehiclePlate].filter(Boolean).join(' · ')}
+                {[deal.lead.phone, formatCnpj(deal.lead.cnpj)].filter(Boolean).join(' · ')}
               </div>
             </div>
           </div>

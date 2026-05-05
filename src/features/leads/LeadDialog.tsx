@@ -32,14 +32,15 @@ import { useCreateLead, useUpdateLead } from './api';
 import { translateError } from './translateError';
 import { LEAD_STATUSES, type PublicLead } from '@shared/types';
 
+const cnpjDigits = (s: string) => s.replace(/\D/g, '');
+
 const baseSchema = z.object({
   name: z.string().min(2, 'Nome muito curto').max(120),
   phone: z.string().min(8, 'Telefone muito curto'),
+  cnpj: z
+    .string()
+    .refine((v) => cnpjDigits(v).length === 14, 'CNPJ deve ter 14 dígitos'),
   email: z.string().email('Email inválido').or(z.literal('')).optional(),
-  vehiclePlate: z.string().max(10).optional(),
-  vehicleModel: z.string().max(60).optional(),
-  lastPurchaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida').or(z.literal('')).optional(),
-  avgMileagePerDay: z.string().regex(/^\d*$/, 'Apenas números').optional(),
   notes: z.string().max(2000).optional(),
   status: z.enum(LEAD_STATUSES).optional(),
 });
@@ -68,11 +69,8 @@ export function LeadDialog({
     defaultValues: {
       name: '',
       phone: '',
+      cnpj: '',
       email: '',
-      vehiclePlate: '',
-      vehicleModel: '',
-      lastPurchaseDate: '',
-      avgMileagePerDay: '',
       notes: '',
       status: 'frio',
     },
@@ -84,11 +82,8 @@ export function LeadDialog({
         form.reset({
           name: lead.name,
           phone: lead.phone,
+          cnpj: lead.cnpj ?? '',
           email: lead.email ?? '',
-          vehiclePlate: lead.vehiclePlate ?? '',
-          vehicleModel: lead.vehicleModel ?? '',
-          lastPurchaseDate: lead.lastPurchaseDate ?? '',
-          avgMileagePerDay: lead.avgMileagePerDay?.toString() ?? '',
           notes: lead.notes ?? '',
           status: lead.status,
         });
@@ -96,11 +91,8 @@ export function LeadDialog({
         form.reset({
           name: '',
           phone: '',
+          cnpj: '',
           email: '',
-          vehiclePlate: '',
-          vehicleModel: '',
-          lastPurchaseDate: '',
-          avgMileagePerDay: '',
           notes: '',
           status: 'frio',
         });
@@ -112,10 +104,6 @@ export function LeadDialog({
     const payload = {
       name: values.name,
       email: nullify(values.email),
-      vehiclePlate: nullify(values.vehiclePlate),
-      vehicleModel: nullify(values.vehicleModel),
-      lastPurchaseDate: nullify(values.lastPurchaseDate),
-      avgMileagePerDay: values.avgMileagePerDay ? Number(values.avgMileagePerDay) : null,
       notes: nullify(values.notes),
     };
     try {
@@ -123,7 +111,11 @@ export function LeadDialog({
         await update.mutateAsync({ id: lead.id, ...payload, status: values.status });
         toast.success('Lead atualizado.');
       } else {
-        await create.mutateAsync({ phone: values.phone, ...payload });
+        await create.mutateAsync({
+          phone: values.phone,
+          cnpj: cnpjDigits(values.cnpj),
+          ...payload,
+        });
         toast.success('Lead criado.');
       }
       onOpenChange(false);
@@ -157,6 +149,22 @@ export function LeadDialog({
               />
               <FormField
                 control={form.control}
+                name="cnpj"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>CNPJ *</FormLabel>
+                    <FormControl><Input {...field} disabled={isEdit} placeholder="00.000.000/0000-00" /></FormControl>
+                    {isEdit && (
+                      <p className="text-xs text-muted-foreground">
+                        CNPJ não pode ser alterado.
+                      </p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
@@ -164,7 +172,7 @@ export function LeadDialog({
                     <FormControl><Input {...field} disabled={isEdit} /></FormControl>
                     {isEdit && (
                       <p className="text-xs text-muted-foreground">
-                        Telefone não pode ser alterado. Para mudar, exclua e cadastre novamente.
+                        Telefone não pode ser alterado.
                       </p>
                     )}
                     <FormMessage />
@@ -202,50 +210,6 @@ export function LeadDialog({
                   )}
                 />
               )}
-              <FormField
-                control={form.control}
-                name="vehiclePlate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Placa</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="vehicleModel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Modelo</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="lastPurchaseDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Última compra</FormLabel>
-                    <FormControl><Input {...field} type="date" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="avgMileagePerDay"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Km/dia (média)</FormLabel>
-                    <FormControl><Input {...field} inputMode="numeric" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
             <FormField
               control={form.control}

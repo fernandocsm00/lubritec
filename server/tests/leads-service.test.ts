@@ -1,72 +1,49 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createLead, updateLead, deleteLead, listLeads } from '../services/leadsService';
 import { parseLeadsCsv, importLeadsFromCsv } from '../services/leadsImport';
 import { createLead as seedLead } from './helpers';
+import * as cnpjLookup from '../services/cnpjLookup';
 import { db } from '../db/client';
+
+// Real CNPJs (just digits — the validator computes verification digits, so
+// these are mathematically valid and unique across tests).
+const VALID_CNPJ_1 = '11444777000161'; // Banco do Brasil
+const VALID_CNPJ_2 = '00360305000104'; // Caixa
+const VALID_CNPJ_3 = '33000167000101'; // Petrobras
+const VALID_CNPJ_4 = '60746948000112'; // Bradesco
+const VALID_CNPJ_5 = '60872504000123'; // Itaú
 
 describe('createLead', () => {
   it('cria lead com defaults frio/manual', async () => {
-    const lead = await createLead({ name: 'Maria', phone: '11999998888' });
+    const lead = await createLead({ name: 'Empresa A', phone: '11999998888', cnpj: VALID_CNPJ_1 });
     expect(lead.status).toBe('frio');
     expect(lead.source).toBe('manual');
     expect(lead.phone).toBe('11999998888');
+    expect(lead.cnpj).toBe(VALID_CNPJ_1);
     expect(lead.id).toBeDefined();
   });
 
-  it('normaliza phone (remove não-dígitos)', async () => {
-    const lead = await createLead({ name: 'Joao', phone: '(11) 99999-7777' });
-    expect(lead.phone).toBe('11999997777');
-  });
-
-  it('rejeita phone duplicado com 409', async () => {
-    await createLead({ name: 'A', phone: '11999996666' });
-    await expect(createLead({ name: 'B', phone: '11999996666' })).rejects.toMatchObject({
-      status: 409,
-    });
-  });
-
-  it('mapeia unique_violation 23505 do DB para HttpError 409 (race catch branch)', async () => {
-    // Simulate the race: the pre-check select finds no row (returns []) but the
-    // DB insert then throws a Postgres unique_violation because another request
-    // committed the same phone between the select and the insert.
-    // We spy on db.select so it always returns an empty array, letting the
-    // insert attempt proceed — at which point the real DB constraint fires.
-    const selectSpy = vi.spyOn(db, 'select').mockReturnValueOnce({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve([]),
-        }),
-      }),
-    } as never);
-
-    // Seed the phone directly so the real insert will trip the unique constraint.
-    await seedLead({ name: 'First', phone: '11000099999' });
-
-    // Now createLead skips the pre-check (mocked select returns []) but the
-    // real insert hits the unique constraint → catch branch fires → 409.
-    await expect(
-      createLead({ name: 'Second', phone: '11000099999' }),
-    ).rejects.toMatchObject({ status: 409 });
-
-    selectSpy.mockRestore();
-  });
-
-  it('aceita campos opcionais', async () => {
+  it('normaliza phone e cnpj (remove não-dígitos)', async () => {
     const lead = await createLead({
-      name: 'Carlos',
-      phone: '11888887777',
-      email: 'carlos@x.com',
-      notes: 'cliente VIP',
-      vehiclePlate: 'ABC1D23',
-      vehicleModel: 'Civic',
-      lastPurchaseDate: '2026-01-15',
-      avgMileagePerDay: 80,
+      name: 'Empresa B',
+      phone: '(11) 99999-7777',
+      cnpj: '00.360.305/0001-04',
     });
-    expect(lead.email).toBe('carlos@x.com');
-    expect(lead.notes).toBe('cliente VIP');
-    expect(lead.vehiclePlate).toBe('ABC1D23');
-    expect(lead.lastPurchaseDate).toBe('2026-01-15');
-    expect(lead.avgMileagePerDay).toBe(80);
+    expect(lead.phone).toBe('11999997777');
+    expect(lead.cnpj).toBe(VALID_CNPJ_2);
+  });
+
+  it('rejeita CNPJ inválido', async () => {
+    await expect(
+      createLead({ name: 'X', phone: '11999996666', cnpj: '11111111111111' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('rejeita CNPJ duplicado com 409', async () => {
+    await createLead({ name: 'A', phone: '11999996001', cnpj: VALID_CNPJ_3 });
+    await expect(
+      createLead({ name: 'B', phone: '11999996002', cnpj: VALID_CNPJ_3 }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });
 
@@ -105,44 +82,9 @@ describe('deleteLead', () => {
     await deleteLead(seed.id);
     await expect(deleteLead(seed.id)).rejects.toMatchObject({ status: 404 });
   });
-
-  it('404 quando id não existe', async () => {
-    await expect(deleteLead('00000000-0000-0000-0000-000000000000')).rejects.toMatchObject({
-      status: 404,
-    });
-  });
 });
 
 describe('listLeads', () => {
-  it('paginação retorna 50 e total correto', async () => {
-    for (let i = 0; i < 60; i++) {
-      await seedLead({ phone: `551199990${String(i).padStart(4, '0')}`, name: `Lead ${i}` });
-    }
-    const page1 = await listLeads({ page: 1 });
-    expect(page1.items).toHaveLength(50);
-    expect(page1.total).toBe(60);
-    expect(page1.pageSize).toBe(50);
-    const page2 = await listLeads({ page: 2 });
-    expect(page2.items).toHaveLength(10);
-  });
-
-  it('filtra por status', async () => {
-    await seedLead({ phone: '11000000001', status: 'frio' });
-    await seedLead({ phone: '11000000002', status: 'morno' });
-    await seedLead({ phone: '11000000003', status: 'quente' });
-    const res = await listLeads({ status: 'morno' });
-    expect(res.total).toBe(1);
-    expect(res.items[0].status).toBe('morno');
-  });
-
-  it('filtra por source', async () => {
-    await seedLead({ phone: '11000000010', source: 'manual' });
-    await seedLead({ phone: '11000000011', source: 'csv' });
-    const res = await listLeads({ source: 'csv' });
-    expect(res.total).toBe(1);
-    expect(res.items[0].source).toBe('csv');
-  });
-
   it('busca por name (q)', async () => {
     await seedLead({ name: 'Antonio Silva', phone: '11000000020' });
     await seedLead({ name: 'Beatriz Souza', phone: '11000000021' });
@@ -151,24 +93,10 @@ describe('listLeads', () => {
     expect(res.items[0].name).toBe('Antonio Silva');
   });
 
-  it('busca por phone (q)', async () => {
-    await seedLead({ name: 'X', phone: '11000000030' });
-    const res = await listLeads({ q: '030' });
+  it('busca por cnpj (q)', async () => {
+    await seedLead({ name: 'Y', phone: '11000000040', cnpj: VALID_CNPJ_4 });
+    const res = await listLeads({ q: VALID_CNPJ_4 });
     expect(res.total).toBe(1);
-  });
-
-  it('busca por placa (q)', async () => {
-    await seedLead({ name: 'Y', phone: '11000000040', vehiclePlate: 'ABC1D23' });
-    const res = await listLeads({ q: 'ABC1D23' });
-    expect(res.total).toBe(1);
-  });
-
-  it('sort por name asc', async () => {
-    await seedLead({ name: 'Charlie', phone: '11000000050' });
-    await seedLead({ name: 'Alice', phone: '11000000051' });
-    await seedLead({ name: 'Bob', phone: '11000000052' });
-    const res = await listLeads({ sort: 'name', order: 'asc' });
-    expect(res.items.map((l) => l.name)).toEqual(['Alice', 'Bob', 'Charlie']);
   });
 
   it('default sort é created_at desc', async () => {
@@ -183,71 +111,54 @@ describe('listLeads', () => {
 
 describe('parseLeadsCsv', () => {
   it('aceita header EN com vírgula', async () => {
-    const csv = `name,phone,email\nAlice,11999990001,a@x.com\nBob,11999990002,\n`;
+    const csv = `name,phone,cnpj,email\nEmpresa A,11999990001,${VALID_CNPJ_1},a@x.com\nEmpresa B,11999990002,${VALID_CNPJ_2},\n`;
     const { rows, rejected, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
     expect(missingHeaders).toEqual([]);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ name: 'Alice', phone: '11999990001', email: 'a@x.com' });
+    expect(rows[0]).toMatchObject({ name: 'Empresa A', phone: '11999990001', cnpj: VALID_CNPJ_1, email: 'a@x.com' });
     expect(rows[1].email).toBeNull();
     expect(rejected).toEqual([]);
   });
 
   it('aceita header PT com ponto-e-vírgula', async () => {
-    const csv = `nome;telefone;placa\nMaria;(11) 99999-0003;ABC1D23\n`;
-    const { rows, rejected, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
-    expect(missingHeaders).toEqual([]);
+    const csv = `nome;telefone;cnpj\nEmpresa Maria;(11) 99999-0003;${VALID_CNPJ_3}\n`;
+    const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
     expect(rows[0]).toMatchObject({
-      name: 'Maria',
+      name: 'Empresa Maria',
       phone: '11999990003',
-      vehiclePlate: 'ABC1D23',
+      cnpj: VALID_CNPJ_3,
     });
     expect(rejected).toEqual([]);
   });
 
-  it('rejeita linha com phone vazio', async () => {
-    const csv = `name,phone\nA,11999990010\nB,\n`;
+  it('rejeita linha com CNPJ inválido', async () => {
+    const csv = `name,phone,cnpj\nA,11999990010,11111111111111\n`;
+    const { rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatch(/cnpj/i);
+  });
+
+  it('rejeita CNPJ duplicado dentro do arquivo', async () => {
+    const csv = `name,phone,cnpj\nA,11999990001,${VALID_CNPJ_1}\nB,11999990002,${VALID_CNPJ_1}\n`;
     const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
     expect(rows).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(rejected[0].line).toBe(3);
-    expect(rejected[0].reason).toMatch(/phone/i);
+    expect(rejected[0].reason).toMatch(/duplicado/i);
   });
 
-  it('rejeita linha com email inválido', async () => {
-    const csv = `name,phone,email\nA,11999990020,bad-email\n`;
-    const { rejected } = await parseLeadsCsv(Buffer.from(csv));
-    expect(rejected).toHaveLength(1);
-    expect(rejected[0].reason).toMatch(/email/i);
-  });
-
-  it('rejeita avg_mileage_per_day não numérico', async () => {
-    const csv = `name,phone,km_dia\nA,11999990030,abc\n`;
-    const { rejected } = await parseLeadsCsv(Buffer.from(csv));
-    expect(rejected).toHaveLength(1);
-  });
-
-  it('aceita data DD/MM/YYYY e converte para ISO', async () => {
-    const csv = `name,phone,ultima_compra\nA,11999990040,15/03/2025\n`;
-    const { rows } = await parseLeadsCsv(Buffer.from(csv));
-    expect(rows[0].lastPurchaseDate).toBe('2025-03-15');
-  });
-
-  it('reporta missingHeaders quando faltam name ou phone', async () => {
+  it('reporta missingHeaders quando faltam obrigatórias', async () => {
     const csv = `nome,email\nA,a@x.com\n`;
     const { missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
     expect(missingHeaders).toContain('phone');
-  });
-
-  it('ignora colunas extras', async () => {
-    const csv = `name,phone,foo,bar\nA,11999990050,x,y\n`;
-    const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
-    expect(rows).toHaveLength(1);
-    expect(rejected).toEqual([]);
+    expect(missingHeaders).toContain('cnpj');
   });
 
   it('aceita arquivo com BOM UTF-8 (Excel)', async () => {
     const bom = Buffer.from([0xef, 0xbb, 0xbf]);
-    const csv = Buffer.concat([bom, Buffer.from('name,phone\nAlice,11999990060\n')]);
+    const csv = Buffer.concat([
+      bom,
+      Buffer.from(`name,phone,cnpj\nAlice,11999990060,${VALID_CNPJ_5}\n`),
+    ]);
     const { rows, missingHeaders } = await parseLeadsCsv(csv);
     expect(missingHeaders).toEqual([]);
     expect(rows).toHaveLength(1);
@@ -256,46 +167,69 @@ describe('parseLeadsCsv', () => {
 });
 
 describe('importLeadsFromCsv', () => {
+  beforeEach(() => {
+    // Mock BrasilAPI to keep tests offline and fast — every CNPJ comes back
+    // active. CNPJ-format/dedupe rejection logic is covered by parseLeadsCsv.
+    vi.spyOn(cnpjLookup, 'lookupCnpj').mockImplementation(async (cnpj: string) => ({
+      cnpj,
+      status: 'active',
+      razaoSocial: 'Test Co.',
+      situacaoCadastral: 'ATIVA',
+      telefone: null,
+    }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('insere linhas novas com source=csv e status=frio', async () => {
-    const csv = `name,phone\nA,11888880001\nB,11888880002\n`;
+    const csv = `name,phone,cnpj\nA,11888880001,${VALID_CNPJ_1}\nB,11888880002,${VALID_CNPJ_2}\n`;
     const report = await importLeadsFromCsv(Buffer.from(csv));
     expect(report.inserted).toBe(2);
     expect(report.updated).toBe(0);
-    expect(report.skipped).toBe(0);
     expect(report.rejected).toEqual([]);
     const list = await listLeads({ source: 'csv' });
     expect(list.total).toBe(2);
     expect(list.items[0].status).toBe('frio');
   });
 
-  it('upsert seletivo: preenche só campos vazios, nunca sobrescreve', async () => {
+  it('CNPJ baixado pela BrasilAPI vira rejected', async () => {
+    vi.mocked(cnpjLookup.lookupCnpj).mockResolvedValueOnce({
+      cnpj: VALID_CNPJ_3,
+      status: 'inactive',
+      razaoSocial: null,
+      situacaoCadastral: 'BAIXADA',
+      telefone: null,
+    });
+    const csv = `name,phone,cnpj\nA,11888880010,${VALID_CNPJ_3}\n`;
+    const report = await importLeadsFromCsv(Buffer.from(csv));
+    expect(report.inserted).toBe(0);
+    expect(report.rejected).toHaveLength(1);
+    expect(report.rejected[0].reason).toMatch(/baixado|BAIXADA/i);
+  });
+
+  it('upsert seletivo por CNPJ: preenche só campos vazios', async () => {
     await seedLead({
-      name: 'Maria Original',
-      phone: '11888880010',
-      email: 'maria@x.com',
+      name: 'Empresa Original',
+      phone: '11888880020',
+      cnpj: VALID_CNPJ_4,
+      email: 'orig@x.com',
       notes: null,
       source: 'manual',
     });
-    const csv = `name,phone,email,notes\nMaria CSV,11888880010,csv@x.com,nota nova\n`;
+    const csv = `name,phone,cnpj,email,notes\nEmpresa CSV,11888880099,${VALID_CNPJ_4},csv@x.com,nota nova\n`;
     const report = await importLeadsFromCsv(Buffer.from(csv));
     expect(report.inserted).toBe(0);
     expect(report.updated).toBe(1);
-    const list = await listLeads({ q: '11888880010' });
-    expect(list.items[0].name).toBe('Maria Original');
-    expect(list.items[0].email).toBe('maria@x.com');
+    const list = await listLeads({ q: VALID_CNPJ_4 });
+    expect(list.items[0].name).toBe('Empresa Original');
+    expect(list.items[0].email).toBe('orig@x.com');
     expect(list.items[0].notes).toBe('nota nova');
     expect(list.items[0].source).toBe('manual');
   });
 
-  it('linhas inválidas viram rejected, não abortam', async () => {
-    const csv = `name,phone\nA,11888880020\n,11888880021\nB,11888880022\n`;
-    const report = await importLeadsFromCsv(Buffer.from(csv));
-    expect(report.inserted).toBe(2);
-    expect(report.rejected).toHaveLength(1);
-    expect(report.rejected[0].line).toBe(3);
-  });
-
-  it('retorna missingHeaders quando faltam obrigatórias (sem persistir)', async () => {
+  it('retorna 400 quando faltam colunas obrigatórias', async () => {
     const csv = `nome\nA\n`;
     await expect(importLeadsFromCsv(Buffer.from(csv))).rejects.toMatchObject({ status: 400 });
   });

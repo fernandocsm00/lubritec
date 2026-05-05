@@ -24,26 +24,13 @@ beforeEach(() => {
 });
 
 describe('interpolatePlaceholders', () => {
-  it('substitui {{nome}}, {{placa}}, {{modelo}}', async () => {
+  it('substitui {{nome}} e {{cnpj}}', async () => {
     const lead = await createLead({
-      name: 'João', phone: '5511987654321', vehiclePlate: 'ABC1D23', vehicleModel: 'Civic',
+      name: 'João', phone: '5511987654321', cnpj: '11222333000181',
     });
-    const out = interpolatePlaceholders('Olá {{nome}}, seu {{modelo}} placa {{placa}}', lead);
+    const out = interpolatePlaceholders('Olá {{nome}} (CNPJ {{cnpj}})', lead);
     expect(out).toContain('João');
-    expect(out).toContain('Civic');
-    expect(out).toContain('ABC1D23');
-  });
-
-  it('{{ultima_compra}} usa "sem registro" quando null', async () => {
-    const lead = await createLead({ phone: '5511987654000', lastPurchaseDate: null });
-    const out = interpolatePlaceholders('Olá, troca: {{ultima_compra}}', lead);
-    expect(out).toContain('sem registro');
-  });
-
-  it('{{ultima_compra}} formata data BR (dd/mm/yyyy)', async () => {
-    const lead = await createLead({ phone: '5511987654001', lastPurchaseDate: '2026-02-15' });
-    const out = interpolatePlaceholders('Troca: {{ultima_compra}}', lead);
-    expect(out).toContain('15/02/2026');
+    expect(out).toContain('11222333000181');
   });
 });
 

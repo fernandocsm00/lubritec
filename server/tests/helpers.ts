@@ -16,6 +16,14 @@ import type {
 } from '@shared/types';
 
 let _phoneSeq = 0;
+let _cnpjSeq = 0;
+
+// Generate a syntactically valid 14-digit CNPJ for tests. Doesn't compute real
+// check digits — tests don't exercise the validator on these seeds, and a
+// monotonic sequence is enough to keep CNPJs unique across seedLead calls.
+function nextTestCnpj(): string {
+  return String(++_cnpjSeq).padStart(14, '0');
+}
 
 export async function createUser(opts: {
   email?: string;
@@ -41,28 +49,24 @@ export async function createUser(opts: {
 export async function createLead(opts: {
   name?: string;
   phone?: string;
+  cnpj?: string;
   email?: string | null;
   notes?: string | null;
-  vehiclePlate?: string | null;
-  vehicleModel?: string | null;
-  lastPurchaseDate?: string | null;
-  avgMileagePerDay?: number | null;
   status?: LeadStatus;
   source?: LeadSource;
+  createdAt?: Date;
 }) {
   const [l] = await db
     .insert(leads)
     .values({
       name: opts.name ?? 'Lead Test',
       phone: opts.phone ?? `5511${String(++_phoneSeq).padStart(8, '0')}`,
+      cnpj: opts.cnpj ?? nextTestCnpj(),
       email: opts.email ?? null,
       notes: opts.notes ?? null,
-      vehiclePlate: opts.vehiclePlate ?? null,
-      vehicleModel: opts.vehicleModel ?? null,
-      lastPurchaseDate: opts.lastPurchaseDate ?? null,
-      avgMileagePerDay: opts.avgMileagePerDay ?? null,
       status: opts.status ?? 'frio',
       source: opts.source ?? 'manual',
+      ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     })
     .returning();
   return l;

@@ -1,4 +1,4 @@
-name,phone,email,placa
-Ana Importada,11000099001,ana@imp.com,XYZ1A23
-Bruno Importado,11000099002,,
-,11000099003,sem-nome@x.com,
+name,phone,cnpj,email
+Ana Importada,11000099001,11444777000161,ana@imp.com
+Bruno Importado,11000099002,00360305000104,
+,11000099003,33000167000101,sem-nome@x.com

@@ -1,8 +1,9 @@
 import { db } from '../db/client';
-import { leads, deals, type NewLead } from '../db/schema';
+import { leads, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource } from '@shared/types';
+import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,12 +18,9 @@ function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): Publi
     id: row.id,
     name: row.name,
     phone: row.phone,
+    cnpj: row.cnpj,
     email: row.email,
     notes: row.notes,
-    vehiclePlate: row.vehiclePlate,
-    vehicleModel: row.vehicleModel,
-    lastPurchaseDate: row.lastPurchaseDate,
-    avgMileagePerDay: row.avgMileagePerDay,
     status: row.status,
     source: row.source,
     hasDeal: row.hasDeal ?? false,
@@ -38,50 +36,43 @@ function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): Publi
 export async function createLead(input: {
   name: string;
   phone: string;
+  cnpj: string;
   email?: string | null;
   notes?: string | null;
-  vehiclePlate?: string | null;
-  vehicleModel?: string | null;
-  lastPurchaseDate?: string | null;
-  avgMileagePerDay?: number | null;
 }): Promise<PublicLead> {
   const phone = normalizePhone(input.phone);
   if (phone.length < 8) throw new HttpError(400, 'Phone must have at least 8 digits');
-  // Best-effort guard — the unique index on phone is the authoritative constraint
-  const [existing] = await db.select().from(leads).where(eq(leads.phone, phone)).limit(1);
-  if (existing) throw new HttpError(409, 'Phone already in use');
+
+  const cnpj = normalizeCnpj(input.cnpj);
+  if (!isValidCnpjFormat(cnpj)) throw new HttpError(400, 'CNPJ inválido');
+
+  const [existing] = await db.select().from(leads).where(eq(leads.cnpj, cnpj)).limit(1);
+  if (existing) throw new HttpError(409, 'CNPJ já cadastrado');
+
   // Race fix: if two requests pass the pre-check concurrently, the second insert
-  // trips the unique constraint on phone (leads_phone_key). Translate the pg
-  // unique_violation (23505) to the same 409 the pre-check would have thrown,
-  // so the client never sees a 500 for this case.
+  // trips the unique constraint on cnpj. Translate the pg unique_violation
+  // (23505) to the same 409 the pre-check would have thrown.
   try {
     const [row] = await db
       .insert(leads)
       .values({
         name: input.name,
         phone,
+        cnpj,
         email: input.email ?? null,
         notes: input.notes ?? null,
-        vehiclePlate: input.vehiclePlate ?? null,
-        vehicleModel: input.vehicleModel ?? null,
-        lastPurchaseDate: input.lastPurchaseDate ?? null,
-        avgMileagePerDay: input.avgMileagePerDay ?? null,
       })
       .returning();
     return toPublic({ ...row, hasDeal: false });
   } catch (err) {
-    // Drizzle wraps the underlying pg error in a DrizzleQueryError; the original
-    // pg error is available as `err.cause`. Check both levels for safety.
     const pgErr = (
       (err as { cause?: unknown })?.cause ?? err
     ) as { code?: string; constraint?: string };
-    // Only convert to 409 when it's specifically the phone unique-violation;
-    // the constraint is named leads_phone_key (migration 007).
     if (
       pgErr?.code === '23505' &&
-      (pgErr.constraint === undefined || pgErr.constraint.includes('phone'))
+      (pgErr.constraint === undefined || pgErr.constraint.includes('cnpj'))
     ) {
-      throw new HttpError(409, 'Phone already in use');
+      throw new HttpError(409, 'CNPJ já cadastrado');
     }
     throw err;
   }
@@ -96,23 +87,14 @@ export async function updateLead(input: {
   name?: string;
   email?: string | null;
   notes?: string | null;
-  vehiclePlate?: string | null;
-  vehicleModel?: string | null;
-  lastPurchaseDate?: string | null;
-  avgMileagePerDay?: number | null;
-  // source is intentionally immutable after creation
+  // source and cnpj are intentionally immutable after creation
   status?: LeadStatus;
 }): Promise<PublicLead> {
   const { id, ...rest } = input;
-  // updatedAt is always refreshed, even for no-op patches, to signal "touched"
   const patch: Partial<NewLead> = { updatedAt: new Date() };
   if (rest.name !== undefined) patch.name = rest.name;
   if (rest.email !== undefined) patch.email = rest.email;
   if (rest.notes !== undefined) patch.notes = rest.notes;
-  if (rest.vehiclePlate !== undefined) patch.vehiclePlate = rest.vehiclePlate;
-  if (rest.vehicleModel !== undefined) patch.vehicleModel = rest.vehicleModel;
-  if (rest.lastPurchaseDate !== undefined) patch.lastPurchaseDate = rest.lastPurchaseDate;
-  if (rest.avgMileagePerDay !== undefined) patch.avgMileagePerDay = rest.avgMileagePerDay;
   if (rest.status !== undefined) patch.status = rest.status;
   const [row] = await db.update(leads).set(patch).where(eq(leads.id, id)).returning();
   if (!row) throw new HttpError(404, 'Lead not found');
@@ -133,11 +115,10 @@ export async function deleteLead(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const PAGE_SIZE = 50;
-type SortKey = 'name' | 'created_at' | 'last_purchase_date';
+type SortKey = 'name' | 'created_at';
 const SORT_COLUMNS: Record<SortKey, AnyColumn> = {
   name: leads.name,
   created_at: leads.createdAt,
-  last_purchase_date: leads.lastPurchaseDate,
 };
 
 export async function listLeads(params: {
@@ -169,7 +150,7 @@ export async function listLeads(params: {
     const searchExpr = or(
       ilike(leads.name, pat),
       ilike(leads.phone, pat),
-      ilike(leads.vehiclePlate, pat),
+      ilike(leads.cnpj, pat),
     );
     if (searchExpr) conditions.push(searchExpr);
   }

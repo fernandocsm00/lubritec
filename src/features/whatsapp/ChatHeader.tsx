@@ -7,6 +7,7 @@ import {
 import { useChangeQueue, useClaimConversation, useCloseConversation } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import { CONVERSATION_QUEUES } from '@shared/types';
+import { formatCnpj } from '@/lib/utils';
 import type { PublicConversation } from './types';
 
 const QUEUE_LABEL: Record<PublicConversation['queue'], string> = {
@@ -21,8 +22,7 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
   const isMine = conv.assignedTo?.id === currentUserId;
   const subtitle = [
     formatPhoneBR(conv.phone),
-    conv.lead.vehicleModel,
-    conv.lead.vehiclePlate,
+    formatCnpj(conv.lead.cnpj),
   ].filter(Boolean).join(' · ');
 
   async function doClaim() {
