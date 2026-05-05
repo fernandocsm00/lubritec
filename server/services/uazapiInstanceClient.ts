@@ -160,54 +160,34 @@ export async function deleteInstance(cfg: UazapiInstanceConfig): Promise<void> {
 /**
  * Configura o webhook. Header: `token`. Path: POST /webhook.
  *
- * KITCHEN SINK — uazapiGO varia muito entre versões. Mandamos várias
- * convenções de campo/evento ao mesmo tempo. A UazAPI ignora silenciosamente
- * o que não reconhece. Se um dos shapes baterem, webhook fica ativo.
+ * Body confirmado via probe contra oriondigital.uazapi.com:
+ *   { url, enabled, events, addUrlEvents, addUrlTypesMessages, excludeMessages }
  *
- * Logamos a resposta da UazAPI pra inspeção via Diagnóstico do webhook.
+ * `addUrlTypesMessages` é BOOLEAN (true = entregar mensagens recebidas no webhook).
+ * Mandar como array faz a UazAPI converter pra false silenciosamente — webhook
+ * cadastra OK mas nenhuma mensagem chega.
  */
 export async function setWebhook(
   cfg: UazapiInstanceConfig,
   opts: { url: string; secret: string; events: string[] },
 ): Promise<unknown> {
-  // Eventos: passamos tanto nomes "lubritec idealizados" quanto os nomes
-  // reais que aparecem em diferentes versões da uazapiGO.
+  // Cobrimos os nomes de evento usados em diferentes versões — UazAPI ignora
+  // os que não reconhece.
+  void opts.secret; // uazapiGO não armazena secret próprio; auth do webhook é via instance token no body do payload.
   const allEventNames = Array.from(new Set([
     ...opts.events,
-    'message.received',
     'message',
     'messages',
     'messages.upsert',
-    'messages_upsert',
-    'MESSAGES_UPSERT',
   ]));
 
-  // Tipos de mensagem que algumas versões exigem habilitar separadamente.
-  const allMessageTypes = ['text', 'image', 'audio', 'video', 'document', 'sticker', 'all'];
-
   const body = {
-    // Campos canônicos (uazapiGO recente)
     url: opts.url,
     enabled: true,
     events: allEventNames,
-    secret: opts.secret,
-
-    // Convenções alternativas usadas por outras versões/forks
-    webhook: opts.url,
-    webhookUrl: opts.url,
-    webhook_url: opts.url,
     addUrlEvents: true,
-    addUrlTypesMessages: allMessageTypes,
+    addUrlTypesMessages: true,   // ← LIGA entrega de mensagens recebidas
     excludeMessages: [] as string[],
-    excludeEvents: [] as string[],
-
-    // Headers customizados que a UazAPI deve enviar quando bater no webhook.
-    // Replicamos o secret em vários nomes pra garantir que ele chegue
-    // (nosso handler aceita header `token`, `X-Webhook-Token`, ou body).
-    headers: {
-      'X-Webhook-Token': opts.secret,
-      token: opts.secret,
-    } as Record<string, string>,
   };
 
   return call(cfg, 'instance', 'POST', '/webhook', body);

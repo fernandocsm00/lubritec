@@ -371,6 +371,23 @@ export async function loadWebhookSecret(): Promise<string | null> {
 }
 
 /**
+ * Tokens aceitos para autenticar webhook recebido da UazAPI.
+ *
+ * uazapiGO não armazena nosso `webhook_secret` — quando dispara o webhook,
+ * inclui o `token` da própria instância no body do payload. Por isso aceitamos
+ * AMBOS: o webhook_secret (caso uma versão futura suporte) e o instance_token
+ * (que é o que vem na prática hoje).
+ */
+export async function loadValidWebhookTokens(): Promise<string[]> {
+  const [row] = await db.select().from(whatsappInstance).limit(1);
+  const tokens: string[] = [];
+  if (row?.webhookSecret) tokens.push(row.webhookSecret);
+  if (row?.instanceToken) tokens.push(row.instanceToken);
+  if (process.env.UAZAPI_WEBHOOK_SECRET) tokens.push(process.env.UAZAPI_WEBHOOK_SECRET);
+  return tokens;
+}
+
+/**
  * Diagnóstico — pergunta direto pra UazAPI o que ela tem cadastrado de webhook.
  * Retorna o que cada path tentado respondeu + o que NÓS armazenamos no DB
  * (URL/secret/synced) pra comparação.

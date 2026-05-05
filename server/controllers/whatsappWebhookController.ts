@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
-import { loadWebhookSecret } from '../services/whatsappInstanceService';
+import { loadValidWebhookTokens } from '../services/whatsappInstanceService';
 import {
   pushDebugEntry,
   summarizeHeaders,
@@ -72,22 +72,25 @@ export async function whatsappWebhookHandler(
   }
 
   try {
-    const expected = await loadWebhookSecret();
-    if (!expected) {
+    const validTokens = await loadValidWebhookTokens();
+    if (validTokens.length === 0) {
       debug.result = { kind: 'no_secret_configured' };
       pushDebugEntry(debug);
       return res.status(401).json({ error: 'Webhook secret not configured' });
     }
 
     const got = extractIncomingToken(req);
-    if (got !== expected) {
+    if (!got || !validTokens.includes(got)) {
       console.warn('[whatsapp:webhook] auth failed', {
         gotPresent: !!got,
         gotLen: got?.length ?? 0,
+        acceptedCount: validTokens.length,
       });
       debug.result = {
         kind: 'auth_failed',
-        reason: got ? `provided token (${got.length} chars) does not match expected (${expected.length} chars)` : 'no token in headers/body',
+        reason: got
+          ? `provided token (${got.length} chars) does not match any of the ${validTokens.length} accepted tokens`
+          : 'no token in headers/body',
       };
       pushDebugEntry(debug);
       return res.status(401).json({ error: 'Invalid webhook token' });
