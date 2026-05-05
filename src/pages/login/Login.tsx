@@ -80,9 +80,9 @@ export default function Login() {
           <h1
             className="text-[42px] md:text-5xl font-bold tracking-tight leading-[1.05] m-0 mb-5"
           >
-            Cada lead<br />qualificado.<br />
-            <span style={{ color: 'var(--lc-amber-soft)' }}>Cada deal,</span><br />
-            <span style={{ color: 'var(--lc-amber-soft)' }}>fechado.</span>
+            Conectando<br />Pessoas.<br />
+            <span style={{ color: 'var(--lc-amber-soft)' }}>Acelerando</span><br />
+            <span style={{ color: 'var(--lc-amber-soft)' }}>Negócios.</span>
           </h1>
           <p className="text-[15px] leading-relaxed text-white/70 m-0 max-w-[420px]">
             Inbox WhatsApp, qualificação por IA e pipeline de vendas — uma plataforma só
@@ -106,7 +106,7 @@ export default function Login() {
         </div>
 
         <div className="relative font-mono text-[11px] text-white/40" style={{ letterSpacing: '0.06em' }}>
-          v2.4 · Lubritec Brasil · São Paulo
+          v2.4 · Lubritec Brasil · RS
         </div>
       </div>
 
