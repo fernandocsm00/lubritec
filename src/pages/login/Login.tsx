@@ -85,8 +85,8 @@ export default function Login() {
             <span style={{ color: 'var(--lc-amber-soft)' }}>Negócios.</span>
           </h1>
           <p className="text-[15px] leading-relaxed text-white/70 m-0 max-w-[420px]">
-            Inbox WhatsApp, qualificação por IA e pipeline de vendas — uma plataforma só
-            para o time da Lubritec rodar 100% da jornada do cliente.
+            WhatsApp, IA e pipeline conversando entre si — para o time da Lubritec
+            converter mais com menos esforço.
           </p>
 
           <div className="flex gap-6 mt-9">
