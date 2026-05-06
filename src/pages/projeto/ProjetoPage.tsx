@@ -9,6 +9,9 @@ import {
   Rocket,
   Users,
   ListChecks,
+  Target,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -164,6 +167,102 @@ const MILESTONES: Milestone[] = [
   { id: 'm5', date: '02/06', title: 'UAT aprovado', description: 'Sign-off do piloto Lubritec' },
   { id: 'm6', date: '03/06', title: 'Go-live em produção', description: 'Ativação do número oficial' },
   { id: 'm7', date: '06/06', title: 'Sign-off final', description: 'Início da garantia/suporte contratual' },
+];
+
+interface AcceptanceStage {
+  id: string;
+  number: string;
+  window: string;
+  title: string;
+  sees: string;
+  action: string;
+  criteria: string;
+  isFinal?: boolean;
+}
+
+const ACCEPTANCE: AcceptanceStage[] = [
+  {
+    id: 'a1',
+    number: '01',
+    window: 'S1–S2 · 06–19 maio',
+    title: 'Validação da estrutura do SaaS',
+    sees: 'Ambiente staging acessível, sidebar com todos os módulos, dados de exemplo, identidade visual aplicada.',
+    action: 'Percorrer a sidebar, validar identidade visual e os textos das primeiras telas e templates.',
+    criteria: '"Consigo entender onde fica cada coisa sem precisar perguntar."',
+  },
+  {
+    id: 'a15',
+    number: '1.5',
+    window: 'final S2 · 19 maio',
+    title: 'Rodada de validação com usuários-chave',
+    sees: 'Demo guiada de 1h com 2 a 3 pessoas-chave da Lubritec.',
+    action: 'Apontar fricções de UX e fluxos confusos antes de virarem bugs em produção.',
+    criteria: 'Ata da demo com até 10 ajustes priorizados. Restante vai para backlog pós-MVP.',
+  },
+  {
+    id: 'a2',
+    number: '02',
+    window: 'S3 · 20–26 maio',
+    title: 'Teste de funcionalidades com usuários reais',
+    sees: 'Importação de base, criação de templates, agendamento e disparo de campanha-teste.',
+    action: 'Importar base controlada (50 a 100 clientes), criar 3 templates e disparar 1 campanha-teste.',
+    criteria: 'Taxa de entrega ≥ 95%, webhook registra status corretamente, nenhum bug bloqueante.',
+  },
+  {
+    id: 'a3',
+    number: '03',
+    window: 'final S3 / início S4 · 26–29 maio',
+    title: 'Teste da IA e workflow ponta-a-ponta',
+    sees: 'Inbox alimentado com respostas reais e a IA categorizando cada uma automaticamente.',
+    action: 'Revisar 30 classificações da IA e marcar acertos / erros para calibração.',
+    criteria: 'Acurácia ≥ 80% nas classificações revisadas. Falsos positivos catalogados.',
+  },
+  {
+    id: 'a4',
+    number: '04',
+    window: 'S4 · 27 maio – 06 junho',
+    title: 'Sign-off e go-live',
+    sees: 'Sistema final em produção com número WhatsApp oficial e equipe treinada.',
+    action: 'Participar do treinamento, validar checklist final e assinar ata de aceite.',
+    criteria: 'Documento de sign-off assinado com data, escopo entregue e ressalvas (se houver).',
+    isFinal: true,
+  },
+];
+
+interface PostMilestone {
+  id: string;
+  emoji: string;
+  day: string;
+  date: string;
+  title: string;
+  description: string;
+}
+
+const POST_MILESTONES: PostMilestone[] = [
+  {
+    id: 'p1',
+    emoji: '🚀',
+    day: 'Dia 1',
+    date: '03/06',
+    title: 'Primeira campanha real disparada',
+    description: 'Validação de que o pipeline ponta-a-ponta funciona em produção.',
+  },
+  {
+    id: 'p2',
+    emoji: '🎯',
+    day: 'Dia 7',
+    date: '10/06',
+    title: 'Primeiros leads qualificados pela IA',
+    description: 'Inside sales recebe a primeira lista filtrada automaticamente.',
+  },
+  {
+    id: 'p3',
+    emoji: '📈',
+    day: 'Dia 30',
+    date: '03/07',
+    title: 'Relatório de ROI vs. baseline',
+    description: 'Comparativo entre métrica pré-MVP e o primeiro mês de operação.',
+  },
 ];
 
 const STATUS_LABEL: Record<ActivityStatus, string> = {
@@ -378,11 +477,112 @@ export default function ProjetoPage() {
         </div>
       </section>
 
+      {/* CRITÉRIOS DE ACEITE */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <Target className="h-4 w-4 text-lc-navy" style={{ color: 'var(--lc-navy)' }} />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-700">
+            Critérios de aceite por etapa
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-muted-foreground">
+          O que precisa acontecer em cada etapa para a Lubritec considerar a entrega aceita.
+          "Pronto" não é opinião — é checklist.
+        </p>
+        <div className="space-y-3">
+          {ACCEPTANCE.map((stage) => (
+            <div
+              key={stage.id}
+              className={cn(
+                'grid grid-cols-[60px_1fr] gap-4 rounded-lg border p-4',
+                stage.isFinal ? 'border-rose-200 bg-rose-50/40' : 'border-slate-100 bg-slate-50/40',
+              )}
+            >
+              <div>
+                <div
+                  className={cn(
+                    'font-mono text-2xl font-bold leading-none',
+                    stage.isFinal ? 'text-rose-600' : 'text-lc-navy',
+                  )}
+                  style={!stage.isFinal ? { color: 'var(--lc-navy)' } : undefined}
+                >
+                  {stage.number}
+                </div>
+                <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                  {stage.window}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-lc-ink">{stage.title}</div>
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <AcceptBlock label="O que vocês verão" text={stage.sees} />
+                  <AcceptBlock label="Ação esperada" text={stage.action} />
+                  <AcceptBlock label="Critério de aceite" text={stage.criteria} accent />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* MARCOS PÓS-ENTREGA */}
+      <section className="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50/40 to-white p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-rose-600" />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-700">
+            Marcos pós-entrega
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Datas que a Lubritec deve esperar como retornos visíveis do investimento, comunicadas pela
+          Orion conforme acontecem. Em paralelo, hipercare ativo de <strong className="text-rose-700">03/06 a 17/06</strong>.
+        </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {POST_MILESTONES.map((m) => (
+            <div key={m.id} className="rounded-lg border border-rose-100 bg-white p-4 text-center">
+              <div className="text-2xl">{m.emoji}</div>
+              <div className="mt-1 font-mono text-[11px] uppercase tracking-wider text-rose-600">
+                {m.day} · {m.date}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-lc-ink">{m.title}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{m.description}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            Sucesso é medido contra a baseline definida em S1/S2. Sem baseline, não há ROI.
+          </span>
+        </div>
+      </section>
+
       {/* FOOTER NOTE */}
       <p className="text-xs text-muted-foreground">
         Esta página tem propósito informativo e é compartilhada entre Orion e Lubritec.
         O conteúdo é atualizado a cada virada de sprint e nas demos de sexta.
       </p>
+    </div>
+  );
+}
+
+function AcceptBlock({ label, text, accent }: { label: string; text: string; accent?: boolean }) {
+  return (
+    <div
+      className={cn(
+        'rounded-md border p-3',
+        accent ? 'border-sky-200 bg-sky-50/60' : 'border-slate-200 bg-white',
+      )}
+    >
+      <div
+        className={cn(
+          'font-mono text-[10px] uppercase tracking-wider font-bold mb-1',
+          accent ? 'text-sky-700' : 'text-slate-500',
+        )}
+      >
+        {label}
+      </div>
+      <div className="text-xs leading-relaxed text-slate-700">{text}</div>
     </div>
   );
 }
