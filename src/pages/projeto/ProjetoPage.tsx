@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { FeedbackSection } from './FeedbackSection';
 
 type ActivityStatus = 'done' | 'doing' | 'todo' | 'risk';
 
@@ -556,6 +557,9 @@ export default function ProjetoPage() {
           </span>
         </div>
       </section>
+
+      {/* AJUSTES */}
+      <FeedbackSection />
 
       {/* FOOTER NOTE */}
       <p className="text-xs text-muted-foreground">

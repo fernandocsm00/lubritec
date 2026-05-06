@@ -336,6 +336,27 @@ export const leadStageTransitions = pgTable('lead_stage_transitions', {
 export type LeadStageTransition = typeof leadStageTransitions.$inferSelect;
 export type NewLeadStageTransition = typeof leadStageTransitions.$inferInsert;
 
+export const projectFeedback = pgTable(
+  'project_feedback',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    authorName: text('author_name').notNull(),
+    content: text('content').notNull(),
+    images: jsonb('images').notNull().default([]),
+    status: text('status', { enum: ['open', 'doing', 'done', 'dismissed'] }).notNull().default('open'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    createdIdx: index('idx_project_feedback_created').on(t.createdAt),
+    statusIdx: index('idx_project_feedback_status').on(t.status),
+  }),
+);
+
+export type ProjectFeedback = typeof projectFeedback.$inferSelect;
+export type NewProjectFeedback = typeof projectFeedback.$inferInsert;
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
