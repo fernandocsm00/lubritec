@@ -17,6 +17,7 @@ const ContinuousCampaignPage = lazy(() => import('@/pages/campaigns/ContinuousCa
 const CadastrosPage = lazy(() => import('@/pages/cadastros/CadastrosPage'));
 const AdminPage = lazy(() => import('@/pages/admin/AdminPage'));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
+const ProjetoPage = lazy(() => import('@/pages/projeto/ProjetoPage'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 
 const Loader = () => <div className="p-6 text-muted-foreground">Carregando…</div>;
@@ -41,6 +42,7 @@ export const routes: RouteObject[] = [
           { path: '/campanhas/nova', element: wrap(<CampaignNewPage />) },
           { path: '/campanhas/:id', element: wrap(<CampaignDetailPage />) },
           { path: '/cadastros', element: wrap(<CadastrosPage />) },
+          { path: '/projeto', element: wrap(<ProjetoPage />) },
           { path: '/settings', element: wrap(<SettingsPage />) },
           {
             element: <AdminRoute />,

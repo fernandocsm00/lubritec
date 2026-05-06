@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Settings as SettingsIcon,
   Search,
+  KanbanSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/features/auth/store';
@@ -28,6 +29,7 @@ const items: NavItem[] = [
   { to: '/inside-sales', label: 'Inside Sales',  icon: Briefcase,      group: 'op', salesOnly: true },
   { to: '/campanhas',    label: 'Campanhas',     icon: Megaphone,      group: 'op', salesOnly: true },
   { to: '/cadastros',    label: 'Cadastros',     icon: Users,          group: 'op' },
+  { to: '/projeto',      label: 'Projeto',       icon: KanbanSquare,   group: 'sys' },
   { to: '/admin',        label: 'Admin',         icon: ShieldCheck,    group: 'sys', adminOnly: true },
   { to: '/settings',     label: 'Configurações', icon: SettingsIcon,   group: 'sys' },
 ];
