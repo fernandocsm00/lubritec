@@ -59,8 +59,7 @@ export function InviteUserDialog({
       form.reset();
       onOpenChange(false);
     } catch (e) {
-      const msg = e instanceof Error ? translateError(e.message) : 'Erro ao convidar.';
-      toast.error(msg);
+      toast.error(translateError(e));
     }
   }
 

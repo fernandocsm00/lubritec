@@ -34,8 +34,7 @@ export function UserActions({ user, isSelf }: { user: AdminUser; isSelf: boolean
       await update.mutateAsync({ id: user.id, is_active: !user.is_active });
       toast.success(user.is_active ? 'Usuário desativado.' : 'Usuário reativado.');
     } catch (e) {
-      const msg = e instanceof Error ? translateError(e.message) : 'Erro ao alterar status.';
-      toast.error(msg);
+      toast.error(translateError(e));
     }
   }
 
@@ -44,8 +43,7 @@ export function UserActions({ user, isSelf }: { user: AdminUser; isSelf: boolean
       await resend.mutateAsync(user.id);
       toast.success(`Convite reenviado para ${user.email}.`);
     } catch (e) {
-      const msg = e instanceof Error ? translateError(e.message) : 'Erro ao reenviar convite.';
-      toast.error(msg);
+      toast.error(translateError(e));
     }
   }
 

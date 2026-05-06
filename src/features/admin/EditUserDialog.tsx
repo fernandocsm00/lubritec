@@ -72,8 +72,7 @@ export function EditUserDialog({
       toast.success('Usuário atualizado.');
       onOpenChange(false);
     } catch (e) {
-      const msg = e instanceof Error ? translateError(e.message) : 'Erro ao atualizar.';
-      toast.error(msg);
+      toast.error(translateError(e));
     }
   }
 
