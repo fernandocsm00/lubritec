@@ -47,6 +47,14 @@ export function createApp() {
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
+  // SPA: serve the Vite build and fall back to index.html for client-side routes.
+  // Must come after /api routes so unknown API paths still return JSON 404.
+  if (process.env.NODE_ENV === 'production') {
+    const distDir = path.join(process.cwd(), 'dist');
+    app.use(express.static(distDir));
+    app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
+  }
+
   app.use(errorHandler);
   return app;
 }
