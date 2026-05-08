@@ -3,7 +3,7 @@ import { campaigns, campaignRecipients, conversations, messages, leads, orgSetti
 import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { uazapiClient } from './uazapiClient';
-import { isWithinDispatchWindow, pickVariant } from './continuousCampaign';
+import { isWithinDispatchWindow, pickVariant, sweepContinuousReenroll } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 import { emitNotification } from './notifications';
@@ -56,6 +56,14 @@ export async function tick(): Promise<void> {
         continue;
       }
       await processCampaign(c);
+    }
+
+    // Reciclar leads 'complete' que ficaram fora da campanha contínua por
+    // cooldown ou outras pendências transitórias. Best-effort, não-bloqueante.
+    try {
+      await sweepContinuousReenroll({ limit: 50 });
+    } catch (e) {
+      console.warn('[continuous-reenroll] sweep failed:', e);
     }
   } finally {
     isProcessing = false;

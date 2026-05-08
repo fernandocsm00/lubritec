@@ -280,6 +280,44 @@ export async function enrollLeadInContinuous(leadId: string): Promise<EnrollResu
 }
 
 /**
+ * Sweep que tenta enrolar leads em 'complete' ainda não cadastrados como
+ * recipient da campanha contínua. Existe para reciclar leads que bouncearam
+ * por cooldown — sem isso, um lead que entrou em janela de 24h durante o
+ * enrollment hook ficaria fora da campanha pra sempre. Roda dentro do tick
+ * do dispatcher (60s).
+ */
+export async function sweepContinuousReenroll(opts: { limit?: number } = {}): Promise<number> {
+  const cont = await loadContinuousRow();
+  if (!cont) return 0;
+  if (cont.status !== 'running') return 0;
+
+  const limit = opts.limit ?? 50;
+  const candidates = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .leftJoin(
+      campaignRecipients,
+      and(
+        eq(campaignRecipients.leadId, leads.id),
+        eq(campaignRecipients.campaignId, cont.id),
+      ),
+    )
+    .where(and(
+      eq(leads.flowStage, 'complete'),
+      sql`${leads.phone} IS NOT NULL`,
+      sql`${campaignRecipients.id} IS NULL`,
+    ))
+    .limit(limit);
+
+  let enrolled = 0;
+  for (const c of candidates) {
+    const r = await enrollLeadInContinuous(c.id);
+    if (r.status === 'enrolled') enrolled++;
+  }
+  return enrolled;
+}
+
+/**
  * Best-effort — chamado de hooks (createLead, updateLead, import, enrich).
  * Errors são logados mas nunca propagados — não queremos quebrar uma operação
  * de lead se a campanha contínua estiver mal configurada.

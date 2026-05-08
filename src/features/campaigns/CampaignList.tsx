@@ -44,15 +44,17 @@ export function CampaignList({ filters }: Props) {
                 {c.description && <div className="text-xs text-muted-foreground line-clamp-1">{c.description}</div>}
               </TableCell>
               <TableCell><StatusBadge status={c.status} /></TableCell>
-              <TableCell className="text-right">{c.audienceTotal}</TableCell>
-              <TableCell className="text-right text-sm">
-                {c.sentCount} <span className="text-muted-foreground">({formatPercent(c.sentCount, c.audienceTotal)})</span>
+              <TableCell className="text-right">
+                {c.audienceTotal}
                 {c.skippedByCooldown > 0 && (
                   <div className="flex items-center justify-end gap-1 text-[11px] text-lc-amber mt-0.5">
                     <Clock className="h-3 w-3" />
-                    <span>{c.skippedByCooldown} por cooldown 24h</span>
+                    <span>{c.skippedByCooldown} pulado{c.skippedByCooldown === 1 ? '' : 's'} por cooldown 24h</span>
                   </div>
                 )}
+              </TableCell>
+              <TableCell className="text-right text-sm">
+                {c.sentCount} <span className="text-muted-foreground">({formatPercent(c.sentCount, c.audienceTotal)})</span>
               </TableCell>
               <TableCell className="text-muted-foreground text-sm">{c.createdBy.name}</TableCell>
               <TableCell className="text-muted-foreground text-sm">{formatDateTime(c.createdAt)}</TableCell>
