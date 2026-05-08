@@ -26,7 +26,6 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
   });
 
   const isMine = deal.owner?.id === currentUserId;
-  const ownerLabel = !deal.owner ? 'Sem dono' : isMine ? 'Você' : deal.owner.name;
 
   const accent = STAGE_ACCENT[deal.stage] ?? 'var(--lc-navy)';
 
@@ -69,10 +68,27 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-2.5 min-w-0 font-mono">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-1.5 min-w-0 font-mono">
         <span className="truncate">
           {formatCnpj(deal.lead.cnpj)}
         </span>
+      </div>
+
+      <div className="flex items-center gap-1.5 mb-2.5 min-w-0">
+        {deal.owner ? (
+          <>
+            <Avatar className="h-4 w-4 shrink-0">
+              <AvatarFallback className="text-[8px] font-semibold bg-lc-navy/15 text-lc-navy">
+                {avatarInitials(deal.owner.name)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="text-[11px] text-lc-ink truncate">
+              {isMine ? 'Você' : deal.owner.name}
+            </span>
+          </>
+        ) : (
+          <span className="text-[11px] italic text-muted-foreground">Sem dono</span>
+        )}
       </div>
 
       {deal.stage === 'perdido' && deal.lossReason && (
@@ -98,7 +114,7 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
           {formatCurrency(deal.proposalValue)}
         </span>
         <span className="text-[10px] text-muted-foreground font-mono">
-          {ownerLabel} · {relativeTime(deal.updatedAt)}
+          {relativeTime(deal.updatedAt)}
         </span>
       </div>
     </div>
