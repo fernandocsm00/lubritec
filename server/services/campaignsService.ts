@@ -12,6 +12,7 @@ import type {
 } from '@shared/types';
 import { LOSS_REASONS } from '@shared/types';
 import { resolveAudience } from './campaignsAudience';
+import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 
 const LIST_PAGE_SIZE = 50;
 const RECIPIENTS_PAGE_SIZE = 50;
@@ -106,6 +107,12 @@ export async function createCampaign(input: {
   createdByUserId: string;
 }): Promise<PublicCampaign> {
   const audience = await resolveAudience(input.audienceFilter);
+  const audienceIds = audience.map((a) => a.leadId);
+  const { eligible } = await filterEligibleLeads(audienceIds, {});
+
+  const eligibleSet = new Set(eligible);
+  const eligibleRows = audience.filter((a) => eligibleSet.has(a.leadId));
+  const blockedRows = audience.filter((a) => !eligibleSet.has(a.leadId));
 
   return db.transaction(async (tx) => {
     const [c] = await tx.insert(campaigns).values({
@@ -118,17 +125,30 @@ export async function createCampaign(input: {
       mediaMime: input.mediaMime ?? null,
       audienceFilter: input.audienceFilter as object,
       audienceTotal: audience.length,
+      skippedCount: blockedRows.length,
       scheduledAt: input.scheduledAt ?? null,
       ratePerMinute: input.ratePerMinute ?? 20,
       createdByUserId: input.createdByUserId,
     }).returning();
 
-    if (audience.length > 0) {
+    if (eligibleRows.length > 0) {
       await tx.insert(campaignRecipients)
-        .values(audience.map((a) => ({
+        .values(eligibleRows.map((a) => ({
           campaignId: c.id,
           leadId: a.leadId,
           phone: a.phone,
+        })))
+        .onConflictDoNothing({ target: [campaignRecipients.campaignId, campaignRecipients.leadId] });
+    }
+
+    if (blockedRows.length > 0) {
+      await tx.insert(campaignRecipients)
+        .values(blockedRows.map((a) => ({
+          campaignId: c.id,
+          leadId: a.leadId,
+          phone: a.phone,
+          status: 'skipped' as const,
+          failureReason: COOLDOWN_REASON,
         })))
         .onConflictDoNothing({ target: [campaignRecipients.campaignId, campaignRecipients.leadId] });
     }

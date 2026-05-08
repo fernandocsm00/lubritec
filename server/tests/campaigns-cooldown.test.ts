@@ -138,3 +138,42 @@ describe('filterEligibleLeads', () => {
     expect(COOLDOWN_REASON).toBe('cooldown_24h');
   });
 });
+
+import { eq } from 'drizzle-orm';
+import { createCampaign as createCampaignService } from '../services/campaignsService';
+
+describe('createCampaign + cooldown', () => {
+  it('separa elegíveis (pending) de bloqueados (skipped cooldown_24h)', async () => {
+    const u = await createUser({ role: 'comercial', email: 'cc1@x.com' });
+    const ok = await createLead({ phone: '5511900060001', status: 'frio' });
+    const blocked = await createLead({ phone: '5511900060002', status: 'frio' });
+
+    const conv = await createConversation({ leadId: blocked.id });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    const c = await createCampaignService({
+      name: 'cooldown-test',
+      messageBody: 'oi {{nome}}',
+      audienceFilter: { status: ['frio'] },
+      createdByUserId: u.id,
+    });
+
+    const recs = await db.select().from(campaignRecipients)
+      .where(eq(campaignRecipients.campaignId, c.id));
+    expect(recs).toHaveLength(2);
+    const pendingR = recs.find((r) => r.leadId === ok.id);
+    const skippedR = recs.find((r) => r.leadId === blocked.id);
+    expect(pendingR?.status).toBe('pending');
+    expect(skippedR?.status).toBe('skipped');
+    expect(skippedR?.failureReason).toBe(COOLDOWN_REASON);
+
+    const [campRow] = await db.select().from(campaigns).where(eq(campaigns.id, c.id));
+    expect(campRow.audienceTotal).toBe(2);
+    expect(campRow.skippedCount).toBe(1);
+  });
+});
