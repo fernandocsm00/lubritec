@@ -12,8 +12,10 @@ import type {
 // Board
 // ---------------------------------------------------------------------------
 
+export type OwnerFilter = 'mine' | 'all' | 'unassigned' | string; // string = UUID
+
 export interface BoardFilters {
-  owner?: 'mine' | 'all';
+  owner?: OwnerFilter;
   q?: string;
 }
 
@@ -39,7 +41,7 @@ export function useBoard(filters: BoardFilters) {
 // ---------------------------------------------------------------------------
 
 export interface HistoryFilters {
-  owner?: 'mine' | 'all';
+  owner?: OwnerFilter;
   q?: string;
   stage?: 'ganho' | 'perdido';
   lossReason?: LossReason;
@@ -138,5 +140,23 @@ export function useDeleteDeal() {
   return useMutation({
     mutationFn: (id: string) => api<void>(`/deals/${id}`, { method: 'DELETE' }),
     onSuccess: () => invalidateAll(qc),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Usuários atribuíveis (admin + comercial ativos)
+// ---------------------------------------------------------------------------
+
+export interface AssignableUser {
+  id: string;
+  name: string;
+  role: 'admin' | 'comercial';
+}
+
+export function useAssignableUsers() {
+  return useQuery({
+    queryKey: ['users', 'assignable'],
+    queryFn: () => api<{ users: AssignableUser[] }>('/users/assignable').then((r) => r.users),
+    staleTime: 5 * 60_000,
   });
 }
