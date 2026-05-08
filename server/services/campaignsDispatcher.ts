@@ -6,6 +6,7 @@ import { uazapiClient } from './uazapiClient';
 import { isWithinDispatchWindow, pickVariant } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
+import { emitNotification } from './notifications';
 import type { ConversationQueue } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
@@ -72,21 +73,22 @@ export async function processCampaign(c: Campaign): Promise<void> {
     .limit(limit);
 
   if (recipients.length === 0) {
-    // Continuous campaigns nunca terminam — ficam aguardando novos enrolls.
-    if (c.isContinuous) return;
-    // One-shot: tudo processado → completed.
+    if (c.isContinuous) {
+      await maybeEmitCooldownAlert(c);
+      return;
+    }
     await db.update(campaigns).set({
       status: 'completed',
       completedAt: new Date(),
       updatedAt: new Date(),
     }).where(eq(campaigns.id, c.id));
+    await maybeEmitCooldownAlert(c);
     return;
   }
 
   const intervalMs = Math.max(100, Math.floor(60_000 / limit));
 
   for (const r of recipients) {
-    // Re-check status (cancel/pause entre iterações)
     const [fresh] = await db.select({ status: campaigns.status })
       .from(campaigns).where(eq(campaigns.id, c.id));
     if (!fresh || fresh.status !== 'running') break;
@@ -94,6 +96,39 @@ export async function processCampaign(c: Campaign): Promise<void> {
     await sendOne(c, r);
     await sleep(intervalMs);
   }
+
+  await maybeEmitCooldownAlert(c);
+}
+
+async function maybeEmitCooldownAlert(c: Campaign): Promise<void> {
+  if (c.cooldownAlertSentAt) return;
+  if (c.audienceTotal <= 0) return;
+
+  const [counts] = await db.select({
+    n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = ${COOLDOWN_REASON})::int`,
+  }).from(campaignRecipients).where(eq(campaignRecipients.campaignId, c.id));
+
+  const ratio = counts.n / c.audienceTotal;
+  if (ratio <= 0.10) return;
+
+  await emitNotification({
+    toRoles: ['admin'],
+    kind: 'campaign_cooldown_high',
+    title: 'Muitos leads pulados por cooldown',
+    body: `Campanha "${c.name}": ${counts.n} de ${c.audienceTotal} leads pulados (janela de 24h).`,
+    actionUrl: `/campaigns/${c.id}?recipientStatus=skipped`,
+    metadata: {
+      campaignId: c.id,
+      campaignName: c.name,
+      skippedCount: counts.n,
+      audienceTotal: c.audienceTotal,
+      ratio,
+    },
+  });
+
+  await db.update(campaigns)
+    .set({ cooldownAlertSentAt: new Date(), updatedAt: new Date() })
+    .where(eq(campaigns.id, c.id));
 }
 
 async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
