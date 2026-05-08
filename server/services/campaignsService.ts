@@ -312,6 +312,8 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
     sent: sql<number>`count(*) FILTER (WHERE status = 'sent')::int`,
     failed: sql<number>`count(*) FILTER (WHERE status = 'failed')::int`,
     skipped: sql<number>`count(*) FILTER (WHERE status = 'skipped')::int`,
+    skippedByCooldown: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
+    skippedOther: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND (failure_reason IS NULL OR failure_reason <> 'cooldown_24h'))::int`,
   }).from(campaignRecipients).where(eq(campaignRecipients.campaignId, id));
 
   const repliedRows = await db.execute(sql`
@@ -368,6 +370,8 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
     sent: counts.sent,
     failed: counts.failed,
     skipped: counts.skipped,
+    skippedByCooldown: counts.skippedByCooldown,
+    skippedOther: counts.skippedOther,
     replied,
     inDeal,
     won,
