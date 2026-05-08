@@ -4,6 +4,7 @@ import { and, eq, sql, count } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicContinuousCampaign, UpsertContinuousCampaignInput, VariantStat } from '@shared/types';
 import { loadOrgSettingsRow } from './orgSettingsService';
+import { filterEligibleLeads } from './campaignsCooldown';
 
 const CONTINUOUS_NAME_DEFAULT = 'Disparo automático contínuo';
 const RATE_DEFAULT = 20;
@@ -221,6 +222,7 @@ export type EnrollResult =
   | { status: 'campaign_paused' }
   | { status: 'lead_no_phone' }
   | { status: 'already_enrolled' }
+  | { status: 'lead_in_cooldown' }
   | { status: 'lead_not_complete'; currentStage: string };
 
 /**
@@ -257,6 +259,11 @@ export async function enrollLeadInContinuous(leadId: string): Promise<EnrollResu
     .limit(1);
   if (existing) return { status: 'already_enrolled' };
 
+  const { eligible } = await filterEligibleLeads([leadId], { excludeCampaignId: cont.id });
+  if (eligible.length === 0) {
+    return { status: 'lead_in_cooldown' };
+  }
+
   await db.insert(campaignRecipients).values({
     campaignId: cont.id,
     leadId,
@@ -280,7 +287,13 @@ export async function enrollLeadInContinuous(leadId: string): Promise<EnrollResu
 export async function tryEnrollSafe(leadId: string): Promise<void> {
   try {
     const r = await enrollLeadInContinuous(leadId);
-    if (r.status !== 'enrolled' && r.status !== 'already_enrolled' && r.status !== 'no_continuous_campaign' && r.status !== 'campaign_paused') {
+    if (
+      r.status !== 'enrolled' &&
+      r.status !== 'already_enrolled' &&
+      r.status !== 'no_continuous_campaign' &&
+      r.status !== 'campaign_paused' &&
+      r.status !== 'lead_in_cooldown'
+    ) {
       console.log('[continuous] enroll skip:', r.status, leadId);
     }
   } catch (err) {

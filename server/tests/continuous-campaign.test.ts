@@ -8,7 +8,9 @@ import {
   pickVariant,
   upsertContinuousCampaign,
 } from '../services/continuousCampaign';
-import { createUser, createLead } from './helpers';
+import { createUser, createLead, createConversation, createMessage } from './helpers';
+import { filterEligibleLeads as _ensureCooldownImport } from '../services/campaignsCooldown';
+void _ensureCooldownImport;
 
 async function setDispatchWindow(opts: {
   startHour?: number;
@@ -233,5 +235,34 @@ describe('createLead auto-enroll', () => {
 
     const [row] = await db.select().from(leads).where(eq(leads.id, created.id));
     expect(row.flowStage).toBe('incomplete');
+  });
+});
+
+describe('enrollment + cooldown', () => {
+  it('lead em cooldown não é enrolado (sem recipient row criado)', async () => {
+    const u = await createUser({ role: 'comercial', email: 'cc-cool@x.com' });
+    const lead = await createLead({ phone: '5511900090001', flowStage: 'complete' });
+    const conv = await createConversation({ leadId: lead.id });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    const [cont] = await db.insert(campaigns).values({
+      name: 'cont',
+      status: 'running',
+      messageBody: 'oi',
+      isContinuous: true,
+      createdByUserId: u.id,
+    }).returning();
+
+    const r = await enrollLeadInContinuous(lead.id);
+    expect(r.status).toBe('lead_in_cooldown');
+
+    const recs = await db.select().from(campaignRecipients)
+      .where(eq(campaignRecipients.campaignId, cont.id));
+    expect(recs).toHaveLength(0);
   });
 });
