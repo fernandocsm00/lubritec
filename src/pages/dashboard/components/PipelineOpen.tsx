@@ -3,6 +3,7 @@ import type { DashboardSummary } from '@shared/types';
 const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 
 const STAGE_LABEL: Record<string, string> = {
+  lead_no_comercial: 'Lead no Comercial',
   proposta_enviada: 'Proposta enviada',
   em_negociacao:    'Em negociação',
 };

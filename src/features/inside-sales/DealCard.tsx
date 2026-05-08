@@ -12,6 +12,7 @@ interface Props {
 }
 
 const STAGE_ACCENT: Record<string, string> = {
+  lead_no_comercial: 'var(--lc-navy-soft)',
   proposta_enviada: 'var(--lc-navy)',
   em_negociacao: 'var(--lc-amber)',
   ganho: 'hsl(var(--success))',
