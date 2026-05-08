@@ -6,7 +6,15 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDeal, usePatchDeal } from './api';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useAuthStore } from '@/features/auth/store';
+import { useDeal, usePatchDeal, useAssignableUsers } from './api';
 import { ActivityLog } from './ActivityLog';
 import { ValueInput } from './ValueInput';
 import { avatarInitials, formatCurrency, STAGE_LABELS, STAGE_COLORS } from './helpers';
@@ -23,6 +31,8 @@ interface Props {
 export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
   const { data: deal, isLoading } = useDeal(dealId);
   const patch = usePatchDeal();
+  const currentUserId = useAuthStore((s) => s.user?.id ?? '');
+  const { data: assignableUsers } = useAssignableUsers();
   const [valueDraft, setValueDraft] = useState<number | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
   const [editLeadOpen, setEditLeadOpen] = useState(false);
@@ -55,6 +65,17 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
     } catch {
       toast.error('Falha ao salvar nota.');
       setNotesDraft(deal.notes ?? '');
+    }
+  }
+
+  async function changeOwner(value: string) {
+    if (!deal || readOnly) return;
+    const next = value === '__none' ? null : value;
+    if (next === (deal.owner?.id ?? null)) return;
+    try {
+      await patch.mutateAsync({ id: deal.id, ownerUserId: next });
+    } catch {
+      toast.error('Falha ao alterar dono.');
     }
   }
 
@@ -114,7 +135,27 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Dono</span>
-              <span className="font-semibold">{deal.owner?.name ?? 'Sem dono'}</span>
+              {readOnly ? (
+                <span className="font-semibold">{deal.owner?.name ?? 'Sem dono'}</span>
+              ) : (
+                <Select
+                  value={deal.owner?.id ?? '__none'}
+                  onValueChange={changeOwner}
+                  disabled={patch.isPending}
+                >
+                  <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">Sem dono</SelectItem>
+                    {assignableUsers?.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.id === currentUserId ? `${u.name} (você)` : u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
 
