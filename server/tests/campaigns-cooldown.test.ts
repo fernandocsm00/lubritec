@@ -211,3 +211,48 @@ describe('PublicCampaign.skippedByCooldown', () => {
     expect(found?.skippedByCooldown).toBe(1);
   });
 });
+
+import { tick } from '../services/campaignsDispatcher';
+import { uazapiClient } from '../services/uazapiClient';
+import { vi } from 'vitest';
+
+describe('dispatcher + cooldown safety net', () => {
+  it('lead que ficou em cooldown entre criação e dispatch é skipped', async () => {
+    const u = await createUser({ role: 'comercial', email: 'ds1@x.com' });
+    const lead = await createLead({ phone: '5511900080001', status: 'frio' });
+
+    // Criar campanha running com recipient pending — simula campanha já materializada.
+    const camp = await createCampaign({ status: 'running', createdByUserId: u.id });
+    await db.insert(campaignRecipients).values({
+      campaignId: camp.id,
+      leadId: lead.id,
+      phone: lead.phone!,
+      status: 'pending',
+    });
+
+    // Cooldown ativa AGORA: alguém mandou outbound há 1h.
+    const conv = await createConversation({ leadId: lead.id });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    const sendSpy = vi.spyOn(uazapiClient, 'sendMessage');
+
+    await tick();
+
+    const [r] = await db.select().from(campaignRecipients)
+      .where(eq(campaignRecipients.campaignId, camp.id));
+    expect(r.status).toBe('skipped');
+    expect(r.failureReason).toBe(COOLDOWN_REASON);
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    const [campAfter] = await db.select().from(campaigns).where(eq(campaigns.id, camp.id));
+    expect(campAfter.skippedCount).toBe(1);
+    expect(campAfter.sentCount).toBe(0);
+
+    sendSpy.mockRestore();
+  });
+});

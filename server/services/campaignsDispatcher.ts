@@ -5,6 +5,7 @@ import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { uazapiClient } from './uazapiClient';
 import { isWithinDispatchWindow, pickVariant } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
+import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 import type { ConversationQueue } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
@@ -96,6 +97,23 @@ export async function processCampaign(c: Campaign): Promise<void> {
 }
 
 async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
+  // Safety net: cooldown pode ter ativado entre criação e dispatch.
+  // Re-checa no momento do envio. excludeCampaignId evita que a própria
+  // pendência (que ainda está como 'pending' aqui) bloqueie o envio.
+  const { eligible } = await filterEligibleLeads([r.leadId], { excludeCampaignId: c.id });
+  if (eligible.length === 0) {
+    await db.update(campaignRecipients).set({
+      status: 'skipped',
+      failureReason: COOLDOWN_REASON,
+      updatedAt: new Date(),
+    }).where(eq(campaignRecipients.id, r.id));
+    await db.update(campaigns).set({
+      skippedCount: sql`${campaigns.skippedCount} + 1`,
+      updatedAt: new Date(),
+    }).where(eq(campaigns.id, c.id));
+    return;
+  }
+
   try {
     const [lead] = await db.select().from(leads).where(eq(leads.id, r.leadId)).limit(1);
     if (!lead) throw new Error('Lead not found');
