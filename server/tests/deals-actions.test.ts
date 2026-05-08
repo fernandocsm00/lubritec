@@ -25,12 +25,25 @@ describe('POST /api/deals (create)', () => {
       .send({ leadId: lead.id, proposalValue: 280 });
 
     expect(res.status).toBe(200);
-    expect(res.body.stage).toBe('proposta_enviada');
+    expect(res.body.stage).toBe('lead_no_comercial');
     expect(res.body.proposalValue).toBe(280);
     expect(res.body.owner.id).toBe(userId);
 
     const acts = await db.select().from(dealActivities).where(eq(dealActivities.dealId, res.body.id));
     expect(acts.find((a) => a.kind === 'created')).toBeDefined();
+  });
+
+  it('cria deal com stage lead_no_comercial por padrão', async () => {
+    const { token, userId } = await loginAs();
+    const lead = await createLead({ phone: '11000099001' });
+
+    const res = await request(app)
+      .post('/api/deals')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ leadId: lead.id });
+    expect(res.status).toBe(200);
+    expect(res.body.stage).toBe('lead_no_comercial');
+    expect(res.body.owner.id).toBe(userId);
   });
 
   it('200 idempotente: 2x mesmo lead → retorna deal existente', async () => {
@@ -96,6 +109,24 @@ describe('POST /api/deals/:id/stage', () => {
 
     const acts = await db.select().from(dealActivities).where(eq(dealActivities.dealId, d.id));
     expect(acts.find((a) => a.kind === 'stage_changed')).toBeDefined();
+  });
+
+  it('200 lead_no_comercial → proposta_enviada loga stage_changed', async () => {
+    const { token, userId } = await loginAs();
+    const lead = await createLead({ phone: '11000082002' });
+    const d = await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', ownerUserId: userId });
+
+    const res = await request(app)
+      .post(`/api/deals/${d.id}/stage`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ stage: 'proposta_enviada' });
+    expect(res.status).toBe(200);
+    expect(res.body.stage).toBe('proposta_enviada');
+
+    const acts = await db.select().from(dealActivities).where(eq(dealActivities.dealId, d.id));
+    const stageChanged = acts.find((a) => a.kind === 'stage_changed');
+    expect(stageChanged).toBeDefined();
+    expect(stageChanged?.metadata).toMatchObject({ from: 'lead_no_comercial', to: 'proposta_enviada' });
   });
 
   it('400 quando perdido sem lossReason', async () => {

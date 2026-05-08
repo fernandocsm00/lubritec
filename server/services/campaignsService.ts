@@ -303,7 +303,7 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
   };
 
   for (const d of dealsRows) {
-    if (d.stage === 'proposta_enviada' || d.stage === 'em_negociacao') inDeal++;
+    if (d.stage === 'lead_no_comercial' || d.stage === 'proposta_enviada' || d.stage === 'em_negociacao') inDeal++;
     if (d.stage === 'ganho') {
       won++;
       if (d.proposalValue != null) totalWonValue += Number(d.proposalValue);

@@ -18,6 +18,7 @@ export function parseCurrencyInput(s: string): number | null {
 }
 
 export const STAGE_LABELS: Record<DealStage, string> = {
+  lead_no_comercial: 'Lead no Comercial',
   proposta_enviada: 'Proposta enviada',
   em_negociacao: 'Em negociação',
   ganho: 'Ganho',
@@ -25,6 +26,7 @@ export const STAGE_LABELS: Record<DealStage, string> = {
 };
 
 export const STAGE_COLORS: Record<DealStage, string> = {
+  lead_no_comercial: 'text-muted-foreground',
   proposta_enviada: 'text-primary',
   em_negociacao: 'text-primary',
   ganho: 'text-emerald-500',

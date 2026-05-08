@@ -1,8 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../app';
 import { summary } from '../services/dashboardService';
 import { createUser, createLead, createDeal, createConversation } from './helpers';
 import { db } from '../db/client';
 import { orgSettings } from '../db/schema';
+import { signAccessToken } from '../lib/jwt';
+
+const app = createApp();
+
+async function loginAs(email = 'dash@x.com', role: 'comercial' | 'admin' = 'admin') {
+  const u = await createUser({ email, role });
+  const token = signAccessToken({ userId: u.id, role: u.role });
+  return { token, userId: u.id };
+}
 
 const SP_OFFSET_H = 3;  // SP = UTC-3
 function spDate(y: number, m: number, d: number) {
@@ -120,5 +131,17 @@ describe('dashboardService.summary org — funnel/pipeline/leaderboard/goal', ()
     const u = await createUser({ role: 'comercial' });
     const r = await summary({ view: 'me', userId: u.id, period: 'month', now: new Date('2026-05-15T16:00:00Z') });
     expect(r.goal).toBeNull();
+  });
+
+  it('pipelineOpen.byStage inclui lead_no_comercial', async () => {
+    const { token, userId } = await loginAs();
+    const lead = await createLead({ phone: '11000071001' });
+    await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', proposalValue: 500, ownerUserId: userId });
+
+    const res = await request(app).get('/api/dashboard/summary?view=org&period=month').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const stage = res.body.pipelineOpen.byStage.find((s: { stage: string }) => s.stage === 'lead_no_comercial');
+    expect(stage).toBeDefined();
+    expect(stage.count).toBeGreaterThanOrEqual(1);
   });
 });

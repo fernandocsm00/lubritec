@@ -149,8 +149,8 @@ async function recentActivitiesMe(userId: string) {
 
 async function pipelineOpenFn(ownerUserId: string | null) {
   const where = ownerUserId
-    ? and(sql`${deals.stage} IN ('proposta_enviada', 'em_negociacao')`, eq(deals.ownerUserId, ownerUserId))
-    : sql`${deals.stage} IN ('proposta_enviada', 'em_negociacao')`;
+    ? and(sql`${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')`, eq(deals.ownerUserId, ownerUserId))
+    : sql`${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')`;
   const rows = await db
     .select({
       stage: deals.stage,
@@ -163,7 +163,7 @@ async function pipelineOpenFn(ownerUserId: string | null) {
     .groupBy(deals.stage);
 
   const byStage = rows.map((r) => ({
-    stage: r.stage as 'proposta_enviada' | 'em_negociacao',
+    stage: r.stage as 'lead_no_comercial' | 'proposta_enviada' | 'em_negociacao',
     count: r.cnt,
     valueSum: Number(r.sum),
   }));
@@ -218,8 +218,8 @@ async function countProposalOld(ownerUserId: string | null): Promise<number> {
 
 async function countDealStale(ownerUserId: string | null): Promise<number> {
   const where = ownerUserId
-    ? and(sql`${deals.stage} IN ('proposta_enviada', 'em_negociacao')`, sql`${deals.updatedAt} < now() - interval '5 days'`, eq(deals.ownerUserId, ownerUserId))
-    : and(sql`${deals.stage} IN ('proposta_enviada', 'em_negociacao')`, sql`${deals.updatedAt} < now() - interval '5 days'`);
+    ? and(sql`${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')`, sql`${deals.updatedAt} < now() - interval '5 days'`, eq(deals.ownerUserId, ownerUserId))
+    : and(sql`${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')`, sql`${deals.updatedAt} < now() - interval '5 days'`);
   const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(deals).where(where);
   return r.cnt;
 }

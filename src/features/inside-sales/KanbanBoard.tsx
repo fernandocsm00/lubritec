@@ -5,9 +5,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Search, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/features/auth/store';
-import { useBoard, useChangeStage } from './api';
+import { useBoard, useChangeStage, useAssignableUsers, type OwnerFilter } from './api';
 import { KanbanColumn } from './KanbanColumn';
 import { AddDealDialog } from './AddDealDialog';
 import { LossReasonDialog } from './LossReasonDialog';
@@ -25,10 +35,11 @@ interface PendingMove {
 
 export function KanbanBoard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const owner = (searchParams.get('owner') as 'mine' | 'all') || 'mine';
+  const owner: OwnerFilter = (searchParams.get('owner') as OwnerFilter) || 'mine';
   const q = searchParams.get('q') ?? '';
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
   const [searchInput, setSearchInput] = useState(q);
+  const { data: assignableUsers } = useAssignableUsers();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
@@ -58,10 +69,8 @@ export function KanbanBoard() {
     const fromStage = (e.active.data.current?.fromStage as DealStage) ?? toStage;
     if (fromStage === toStage) return;
 
-    // Encontra o deal pra ler proposalValue
-    const all = data
-      ? [...data.stages.proposta_enviada, ...data.stages.em_negociacao, ...data.stages.ganho, ...data.stages.perdido]
-      : [];
+    // Encontra o deal pra ler proposalValue (busca em todas as stages)
+    const all = data ? DEAL_STAGES.flatMap((s) => data.stages[s]) : [];
     const deal = all.find((d) => d.id === dealId);
     if (!deal) return;
 
@@ -114,24 +123,31 @@ export function KanbanBoard() {
             onKeyDown={(e) => { if (e.key === 'Enter') patch({ q: searchInput || null }); }}
           />
         </div>
-        <div className="flex gap-1.5">
-          <button
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              owner === 'mine' ? 'bg-primary/10 text-primary border-primary/40' : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'
-            }`}
-            onClick={() => patch({ owner: 'mine' })}
-          >
-            Meus deals
-          </button>
-          <button
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              owner === 'all' ? 'bg-primary/10 text-primary border-primary/40' : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'
-            }`}
-            onClick={() => patch({ owner: 'all' })}
-          >
-            Todos
-          </button>
-        </div>
+        <Select value={owner} onValueChange={(v) => patch({ owner: v === 'mine' ? null : v })}>
+          <SelectTrigger className="h-9 w-[180px] text-xs">
+            <SelectValue placeholder="Filtrar por dono" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="mine">Meus deals</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="unassigned">Sem dono</SelectItem>
+            </SelectGroup>
+            {assignableUsers && assignableUsers.length > 0 && (
+              <>
+                <SelectSeparator />
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">Por usuário</SelectLabel>
+                  {assignableUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.id === currentUserId ? `${u.name} (você)` : u.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </>
+            )}
+          </SelectContent>
+        </Select>
         <div className="flex-1" />
         <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="h-4 w-4 mr-1" /> Adicionar ao pipeline
@@ -141,7 +157,7 @@ export function KanbanBoard() {
       {isError && <div className="text-sm text-destructive p-4">Erro ao carregar o pipeline.</div>}
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="flex-1 grid grid-cols-4 gap-3 overflow-hidden">
+        <div className="flex-1 grid grid-cols-5 gap-3 overflow-x-auto">
           {isLoading || !data ? (
             DEAL_STAGES.map((s) => (
               <div key={s} className="flex flex-col gap-2 p-2 bg-background border border-border rounded-lg">

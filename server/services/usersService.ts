@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { users, authTokens, sessions } from '../db/schema';
-import { eq, and, sql, asc } from 'drizzle-orm';
+import { eq, and, sql, asc, inArray } from 'drizzle-orm';
 import { generateRawToken, hashToken } from '../lib/tokens';
 import { HttpError } from '../middleware/errorHandler';
 import type { Role } from '@shared/types';
@@ -77,6 +77,15 @@ export async function listUsers() {
     created_at: u.createdAt.toISOString(),
     has_password: u.passwordHash !== null,
   }));
+}
+
+export async function listAssignableUsers() {
+  const rows = await db
+    .select({ id: users.id, name: users.name, role: users.role })
+    .from(users)
+    .where(and(eq(users.isActive, true), inArray(users.role, ['admin', 'comercial'])))
+    .orderBy(asc(users.name));
+  return rows;
 }
 
 export async function resendInvite(userId: string) {

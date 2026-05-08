@@ -170,6 +170,7 @@ export interface ConversationFilters {
 // ---------------------------------------------------------------------------
 
 export const DEAL_STAGES = [
+  'lead_no_comercial',
   'proposta_enviada',
   'em_negociacao',
   'ganho',
@@ -480,7 +481,7 @@ export interface DashboardFunnelMe {
 }
 
 export interface DashboardPipelineOpen {
-  byStage: { stage: 'proposta_enviada' | 'em_negociacao'; count: number; valueSum: number }[];
+  byStage: { stage: 'lead_no_comercial' | 'proposta_enviada' | 'em_negociacao'; count: number; valueSum: number }[];
   totalValue: number;
   avgAgeDays: number;
 }

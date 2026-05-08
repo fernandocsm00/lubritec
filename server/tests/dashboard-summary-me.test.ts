@@ -61,4 +61,16 @@ describe('summary view=me', () => {
     const r = await summary({ view: 'me', userId: me.id, period: 'month' });
     expect(r.pipelineOpen.totalValue).toBe(100);
   });
+
+  it('pipelineOpen.byStage inclui lead_no_comercial', async () => {
+    const me = await createUser({ role: 'comercial', email: 'me-lc@x.com' });
+    const lead = await createLead({});
+    await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', proposalValue: 500, ownerUserId: me.id });
+
+    const r = await summary({ view: 'me', userId: me.id, period: 'month' });
+    const stage = r.pipelineOpen.byStage.find((s) => s.stage === 'lead_no_comercial');
+    expect(stage).toBeDefined();
+    expect(stage?.count).toBeGreaterThanOrEqual(1);
+    expect(r.pipelineOpen.totalValue).toBe(500);
+  });
 });

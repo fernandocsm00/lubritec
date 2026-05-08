@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   inviteUser,
   listUsers,
+  listAssignableUsers,
   updateUser,
   resendInvite,
   deleteUserById,
@@ -59,6 +60,15 @@ export async function inviteHandler(req: Request, res: Response, next: NextFunct
       name: result.user.name,
       role: result.user.role,
     });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAssignableHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const list = await listAssignableUsers();
+    res.json({ users: list });
   } catch (e) {
     next(e);
   }
