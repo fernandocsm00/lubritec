@@ -2,6 +2,7 @@ import { db } from '../db/client';
 import { leads } from '../db/schema';
 import { and, or, eq, isNotNull, lte, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { AudienceFilters, CampaignDryRunResponse } from '@shared/types';
+import { filterEligibleLeads } from './campaignsCooldown';
 
 void eq; void lte;
 
@@ -37,12 +38,7 @@ function buildWhere(filter: AudienceFilters): SQL | undefined {
 export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunResponse> {
   const where = buildWhere(filter);
 
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(leads)
-    .where(where);
-
-  const previewRows = await db
+  const allRows = await db
     .select({
       leadId: leads.id,
       name: leads.name,
@@ -51,21 +47,38 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
       createdAt: leads.createdAt,
     })
     .from(leads)
-    .where(where)
-    .limit(PREVIEW_LIMIT);
+    .where(where);
+
+  const total = allRows.length;
+  const ids = allRows.map((r) => r.leadId);
+  const { eligible, blocked } = await filterEligibleLeads(ids, {});
+
+  const eligibleSet = new Set(eligible);
+  const previewRows = allRows
+    .filter((r) => eligibleSet.has(r.leadId))
+    .filter((r): r is typeof r & { phone: string } => r.phone !== null)
+    .slice(0, PREVIEW_LIMIT);
+
+  const blockedCounts = blocked.reduce(
+    (acc, b) => {
+      if (b.reason === 'recent_outbound') acc.recentOutbound++;
+      else acc.pendingOtherCampaign++;
+      return acc;
+    },
+    { recentOutbound: 0, pendingOtherCampaign: 0 },
+  );
 
   return {
     total,
-    // O where filtra `phone IS NOT NULL` — assert é seguro aqui.
-    preview: previewRows
-      .filter((r): r is typeof r & { phone: string } => r.phone !== null)
-      .map((r) => ({
-        leadId: r.leadId,
-        name: r.name,
-        phone: r.phone,
-        cnpj: r.cnpj,
-        createdAt: r.createdAt.toISOString(),
-      })),
+    eligible: eligible.length,
+    blocked: blockedCounts,
+    preview: previewRows.map((r) => ({
+      leadId: r.leadId,
+      name: r.name,
+      phone: r.phone,
+      cnpj: r.cnpj,
+      createdAt: r.createdAt.toISOString(),
+    })),
   };
 }
 
