@@ -20,7 +20,7 @@ export function KanbanColumn({ stage, items, total, currentUserId, onCardClick }
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col bg-background border rounded-lg overflow-hidden transition-colors ${
+      className={`flex flex-col min-w-[220px] bg-background border rounded-lg overflow-hidden transition-colors ${
         isOver ? 'border-primary bg-primary/5' : 'border-border'
       }`}
     >
