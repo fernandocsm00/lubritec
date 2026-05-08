@@ -9,13 +9,18 @@ import {
 
 const idParams = z.object({ id: z.string().uuid() });
 
+const ownerFilter = z.union([
+  z.enum(['mine', 'all', 'unassigned']),
+  z.string().uuid(),
+]);
+
 const boardQuery = z.object({
-  owner: z.enum(['mine', 'all']).optional(),
+  owner: ownerFilter.optional(),
   q: z.string().optional(),
 });
 
 const historyQuery = z.object({
-  owner: z.enum(['mine', 'all']).optional(),
+  owner: ownerFilter.optional(),
   q: z.string().optional(),
   stage: z.enum(['ganho', 'perdido']).optional(),
   lossReason: z.enum(LOSS_REASONS).optional(),

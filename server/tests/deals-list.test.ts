@@ -87,4 +87,29 @@ describe('GET /api/deals', () => {
     const res = await request(app).get('/api/deals?owner=mine&q=Silva').set('Authorization', `Bearer ${token}`);
     expect(res.body.stages.proposta_enviada).toHaveLength(1);
   });
+
+  it('owner=<uuid> filtra deals do usuário específico', async () => {
+    const { token, userId } = await loginAs();
+    const other = await createUser({ email: 'other2@x.com', password: 'pw12345', role: 'comercial' });
+    const lead1 = await createLead({ phone: '11000063001' });
+    await createDeal({ leadId: lead1.id, ownerUserId: userId });
+    const lead2 = await createLead({ phone: '11000063002' });
+    await createDeal({ leadId: lead2.id, ownerUserId: other.id });
+
+    const res = await request(app).get(`/api/deals?owner=${other.id}`).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.stages.proposta_enviada).toHaveLength(1);
+    expect(res.body.stages.proposta_enviada[0].owner.id).toBe(other.id);
+  });
+
+  it('owner=unassigned filtra deals sem dono', async () => {
+    const { token } = await loginAs('me3@x.com');
+    const lead = await createLead({ phone: '11000063003' });
+    await createDeal({ leadId: lead.id, ownerUserId: null });
+
+    const res = await request(app).get('/api/deals?owner=unassigned').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.stages.proposta_enviada.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.stages.proposta_enviada.every((d: { owner: unknown }) => d.owner === null)).toBe(true);
+  });
 });
