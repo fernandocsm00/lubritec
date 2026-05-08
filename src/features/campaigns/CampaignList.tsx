@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Clock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -46,6 +47,12 @@ export function CampaignList({ filters }: Props) {
               <TableCell className="text-right">{c.audienceTotal}</TableCell>
               <TableCell className="text-right text-sm">
                 {c.sentCount} <span className="text-muted-foreground">({formatPercent(c.sentCount, c.audienceTotal)})</span>
+                {c.skippedByCooldown > 0 && (
+                  <div className="flex items-center justify-end gap-1 text-[11px] text-lc-amber mt-0.5">
+                    <Clock className="h-3 w-3" />
+                    <span>{c.skippedByCooldown} por cooldown 24h</span>
+                  </div>
+                )}
               </TableCell>
               <TableCell className="text-muted-foreground text-sm">{c.createdBy.name}</TableCell>
               <TableCell className="text-muted-foreground text-sm">{formatDateTime(c.createdAt)}</TableCell>
