@@ -52,7 +52,7 @@ describe('POST /api/conversations/:id/messages → pipeline trigger', () => {
 
     const [d] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
     expect(d).toBeDefined();
-    expect(d.stage).toBe('proposta_enviada');
+    expect(d.stage).toBe('lead_no_comercial');
     expect(d.ownerUserId).toBe(userId);
   });
 
