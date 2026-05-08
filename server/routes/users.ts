@@ -4,12 +4,14 @@ import {
   listHandler,
   updateHandler,
   resendInviteHandler,
+  listAssignableHandler,
 } from '../controllers/usersController';
 import { authGuard } from '../middleware/authGuard';
 import { requireRole } from '../middleware/requireRole';
 
 const router = Router();
 
+router.get('/assignable', authGuard, listAssignableHandler);
 router.get('/', authGuard, requireRole('admin'), listHandler);
 router.post('/', authGuard, requireRole('admin'), inviteHandler);
 router.patch('/:id', authGuard, requireRole('admin'), updateHandler);
