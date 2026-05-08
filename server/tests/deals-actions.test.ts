@@ -33,6 +33,19 @@ describe('POST /api/deals (create)', () => {
     expect(acts.find((a) => a.kind === 'created')).toBeDefined();
   });
 
+  it('cria deal com stage lead_no_comercial por padrão', async () => {
+    const { token, userId } = await loginAs();
+    const lead = await createLead({ phone: '11000099001' });
+
+    const res = await request(app)
+      .post('/api/deals')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ leadId: lead.id });
+    expect(res.status).toBe(200);
+    expect(res.body.stage).toBe('lead_no_comercial');
+    expect(res.body.owner.id).toBe(userId);
+  });
+
   it('200 idempotente: 2x mesmo lead → retorna deal existente', async () => {
     const { token, userId } = await loginAs();
     const lead = await createLead({ phone: '11000080010' });

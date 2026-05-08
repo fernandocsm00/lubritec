@@ -70,7 +70,7 @@ const enteredStageSql = sql<Date>`COALESCE(
 // SQL fragment computing isStale: true if no non-note activity in current
 // stage for > STALE_DAYS days (and stage is active).
 const isStaleSql = sql<boolean>`(
-  ${deals.stage} IN ('proposta_enviada', 'em_negociacao')
+  ${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')
   AND COALESCE(
     (
       SELECT MAX(da.created_at) FROM deal_activities da
@@ -94,7 +94,7 @@ const isStaleSql = sql<boolean>`(
 // ---------------------------------------------------------------------------
 
 export async function listBoard(input: {
-  ownerFilter: 'mine' | 'all';
+  ownerFilter: 'mine' | 'all' | 'unassigned' | string;
   q?: string;
   currentUserId: string;
 }): Promise<BoardResponse> {
@@ -102,12 +102,16 @@ export async function listBoard(input: {
 
   if (input.ownerFilter === 'mine') {
     conds.push(eq(deals.ownerUserId, input.currentUserId));
+  } else if (input.ownerFilter === 'unassigned') {
+    conds.push(sql`${deals.ownerUserId} IS NULL`);
+  } else if (input.ownerFilter !== 'all') {
+    conds.push(eq(deals.ownerUserId, input.ownerFilter));
   }
 
   // Show: active stages OR (terminal AND closed_at within last 7 days)
   conds.push(
     sql`(
-      ${deals.stage} IN ('proposta_enviada', 'em_negociacao')
+      ${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')
       OR (
         ${deals.stage} IN ('ganho', 'perdido')
         AND ${deals.closedAt} > now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'
@@ -139,12 +143,14 @@ export async function listBoard(input: {
     .orderBy(desc(deals.updatedAt));
 
   const stages: BoardResponse['stages'] = {
+    lead_no_comercial: [],
     proposta_enviada: [],
     em_negociacao: [],
     ganho: [],
     perdido: [],
   };
   const totals: BoardResponse['totals'] = {
+    lead_no_comercial: { count: 0, valueSum: 0 },
     proposta_enviada: { count: 0, valueSum: 0 },
     em_negociacao: { count: 0, valueSum: 0 },
     ganho: { count: 0, valueSum: 0 },
@@ -166,7 +172,7 @@ export async function listBoard(input: {
 // ---------------------------------------------------------------------------
 
 export async function listHistory(input: {
-  ownerFilter: 'mine' | 'all';
+  ownerFilter: 'mine' | 'all' | 'unassigned' | string;
   q?: string;
   stage?: 'ganho' | 'perdido';
   lossReason?: LossReason;
@@ -184,6 +190,10 @@ export async function listHistory(input: {
 
   if (input.ownerFilter === 'mine') {
     conds.push(eq(deals.ownerUserId, input.currentUserId));
+  } else if (input.ownerFilter === 'unassigned') {
+    conds.push(sql`${deals.ownerUserId} IS NULL`);
+  } else if (input.ownerFilter !== 'all') {
+    conds.push(eq(deals.ownerUserId, input.ownerFilter));
   }
   if (input.stage) conds.push(eq(deals.stage, input.stage));
   if (input.lossReason) conds.push(eq(deals.lossReason, input.lossReason));
@@ -312,7 +322,7 @@ export async function createDeal(input: {
       .insert(deals)
       .values({
         leadId: input.leadId,
-        stage: 'proposta_enviada',
+        stage: 'lead_no_comercial',
         proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
         ownerUserId: input.ownerUserId,
       })
