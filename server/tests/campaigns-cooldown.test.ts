@@ -177,3 +177,37 @@ describe('createCampaign + cooldown', () => {
     expect(campRow.skippedCount).toBe(1);
   });
 });
+
+import { listCampaigns, getCampaignById } from '../services/campaignsService';
+
+describe('PublicCampaign.skippedByCooldown', () => {
+  it('createCampaign retorna skippedByCooldown', async () => {
+    const u = await createUser({ role: 'comercial', email: 'pc1@x.com' });
+    await createLead({ phone: '5511900110001', status: 'frio' });
+    const blocked = await createLead({ phone: '5511900110002', status: 'frio' });
+    const conv = await createConversation({ leadId: blocked.id });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    const c = await createCampaignService({
+      name: 'pc-cool',
+      messageBody: 'oi',
+      audienceFilter: { status: ['frio'] },
+      createdByUserId: u.id,
+    });
+
+    expect(c.skippedByCooldown).toBe(1);
+    expect(c.skippedCount).toBe(1);
+
+    const fetched = await getCampaignById(c.id);
+    expect(fetched.skippedByCooldown).toBe(1);
+
+    const list = await listCampaigns({});
+    const found = list.items.find((x) => x.id === c.id);
+    expect(found?.skippedByCooldown).toBe(1);
+  });
+});

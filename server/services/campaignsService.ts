@@ -17,7 +17,11 @@ import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 const LIST_PAGE_SIZE = 50;
 const RECIPIENTS_PAGE_SIZE = 50;
 
-function toPublicCampaign(row: typeof campaigns.$inferSelect, creator: typeof users.$inferSelect | null): PublicCampaign {
+function toPublicCampaign(
+  row: typeof campaigns.$inferSelect,
+  creator: typeof users.$inferSelect | null,
+  skippedByCooldown: number,
+): PublicCampaign {
   return {
     id: row.id,
     name: row.name,
@@ -35,6 +39,7 @@ function toPublicCampaign(row: typeof campaigns.$inferSelect, creator: typeof us
     sentCount: row.sentCount,
     failedCount: row.failedCount,
     skippedCount: row.skippedCount,
+    skippedByCooldown,
     ratePerMinute: row.ratePerMinute,
     createdBy: creator
       ? { id: creator.id, name: creator.name }
@@ -42,6 +47,14 @@ function toPublicCampaign(row: typeof campaigns.$inferSelect, creator: typeof us
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function countSkippedByCooldown(campaignId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int` })
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.campaignId, campaignId));
+  return row?.n ?? 0;
 }
 
 // list
@@ -73,8 +86,21 @@ export async function listCampaigns(input: {
     .limit(LIST_PAGE_SIZE)
     .offset((page - 1) * LIST_PAGE_SIZE);
 
+  const ids = rows.map((r) => r.campaign.id);
+  const cooldownCounts = ids.length
+    ? await db
+        .select({
+          campaignId: campaignRecipients.campaignId,
+          n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
+        })
+        .from(campaignRecipients)
+        .where(inArray(campaignRecipients.campaignId, ids))
+        .groupBy(campaignRecipients.campaignId)
+    : [];
+  const cooldownMap = new Map(cooldownCounts.map((c) => [c.campaignId, c.n]));
+
   return {
-    items: rows.map((r) => toPublicCampaign(r.campaign, r.creator)),
+    items: rows.map((r) => toPublicCampaign(r.campaign, r.creator, cooldownMap.get(r.campaign.id) ?? 0)),
     total,
     page,
     pageSize: LIST_PAGE_SIZE,
@@ -90,7 +116,8 @@ export async function getCampaignById(id: string): Promise<PublicCampaign> {
     .where(eq(campaigns.id, id))
     .limit(1);
   if (!row) throw new HttpError(404, 'Campaign not found');
-  return toPublicCampaign(row.campaign, row.creator);
+  const skippedByCooldown = await countSkippedByCooldown(id);
+  return toPublicCampaign(row.campaign, row.creator, skippedByCooldown);
 }
 
 // create + materialize recipients
@@ -154,7 +181,7 @@ export async function createCampaign(input: {
     }
 
     const [creator] = await tx.select().from(users).where(eq(users.id, input.createdByUserId)).limit(1);
-    return toPublicCampaign(c, creator ?? null);
+    return toPublicCampaign(c, creator ?? null, blockedRows.length);
   });
 }
 
