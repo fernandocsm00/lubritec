@@ -25,7 +25,7 @@ describe('POST /api/deals (create)', () => {
       .send({ leadId: lead.id, proposalValue: 280 });
 
     expect(res.status).toBe(200);
-    expect(res.body.stage).toBe('proposta_enviada');
+    expect(res.body.stage).toBe('lead_no_comercial');
     expect(res.body.proposalValue).toBe(280);
     expect(res.body.owner.id).toBe(userId);
 
