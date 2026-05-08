@@ -170,6 +170,7 @@ export interface ConversationFilters {
 // ---------------------------------------------------------------------------
 
 export const DEAL_STAGES = [
+  'lead_no_comercial',
   'proposta_enviada',
   'em_negociacao',
   'ganho',
