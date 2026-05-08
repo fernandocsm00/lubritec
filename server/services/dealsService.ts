@@ -437,7 +437,10 @@ export async function changeStage(input: {
   }
 
   const isTerminalNow = current.stage === 'ganho' || current.stage === 'perdido';
-  const movingToActive = input.stage === 'proposta_enviada' || input.stage === 'em_negociacao';
+  const movingToActive =
+    input.stage === 'lead_no_comercial' ||
+    input.stage === 'proposta_enviada' ||
+    input.stage === 'em_negociacao';
   const reactivating = isTerminalNow && movingToActive;
 
   await db.transaction(async (tx) => {

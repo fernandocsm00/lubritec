@@ -111,6 +111,24 @@ describe('POST /api/deals/:id/stage', () => {
     expect(acts.find((a) => a.kind === 'stage_changed')).toBeDefined();
   });
 
+  it('200 lead_no_comercial → proposta_enviada loga stage_changed', async () => {
+    const { token, userId } = await loginAs();
+    const lead = await createLead({ phone: '11000082002' });
+    const d = await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', ownerUserId: userId });
+
+    const res = await request(app)
+      .post(`/api/deals/${d.id}/stage`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ stage: 'proposta_enviada' });
+    expect(res.status).toBe(200);
+    expect(res.body.stage).toBe('proposta_enviada');
+
+    const acts = await db.select().from(dealActivities).where(eq(dealActivities.dealId, d.id));
+    const stageChanged = acts.find((a) => a.kind === 'stage_changed');
+    expect(stageChanged).toBeDefined();
+    expect(stageChanged?.metadata).toMatchObject({ from: 'lead_no_comercial', to: 'proposta_enviada' });
+  });
+
   it('400 quando perdido sem lossReason', async () => {
     const { token, userId } = await loginAs();
     const lead = await createLead({ phone: '11000082010' });

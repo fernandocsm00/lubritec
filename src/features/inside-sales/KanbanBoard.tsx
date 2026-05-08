@@ -69,10 +69,8 @@ export function KanbanBoard() {
     const fromStage = (e.active.data.current?.fromStage as DealStage) ?? toStage;
     if (fromStage === toStage) return;
 
-    // Encontra o deal pra ler proposalValue
-    const all = data
-      ? [...data.stages.proposta_enviada, ...data.stages.em_negociacao, ...data.stages.ganho, ...data.stages.perdido]
-      : [];
+    // Encontra o deal pra ler proposalValue (busca em todas as stages)
+    const all = data ? DEAL_STAGES.flatMap((s) => data.stages[s]) : [];
     const deal = all.find((d) => d.id === dealId);
     if (!deal) return;
 
