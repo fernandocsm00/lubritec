@@ -3,8 +3,10 @@ import { campaigns, campaignRecipients, conversations, messages, leads, orgSetti
 import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { uazapiClient } from './uazapiClient';
-import { isWithinDispatchWindow, pickVariant } from './continuousCampaign';
+import { isWithinDispatchWindow, pickVariant, sweepContinuousReenroll } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
+import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
+import { emitNotification } from './notifications';
 import type { ConversationQueue } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
@@ -55,6 +57,14 @@ export async function tick(): Promise<void> {
       }
       await processCampaign(c);
     }
+
+    // Reciclar leads 'complete' que ficaram fora da campanha contínua por
+    // cooldown ou outras pendências transitórias. Best-effort, não-bloqueante.
+    try {
+      await sweepContinuousReenroll({ limit: 50 });
+    } catch (e) {
+      console.warn('[continuous-reenroll] sweep failed:', e);
+    }
   } finally {
     isProcessing = false;
   }
@@ -71,21 +81,22 @@ export async function processCampaign(c: Campaign): Promise<void> {
     .limit(limit);
 
   if (recipients.length === 0) {
-    // Continuous campaigns nunca terminam — ficam aguardando novos enrolls.
-    if (c.isContinuous) return;
-    // One-shot: tudo processado → completed.
+    if (c.isContinuous) {
+      await maybeEmitCooldownAlert(c);
+      return;
+    }
     await db.update(campaigns).set({
       status: 'completed',
       completedAt: new Date(),
       updatedAt: new Date(),
     }).where(eq(campaigns.id, c.id));
+    await maybeEmitCooldownAlert(c);
     return;
   }
 
   const intervalMs = Math.max(100, Math.floor(60_000 / limit));
 
   for (const r of recipients) {
-    // Re-check status (cancel/pause entre iterações)
     const [fresh] = await db.select({ status: campaigns.status })
       .from(campaigns).where(eq(campaigns.id, c.id));
     if (!fresh || fresh.status !== 'running') break;
@@ -93,9 +104,59 @@ export async function processCampaign(c: Campaign): Promise<void> {
     await sendOne(c, r);
     await sleep(intervalMs);
   }
+
+  await maybeEmitCooldownAlert(c);
+}
+
+async function maybeEmitCooldownAlert(c: Campaign): Promise<void> {
+  if (c.cooldownAlertSentAt) return;
+  if (c.audienceTotal <= 0) return;
+
+  const [counts] = await db.select({
+    n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = ${COOLDOWN_REASON})::int`,
+  }).from(campaignRecipients).where(eq(campaignRecipients.campaignId, c.id));
+
+  const ratio = counts.n / c.audienceTotal;
+  if (ratio <= 0.10) return;
+
+  await emitNotification({
+    toRoles: ['admin'],
+    kind: 'campaign_cooldown_high',
+    title: 'Muitos leads pulados por cooldown',
+    body: `Campanha "${c.name}": ${counts.n} de ${c.audienceTotal} leads pulados (janela de 24h).`,
+    actionUrl: `/campaigns/${c.id}?recipientStatus=skipped`,
+    metadata: {
+      campaignId: c.id,
+      campaignName: c.name,
+      skippedCount: counts.n,
+      audienceTotal: c.audienceTotal,
+      ratio,
+    },
+  });
+
+  await db.update(campaigns)
+    .set({ cooldownAlertSentAt: new Date(), updatedAt: new Date() })
+    .where(eq(campaigns.id, c.id));
 }
 
 async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
+  // Safety net: cooldown pode ter ativado entre criação e dispatch.
+  // Re-checa no momento do envio. excludeCampaignId evita que a própria
+  // pendência (que ainda está como 'pending' aqui) bloqueie o envio.
+  const { eligible } = await filterEligibleLeads([r.leadId], { excludeCampaignId: c.id });
+  if (eligible.length === 0) {
+    await db.update(campaignRecipients).set({
+      status: 'skipped',
+      failureReason: COOLDOWN_REASON,
+      updatedAt: new Date(),
+    }).where(eq(campaignRecipients.id, r.id));
+    await db.update(campaigns).set({
+      skippedCount: sql`${campaigns.skippedCount} + 1`,
+      updatedAt: new Date(),
+    }).where(eq(campaigns.id, c.id));
+    return;
+  }
+
   try {
     const [lead] = await db.select().from(leads).where(eq(leads.id, r.leadId)).limit(1);
     if (!lead) throw new Error('Lead not found');

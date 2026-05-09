@@ -220,6 +220,7 @@ export const campaigns = pgTable('campaigns', {
   // A/B testing: array de variantes. Quando null/vazio, usa messageBody legado.
   messageVariants: jsonb('message_variants').$type<CampaignMessageVariant[] | null>(),
   createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  cooldownAlertSentAt: timestamp('cooldown_alert_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

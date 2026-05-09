@@ -13,6 +13,12 @@ import type { CampaignRecipientStatus, CampaignStatus } from './types';
 
 interface Props { campaignId: string; campaignStatus?: CampaignStatus }
 
+function failureReasonLabel(reason: string | null | undefined): string {
+  if (!reason) return '—';
+  if (reason === 'cooldown_24h') return 'Janela de 24h';
+  return reason;
+}
+
 export function RecipientsTable({ campaignId, campaignStatus }: Props) {
   const [status, setStatus] = useState<CampaignRecipientStatus | undefined>();
   const [page, setPage] = useState(1);
@@ -67,7 +73,7 @@ export function RecipientsTable({ campaignId, campaignStatus }: Props) {
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{formatDateTime(r.sentAt)}</TableCell>
-                    <TableCell className="text-xs text-destructive truncate max-w-xs">{r.failureReason ?? '—'}</TableCell>
+                    <TableCell className="text-xs text-destructive truncate max-w-xs">{failureReasonLabel(r.failureReason)}</TableCell>
                   </TableRow>
                 ))}
           </TableBody>

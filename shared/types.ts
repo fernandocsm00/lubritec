@@ -285,6 +285,11 @@ export interface AudienceFilters {
 
 export interface CampaignDryRunResponse {
   total: number;
+  eligible: number;
+  blocked: {
+    recentOutbound: number;
+    pendingOtherCampaign: number;
+  };
   preview: Array<{
     leadId: string;
     name: string;
@@ -311,6 +316,7 @@ export interface PublicCampaign {
   sentCount: number;
   failedCount: number;
   skippedCount: number;
+  skippedByCooldown: number;
   ratePerMinute: number;
   createdBy: { id: string; name: string };
   createdAt: string;
@@ -322,6 +328,8 @@ export interface CampaignFunnel {
   sent: number;
   failed: number;
   skipped: number;
+  skippedByCooldown: number;
+  skippedOther: number;
   replied: number;
   inDeal: number;
   won: number;
@@ -547,6 +555,7 @@ export const NOTIFICATION_KINDS = [
   'lead_qualified',         // IA marcou lead como QUALIFICADO
   'dispatch_failed',        // disparo de campanha falhou
   'whatsapp_disconnected',  // instância UazAPI caiu
+  'campaign_cooldown_high',
   'system',                 // generic
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

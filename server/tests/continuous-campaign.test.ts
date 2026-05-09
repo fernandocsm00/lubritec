@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import { campaigns, campaignRecipients, leads, orgSettings } from '../db/schema';
+import { campaigns, campaignRecipients, leads, messages, orgSettings } from '../db/schema';
 import {
   enrollLeadInContinuous,
   isWithinDispatchWindow,
   pickVariant,
+  sweepContinuousReenroll,
   upsertContinuousCampaign,
 } from '../services/continuousCampaign';
-import { createUser, createLead } from './helpers';
+import { createUser, createLead, createConversation, createMessage } from './helpers';
 
 async function setDispatchWindow(opts: {
   startHour?: number;
@@ -233,5 +234,102 @@ describe('createLead auto-enroll', () => {
 
     const [row] = await db.select().from(leads).where(eq(leads.id, created.id));
     expect(row.flowStage).toBe('incomplete');
+  });
+});
+
+describe('enrollment + cooldown', () => {
+  it('lead em cooldown não é enrolado (sem recipient row criado)', async () => {
+    const u = await createUser({ role: 'comercial', email: 'cc-cool@x.com' });
+    const lead = await createLead({ phone: '5511900090001', flowStage: 'complete' });
+    const conv = await createConversation({ leadId: lead.id });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    const [cont] = await db.insert(campaigns).values({
+      name: 'cont',
+      status: 'running',
+      messageBody: 'oi',
+      isContinuous: true,
+      createdByUserId: u.id,
+    }).returning();
+
+    const r = await enrollLeadInContinuous(lead.id);
+    expect(r.status).toBe('lead_in_cooldown');
+
+    const recs = await db.select().from(campaignRecipients)
+      .where(eq(campaignRecipients.campaignId, cont.id));
+    expect(recs).toHaveLength(0);
+  });
+});
+
+describe('sweepContinuousReenroll', () => {
+  it('enrola lead complete que ficou fora por cooldown depois que a janela expira', async () => {
+    const u = await createUser({ role: 'comercial', email: 'sw1@x.com' });
+    const lead = await createLead({ phone: '5511900200001', flowStage: 'complete' });
+
+    const [cont] = await db.insert(campaigns).values({
+      name: 'cont-sweep',
+      status: 'running',
+      messageBody: 'oi',
+      isContinuous: true,
+      createdByUserId: u.id,
+    }).returning();
+
+    // Lead bouncou por cooldown (mensagem outbound recente).
+    const conv = await createConversation({ leadId: lead.id });
+    const recentMsg = await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+    expect((await enrollLeadInContinuous(lead.id)).status).toBe('lead_in_cooldown');
+
+    // Sweep agora: lead ainda em cooldown → não enrola.
+    expect(await sweepContinuousReenroll({ limit: 10 })).toBe(0);
+
+    // Simula passagem do cooldown: empurra a mensagem pra >24h atrás.
+    await db.update(messages)
+      .set({ sentAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(eq(messages.id, recentMsg.id));
+
+    // Sweep agora: enrola.
+    expect(await sweepContinuousReenroll({ limit: 10 })).toBe(1);
+
+    const recs = await db.select().from(campaignRecipients)
+      .where(eq(campaignRecipients.campaignId, cont.id));
+    expect(recs).toHaveLength(1);
+    expect(recs[0].leadId).toBe(lead.id);
+    expect(recs[0].status).toBe('pending');
+  });
+
+  it('não enrola novamente leads já cadastrados', async () => {
+    const u = await createUser({ role: 'comercial', email: 'sw2@x.com' });
+    const lead = await createLead({ phone: '5511900200002', flowStage: 'complete' });
+
+    const [cont] = await db.insert(campaigns).values({
+      name: 'cont-sweep-2',
+      status: 'running',
+      messageBody: 'oi',
+      isContinuous: true,
+      createdByUserId: u.id,
+    }).returning();
+
+    await db.insert(campaignRecipients).values({
+      campaignId: cont.id,
+      leadId: lead.id,
+      phone: lead.phone!,
+      status: 'sent',
+    });
+
+    expect(await sweepContinuousReenroll({ limit: 10 })).toBe(0);
+  });
+
+  it('retorna 0 quando não há campanha contínua running', async () => {
+    expect(await sweepContinuousReenroll({ limit: 10 })).toBe(0);
   });
 });

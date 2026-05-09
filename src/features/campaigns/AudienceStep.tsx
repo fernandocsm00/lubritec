@@ -127,6 +127,23 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
                 {filters.excludeLeadIds!.length} excluído(s) manualmente
               </div>
             )}
+            {dryRun.data && dryRun.data.total > 0 && (dryRun.data.blocked.recentOutbound + dryRun.data.blocked.pendingOtherCampaign) > 0 && (
+              <div className="mt-2 text-[12px] text-lc-amber leading-snug">
+                <div className="font-medium">
+                  Elegíveis: {dryRun.data.eligible} · Pulados por cooldown: {dryRun.data.blocked.recentOutbound + dryRun.data.blocked.pendingOtherCampaign}
+                </div>
+                {dryRun.data.blocked.recentOutbound > 0 && (
+                  <div className="ml-3">
+                    └─ {dryRun.data.blocked.recentOutbound} receberam mensagem nas últimas 24h
+                  </div>
+                )}
+                {dryRun.data.blocked.pendingOtherCampaign > 0 && (
+                  <div className="ml-3">
+                    └─ {dryRun.data.blocked.pendingOtherCampaign} já estão em outra campanha ativa
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <Button variant="outline" onClick={() => setOptOutOpen(true)}>Ver e excluir leads…</Button>
         </div>

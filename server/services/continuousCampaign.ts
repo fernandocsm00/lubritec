@@ -4,6 +4,7 @@ import { and, eq, sql, count } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicContinuousCampaign, UpsertContinuousCampaignInput, VariantStat } from '@shared/types';
 import { loadOrgSettingsRow } from './orgSettingsService';
+import { filterEligibleLeads } from './campaignsCooldown';
 
 const CONTINUOUS_NAME_DEFAULT = 'Disparo automático contínuo';
 const RATE_DEFAULT = 20;
@@ -221,6 +222,7 @@ export type EnrollResult =
   | { status: 'campaign_paused' }
   | { status: 'lead_no_phone' }
   | { status: 'already_enrolled' }
+  | { status: 'lead_in_cooldown' }
   | { status: 'lead_not_complete'; currentStage: string };
 
 /**
@@ -257,6 +259,11 @@ export async function enrollLeadInContinuous(leadId: string): Promise<EnrollResu
     .limit(1);
   if (existing) return { status: 'already_enrolled' };
 
+  const { eligible } = await filterEligibleLeads([leadId], { excludeCampaignId: cont.id });
+  if (eligible.length === 0) {
+    return { status: 'lead_in_cooldown' };
+  }
+
   await db.insert(campaignRecipients).values({
     campaignId: cont.id,
     leadId,
@@ -273,6 +280,44 @@ export async function enrollLeadInContinuous(leadId: string): Promise<EnrollResu
 }
 
 /**
+ * Sweep que tenta enrolar leads em 'complete' ainda não cadastrados como
+ * recipient da campanha contínua. Existe para reciclar leads que bouncearam
+ * por cooldown — sem isso, um lead que entrou em janela de 24h durante o
+ * enrollment hook ficaria fora da campanha pra sempre. Roda dentro do tick
+ * do dispatcher (60s).
+ */
+export async function sweepContinuousReenroll(opts: { limit?: number } = {}): Promise<number> {
+  const cont = await loadContinuousRow();
+  if (!cont) return 0;
+  if (cont.status !== 'running') return 0;
+
+  const limit = opts.limit ?? 50;
+  const candidates = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .leftJoin(
+      campaignRecipients,
+      and(
+        eq(campaignRecipients.leadId, leads.id),
+        eq(campaignRecipients.campaignId, cont.id),
+      ),
+    )
+    .where(and(
+      eq(leads.flowStage, 'complete'),
+      sql`${leads.phone} IS NOT NULL`,
+      sql`${campaignRecipients.id} IS NULL`,
+    ))
+    .limit(limit);
+
+  let enrolled = 0;
+  for (const c of candidates) {
+    const r = await enrollLeadInContinuous(c.id);
+    if (r.status === 'enrolled') enrolled++;
+  }
+  return enrolled;
+}
+
+/**
  * Best-effort — chamado de hooks (createLead, updateLead, import, enrich).
  * Errors são logados mas nunca propagados — não queremos quebrar uma operação
  * de lead se a campanha contínua estiver mal configurada.
@@ -280,7 +325,13 @@ export async function enrollLeadInContinuous(leadId: string): Promise<EnrollResu
 export async function tryEnrollSafe(leadId: string): Promise<void> {
   try {
     const r = await enrollLeadInContinuous(leadId);
-    if (r.status !== 'enrolled' && r.status !== 'already_enrolled' && r.status !== 'no_continuous_campaign' && r.status !== 'campaign_paused') {
+    if (
+      r.status !== 'enrolled' &&
+      r.status !== 'already_enrolled' &&
+      r.status !== 'no_continuous_campaign' &&
+      r.status !== 'campaign_paused' &&
+      r.status !== 'lead_in_cooldown'
+    ) {
       console.log('[continuous] enroll skip:', r.status, leadId);
     }
   } catch (err) {

@@ -12,11 +12,16 @@ import type {
 } from '@shared/types';
 import { LOSS_REASONS } from '@shared/types';
 import { resolveAudience } from './campaignsAudience';
+import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 
 const LIST_PAGE_SIZE = 50;
 const RECIPIENTS_PAGE_SIZE = 50;
 
-function toPublicCampaign(row: typeof campaigns.$inferSelect, creator: typeof users.$inferSelect | null): PublicCampaign {
+function toPublicCampaign(
+  row: typeof campaigns.$inferSelect,
+  creator: typeof users.$inferSelect | null,
+  skippedByCooldown: number,
+): PublicCampaign {
   return {
     id: row.id,
     name: row.name,
@@ -34,6 +39,7 @@ function toPublicCampaign(row: typeof campaigns.$inferSelect, creator: typeof us
     sentCount: row.sentCount,
     failedCount: row.failedCount,
     skippedCount: row.skippedCount,
+    skippedByCooldown,
     ratePerMinute: row.ratePerMinute,
     createdBy: creator
       ? { id: creator.id, name: creator.name }
@@ -41,6 +47,14 @@ function toPublicCampaign(row: typeof campaigns.$inferSelect, creator: typeof us
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function countSkippedByCooldown(campaignId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int` })
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.campaignId, campaignId));
+  return row?.n ?? 0;
 }
 
 // list
@@ -72,8 +86,21 @@ export async function listCampaigns(input: {
     .limit(LIST_PAGE_SIZE)
     .offset((page - 1) * LIST_PAGE_SIZE);
 
+  const ids = rows.map((r) => r.campaign.id);
+  const cooldownCounts = ids.length
+    ? await db
+        .select({
+          campaignId: campaignRecipients.campaignId,
+          n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
+        })
+        .from(campaignRecipients)
+        .where(inArray(campaignRecipients.campaignId, ids))
+        .groupBy(campaignRecipients.campaignId)
+    : [];
+  const cooldownMap = new Map(cooldownCounts.map((c) => [c.campaignId, c.n]));
+
   return {
-    items: rows.map((r) => toPublicCampaign(r.campaign, r.creator)),
+    items: rows.map((r) => toPublicCampaign(r.campaign, r.creator, cooldownMap.get(r.campaign.id) ?? 0)),
     total,
     page,
     pageSize: LIST_PAGE_SIZE,
@@ -89,7 +116,8 @@ export async function getCampaignById(id: string): Promise<PublicCampaign> {
     .where(eq(campaigns.id, id))
     .limit(1);
   if (!row) throw new HttpError(404, 'Campaign not found');
-  return toPublicCampaign(row.campaign, row.creator);
+  const skippedByCooldown = await countSkippedByCooldown(id);
+  return toPublicCampaign(row.campaign, row.creator, skippedByCooldown);
 }
 
 // create + materialize recipients
@@ -106,6 +134,12 @@ export async function createCampaign(input: {
   createdByUserId: string;
 }): Promise<PublicCampaign> {
   const audience = await resolveAudience(input.audienceFilter);
+  const audienceIds = audience.map((a) => a.leadId);
+  const { eligible } = await filterEligibleLeads(audienceIds, {});
+
+  const eligibleSet = new Set(eligible);
+  const eligibleRows = audience.filter((a) => eligibleSet.has(a.leadId));
+  const blockedRows = audience.filter((a) => !eligibleSet.has(a.leadId));
 
   return db.transaction(async (tx) => {
     const [c] = await tx.insert(campaigns).values({
@@ -118,14 +152,15 @@ export async function createCampaign(input: {
       mediaMime: input.mediaMime ?? null,
       audienceFilter: input.audienceFilter as object,
       audienceTotal: audience.length,
+      skippedCount: blockedRows.length,
       scheduledAt: input.scheduledAt ?? null,
       ratePerMinute: input.ratePerMinute ?? 20,
       createdByUserId: input.createdByUserId,
     }).returning();
 
-    if (audience.length > 0) {
+    if (eligibleRows.length > 0) {
       await tx.insert(campaignRecipients)
-        .values(audience.map((a) => ({
+        .values(eligibleRows.map((a) => ({
           campaignId: c.id,
           leadId: a.leadId,
           phone: a.phone,
@@ -133,8 +168,20 @@ export async function createCampaign(input: {
         .onConflictDoNothing({ target: [campaignRecipients.campaignId, campaignRecipients.leadId] });
     }
 
+    if (blockedRows.length > 0) {
+      await tx.insert(campaignRecipients)
+        .values(blockedRows.map((a) => ({
+          campaignId: c.id,
+          leadId: a.leadId,
+          phone: a.phone,
+          status: 'skipped' as const,
+          failureReason: COOLDOWN_REASON,
+        })))
+        .onConflictDoNothing({ target: [campaignRecipients.campaignId, campaignRecipients.leadId] });
+    }
+
     const [creator] = await tx.select().from(users).where(eq(users.id, input.createdByUserId)).limit(1);
-    return toPublicCampaign(c, creator ?? null);
+    return toPublicCampaign(c, creator ?? null, blockedRows.length);
   });
 }
 
@@ -265,6 +312,8 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
     sent: sql<number>`count(*) FILTER (WHERE status = 'sent')::int`,
     failed: sql<number>`count(*) FILTER (WHERE status = 'failed')::int`,
     skipped: sql<number>`count(*) FILTER (WHERE status = 'skipped')::int`,
+    skippedByCooldown: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
+    skippedOther: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND (failure_reason IS NULL OR failure_reason <> 'cooldown_24h'))::int`,
   }).from(campaignRecipients).where(eq(campaignRecipients.campaignId, id));
 
   const repliedRows = await db.execute(sql`
@@ -321,6 +370,8 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
     sent: counts.sent,
     failed: counts.failed,
     skipped: counts.skipped,
+    skippedByCooldown: counts.skippedByCooldown,
+    skippedOther: counts.skippedOther,
     replied,
     inDeal,
     won,

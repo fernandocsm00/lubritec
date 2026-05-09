@@ -69,6 +69,28 @@ describe('campaignsAudience.dryRun', () => {
     expect(r.total).toBe(7);
     expect(r.preview).toHaveLength(5);
   });
+
+  it('retorna eligible e blocked com cooldown', async () => {
+    const { createUser, createConversation, createMessage } = await import('./helpers');
+    const u = await createUser({ role: 'comercial', email: 'dr1@x.com' });
+    const eligibleLead = await createLead({ phone: '5511900050001', status: 'frio' });
+    const blockedLead = await createLead({ phone: '5511900050002', status: 'frio' });
+    const conv = await createConversation({ leadId: blockedLead.id });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      sentByUserId: u.id,
+      sentAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    });
+
+    const r = await dryRun({ status: ['frio'] });
+    expect(r.total).toBe(2);
+    expect(r.eligible).toBe(1);
+    expect(r.blocked.recentOutbound).toBe(1);
+    expect(r.blocked.pendingOtherCampaign).toBe(0);
+    expect(r.preview.find((p) => p.leadId === blockedLead.id)).toBeUndefined();
+    expect(r.preview.find((p) => p.leadId === eligibleLead.id)).toBeDefined();
+  });
 });
 
 describe('campaignsAudience.resolveAudience', () => {

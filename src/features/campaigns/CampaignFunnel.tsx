@@ -33,6 +33,22 @@ export function CampaignFunnel({ funnel }: Props) {
           ))}
         </div>
       )}
+
+      {funnel.skipped > 0 && (
+        <div className="text-xs text-muted-foreground">
+          Pulados: {funnel.skipped}
+          {funnel.skippedByCooldown > 0 && (
+            <div className="text-[11px] text-lc-amber mt-0.5">
+              janela 24h: {funnel.skippedByCooldown}
+            </div>
+          )}
+          {funnel.skippedOther > 0 && (
+            <div className="text-[11px] text-muted-foreground">
+              outros: {funnel.skippedOther}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

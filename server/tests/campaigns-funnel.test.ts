@@ -4,6 +4,8 @@ import {
   createConversation, createMessage, createDeal,
 } from './helpers';
 import { getCampaignFunnel } from '../services/campaignsService';
+import { db } from '../db/client';
+import { campaigns, campaignRecipients } from '../db/schema';
 
 describe('getCampaignFunnel', () => {
   it('contadores básicos: sent/failed/skipped/total', async () => {
@@ -67,5 +69,32 @@ describe('getCampaignFunnel', () => {
     expect(f.lost).toBe(1);
     expect(f.totalWonValue).toBe(500);
     expect(f.lostByReason.preco).toBe(1);
+  });
+
+  it('separa skippedByCooldown de skippedOther', async () => {
+    const u = await createUser({ role: 'comercial', email: 'fn1@x.com' });
+    const lead1 = await createLead({ phone: '5511900070001' });
+    const lead2 = await createLead({ phone: '5511900070002' });
+    const lead3 = await createLead({ phone: '5511900070003' });
+
+    const [c] = await db.insert(campaigns).values({
+      name: 'fn-cooldown',
+      status: 'running',
+      messageBody: 'oi',
+      audienceTotal: 3,
+      createdByUserId: u.id,
+    }).returning();
+
+    await db.insert(campaignRecipients).values([
+      { campaignId: c.id, leadId: lead1.id, phone: lead1.phone!, status: 'sent' },
+      { campaignId: c.id, leadId: lead2.id, phone: lead2.phone!, status: 'skipped', failureReason: 'cooldown_24h' },
+      { campaignId: c.id, leadId: lead3.id, phone: lead3.phone!, status: 'skipped', failureReason: 'uazapi: 401 unauthorized' },
+    ]);
+
+    const f = await getCampaignFunnel(c.id);
+    expect(f.sent).toBe(1);
+    expect(f.skipped).toBe(2);
+    expect(f.skippedByCooldown).toBe(1);
+    expect(f.skippedOther).toBe(1);
   });
 });
