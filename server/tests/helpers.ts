@@ -88,6 +88,7 @@ export async function createConversation(opts: {
   lastMessageAt?: Date;
   lastInboundAt?: Date | null;
   unreadCount?: number;
+  createdAt?: Date;
 }) {
   const [c] = await db
     .insert(conversations)
@@ -102,6 +103,7 @@ export async function createConversation(opts: {
       lastMessageAt: opts.lastMessageAt ?? new Date(),
       lastInboundAt: opts.lastInboundAt ?? null,
       unreadCount: opts.unreadCount ?? 0,
+      ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     })
     .returning();
   return c;

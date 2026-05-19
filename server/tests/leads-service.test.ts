@@ -197,7 +197,7 @@ describe('importLeadsFromCsv', () => {
 
   it('insere linhas novas com source=csv e status=frio', async () => {
     const csv = `name,phone,cnpj\nA,11888880001,${VALID_CNPJ_1}\nB,11888880002,${VALID_CNPJ_2}\n`;
-    const report = await importLeadsFromCsv(Buffer.from(csv));
+    const report = await importLeadsFromCsv(Buffer.from(csv), { throttleMs: 0 });
     expect(report.inserted).toBe(2);
     expect(report.updated).toBe(0);
     expect(report.rejected).toEqual([]);
