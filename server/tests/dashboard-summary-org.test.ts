@@ -61,13 +61,16 @@ describe('dashboardService.summary org — funnel/pipeline/leaderboard/goal', ()
 
   it('computes funnel from leads/conversations/deals', async () => {
     const u = await createUser({ role: 'comercial' });
-    const l1 = await createLead({});
-    const l2 = await createLead({});
-    const l3 = await createLead({});
-    await createConversation({ leadId: l1.id });
-    await createConversation({ leadId: l2.id });
+    // Pin createdAt to a known date inside the [May 1, May 15] window so the
+    // test is deterministic regardless of wall-clock when the suite runs.
+    const l1 = await createLead({ createdAt: spDate(2026, 5, 5) });
+    const l2 = await createLead({ createdAt: spDate(2026, 5, 6) });
+    const l3 = await createLead({ createdAt: spDate(2026, 5, 7) });
+    await createConversation({ leadId: l1.id, createdAt: spDate(2026, 5, 5) });
+    await createConversation({ leadId: l2.id, createdAt: spDate(2026, 5, 6) });
     await createDeal({ leadId: l1.id, stage: 'proposta_enviada', ownerUserId: u.id, createdAt: spDate(2026, 5, 6) });
     await createDeal({ leadId: l2.id, stage: 'ganho', proposalValue: 100, ownerUserId: u.id, createdAt: spDate(2026, 5, 7), closedAt: spDate(2026, 5, 8) });
+    void l3;
 
     const r = await summary({ view: 'org', period: 'month', now: new Date('2026-05-15T16:00:00Z') });
     expect(r.funnel.kind).toBe('org');

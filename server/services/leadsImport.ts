@@ -11,8 +11,9 @@ import { recordTransition } from './stageTransitions';
 
 // BrasilAPI free tier is roughly 3 req/min; adding ~21s between calls keeps us
 // under that ceiling. Larger imports are rejected up-front so a CSV with 1000
-// rows doesn't quietly take 6 hours to process.
-const BRASILAPI_THROTTLE_MS = 21_000;
+// rows doesn't quietly take 6 hours to process. Tests override the throttle
+// via the `throttleMs` option to keep the suite fast.
+const DEFAULT_BRASILAPI_THROTTLE_MS = 21_000;
 const MAX_CNPJ_LOOKUPS_PER_IMPORT = 200;
 
 const HEADER_ALIASES: Record<string, string> = {
@@ -146,7 +147,13 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   return { rows, rejected, missingHeaders: [] };
 }
 
-export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
+export async function importLeadsFromCsv(
+  buf: Buffer,
+  opts: { throttleMs?: number } = {},
+): Promise<ImportReport> {
+  // Tests bypass throttle via opts.throttleMs OR NODE_ENV=test default.
+  const throttleMs = opts.throttleMs
+    ?? (process.env.NODE_ENV === 'test' ? 0 : DEFAULT_BRASILAPI_THROTTLE_MS);
   const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
   if (missingHeaders.length > 0) {
     throw new HttpError(400, `Coluna obrigatória ausente: ${missingHeaders.join(', ')}`);
@@ -163,7 +170,7 @@ export async function importLeadsFromCsv(buf: Buffer): Promise<ImportReport> {
   // descriptive reason. We throttle between calls to stay under the free tier.
   const validRows: CsvRow[] = [];
   for (let i = 0; i < rows.length; i++) {
-    if (i > 0) await sleep(BRASILAPI_THROTTLE_MS);
+    if (i > 0 && throttleMs > 0) await sleep(throttleMs);
     const row = rows[i];
     const result = await lookupCnpj(row.cnpj);
     if (result.status === 'inactive') {

@@ -1,11 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createApp } from '../app';
 import { createUser, createLead } from './helpers';
+import * as cnpjLookup from '../services/cnpjLookup';
 
 const app = createApp();
+
+// Keep BrasilAPI calls offline for the suite — every CNPJ comes back active.
+beforeEach(() => {
+  vi.spyOn(cnpjLookup, 'lookupCnpj').mockImplementation(async (cnpj: string) => ({
+    cnpj,
+    status: 'active',
+    razaoSocial: 'Test Co.',
+    situacaoCadastral: 'ATIVA',
+    telefone: null,
+  }));
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +68,7 @@ describe('POST /api/leads', () => {
     const res = await request(app)
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Pedro', phone: '11000002002' });
+      .send({ name: 'Pedro', phone: '11000002002', cnpj: '11444777000161' });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('frio');
     expect(res.body.source).toBe('manual');
@@ -67,17 +79,17 @@ describe('POST /api/leads', () => {
     const res = await request(app)
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Curto', phone: '(11) 12' });
+      .send({ name: 'Curto', phone: '(11) 12', cnpj: '11444777000161' });
     expect(res.status).toBe(400);
   });
 
-  it('409 quando phone duplicado', async () => {
+  it('409 quando CNPJ duplicado', async () => {
     const token = await seedAuth();
-    await createLead({ phone: '11000002003' });
+    await createLead({ phone: '11000002003', cnpj: '60746948000112' });
     const res = await request(app)
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Dup', phone: '11000002003' });
+      .send({ name: 'Dup', phone: '11000002099', cnpj: '60746948000112' });
     expect(res.status).toBe(409);
   });
 });
