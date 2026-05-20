@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { retry } from '../lib/retry';
 
 /**
  * Cliente Gemini Flash 2.5 — IA de atendimento.
@@ -65,33 +66,48 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
     { role: 'user' as const, parts: [{ text: input.userMessage }] },
   ];
 
-  const startedAt = Date.now();
-  try {
-    const response = await client.models.generateContent({
-      model: MODEL,
-      contents,
-      config: {
-        systemInstruction: input.systemInstruction,
-        temperature: input.temperature ?? 0.4,
-        maxOutputTokens: input.maxOutputTokens ?? 1024,
+  return retry(
+    async () => {
+      const startedAt = Date.now();
+      try {
+        const response = await client.models.generateContent({
+          model: MODEL,
+          contents,
+          config: {
+            systemInstruction: input.systemInstruction,
+            temperature: input.temperature ?? 0.4,
+            maxOutputTokens: input.maxOutputTokens ?? 1024,
+          },
+        });
+        const text = response.text ?? '';
+        if (!text.trim()) {
+          throw new GeminiError('empty response from Gemini');
+        }
+        const usage = response.usageMetadata ?? {};
+        return {
+          text: text.trim(),
+          inputTokens: Number(usage.promptTokenCount ?? 0),
+          outputTokens: Number(usage.candidatesTokenCount ?? 0),
+          model: MODEL,
+          latencyMs: Date.now() - startedAt,
+        };
+      } catch (err) {
+        if (err instanceof GeminiError) throw err;
+        throw new GeminiError(err instanceof Error ? err.message : String(err), err);
+      }
+    },
+    {
+      attempts: 3,
+      baseDelayMs: 500,
+      shouldRetry: (err) => {
+        if (err instanceof GeminiError) {
+          // Não retentar erro de configuração (sem API key).
+          if (err.reason.includes('GEMINI_API_KEY')) return false;
+        }
+        return true;
       },
-    });
-    const text = response.text ?? '';
-    if (!text.trim()) {
-      throw new GeminiError('empty response from Gemini');
-    }
-    const usage = response.usageMetadata ?? {};
-    return {
-      text: text.trim(),
-      inputTokens: Number(usage.promptTokenCount ?? 0),
-      outputTokens: Number(usage.candidatesTokenCount ?? 0),
-      model: MODEL,
-      latencyMs: Date.now() - startedAt,
-    };
-  } catch (err) {
-    if (err instanceof GeminiError) throw err;
-    throw new GeminiError(err instanceof Error ? err.message : String(err), err);
-  }
+    },
+  );
 }
 
 // Test seam — permite resetar o singleton em testes (quando vi.mock não é usado).
