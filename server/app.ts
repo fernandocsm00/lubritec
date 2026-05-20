@@ -1,5 +1,6 @@
 import path from 'node:path';
 import express from 'express';
+import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth';
@@ -21,6 +22,12 @@ export function createApp() {
   const app = express();
   app.set('trust proxy', 1);
 
+  // helmet sets security headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc.).
+  // CSP is disabled because the Vite-built SPA uses inline styles (Tailwind generates them)
+  // and would require a thorough audit to ship CSP without breaking the UI.
+  // Tighten contentSecurityPolicy if/when we audit every callsite.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
   const corsOrigin = process.env.APP_URL;
   if (process.env.NODE_ENV === 'production' && !corsOrigin) {
     throw new Error('APP_URL must be set in production');
@@ -30,6 +37,42 @@ export function createApp() {
   app.use(cookieParser());
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+  app.get('/api/health/ready', async (_req, res) => {
+    const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
+
+    // DB check
+    const dbStart = Date.now();
+    try {
+      const { pool } = await import('./db/client');
+      await pool.query('SELECT 1');
+      checks.db = { ok: true, latencyMs: Date.now() - dbStart };
+    } catch (e) {
+      checks.db = { ok: false, latencyMs: Date.now() - dbStart, error: e instanceof Error ? e.message : 'unknown' };
+    }
+
+    // UazAPI check — non-fatal: instance might be intentionally disconnected.
+    const uazStart = Date.now();
+    try {
+      const { loadSendConfig } = await import('./services/whatsappInstanceService');
+      const cfg = await loadSendConfig().catch(() => null);
+      if (!cfg) {
+        checks.uazapi = { ok: false, error: 'not_configured' };
+      } else {
+        // Lightweight: just check the base URL responds. Avoid hitting protected
+        // endpoints that would consume rate budget.
+        const r = await fetch(cfg.baseUrl, { signal: AbortSignal.timeout(3000) });
+        checks.uazapi = { ok: r.ok || r.status === 404, latencyMs: Date.now() - uazStart };
+      }
+    } catch (e) {
+      checks.uazapi = { ok: false, latencyMs: Date.now() - uazStart, error: e instanceof Error ? e.message : 'unknown' };
+    }
+
+    // Overall: DB must be up. UazAPI being down is degraded, not failed.
+    const overallOk = checks.db.ok;
+    res.status(overallOk ? 200 : 503).json({ ok: overallOk, checks });
+  });
+
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/leads', leadRoutes);

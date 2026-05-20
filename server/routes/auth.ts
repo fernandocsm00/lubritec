@@ -18,7 +18,11 @@ router.post('/refresh', refreshHandler);
 router.post('/logout', logoutHandler);
 router.get('/me', authGuard, meHandler);
 
-router.post('/setup-password', setupPasswordHandler);
+router.post(
+  '/setup-password',
+  rateLimit({ windowMs: 60_000, max: 5 }),
+  setupPasswordHandler,
+);
 router.post(
   '/request-reset',
   rateLimit({
@@ -28,6 +32,10 @@ router.post(
   }),
   requestResetHandler,
 );
-router.post('/reset-password', resetPasswordHandler);
+router.post(
+  '/reset-password',
+  rateLimit({ windowMs: 60_000, max: 5 }),
+  resetPasswordHandler,
+);
 
 export default router;
