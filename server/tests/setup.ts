@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { beforeEach, afterAll, vi } from 'vitest';
 import { pool } from '../db/client';
 import { __resetRateLimitBuckets } from '../middleware/rateLimit';
+import { _resetKeyCache } from '../lib/crypto';
 
 // Bloqueia envio real de e-mail nos testes
 vi.mock('../lib/mailer', () => ({
@@ -13,6 +14,12 @@ if (!process.env.TEST_DATABASE_URL) {
   throw new Error('TEST_DATABASE_URL not set');
 }
 process.env.NODE_ENV = 'test';
+
+// Fixed 32-byte key for tests (not a secret — test-only).
+if (!process.env.WHATSAPP_CREDENTIALS_KEY) {
+  process.env.WHATSAPP_CREDENTIALS_KEY = '0'.repeat(64);
+  _resetKeyCache();
+}
 
 function isDbConfigured(connectionString: string): boolean {
   try {

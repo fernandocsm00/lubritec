@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { createUser, createWhatsappInstance } from './helpers';
+import { encryptSecret } from '../lib/crypto';
 
 vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn(),
@@ -48,8 +49,15 @@ describe('DELETE /api/whatsapp-instance', () => {
 
   it('204 admin deleta UazAPI + row', async () => {
     await createWhatsappInstance({
-      instanceId: 'inst-del',
-      instanceToken: 'tok',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'inst-del',
+        instanceToken: encryptSecret('tok'),
+        webhookSecret: null,
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
     vi.mocked(deleteInstance).mockResolvedValueOnce(undefined);
 
@@ -66,8 +74,15 @@ describe('DELETE /api/whatsapp-instance', () => {
 
   it('204 mesmo se UazAPI delete falhar (best-effort) — apaga local', async () => {
     await createWhatsappInstance({
-      instanceId: 'inst-fail',
-      instanceToken: 'tok',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'inst-fail',
+        instanceToken: encryptSecret('tok'),
+        webhookSecret: null,
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
     vi.mocked(deleteInstance).mockRejectedValueOnce(new Error('uazapi down'));
 

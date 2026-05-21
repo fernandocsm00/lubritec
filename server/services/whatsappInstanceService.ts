@@ -1,9 +1,9 @@
-﻿import crypto from 'node:crypto';
+import crypto from 'node:crypto';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { InstanceStatusResponse, InstanceStatus } from '@shared/types';
+import type { InstanceStatusResponse } from '@shared/types';
 import {
   initInstance,
   connectInstance,
@@ -13,67 +13,62 @@ import {
   setWebhook,
   UazapiInstanceError,
 } from './whatsapp/uazapi/instanceClient';
+import { encryptSecret, decryptSecret } from '../lib/crypto';
+import { uazapiConfigSchema, type UazapiConfig } from './whatsapp/uazapi/configSchema';
+import { invalidateProvider } from './whatsapp/providerRegistry';
 
-// ---------------------------------------------------------------------------
-// Loaders
-// ---------------------------------------------------------------------------
+// ──────────────────────────────────────────────────────────────────────────
+// Default-row helpers
+//
+// Backward-compat layer: legacy single-instance endpoints operate on the row
+// where is_default=true. Multi-instance ops live in
+// whatsappInstancesController (Task 7).
+// ──────────────────────────────────────────────────────────────────────────
 
-/**
- * Lê a row única do DB. Se não existe e env vars completas, faz seed inicial.
- * Retorna null se não há config (DB vazio E env incompleto).
- */
-async function loadOrSeed(): Promise<typeof whatsappInstance.$inferSelect | null> {
-  const [existing] = await db.select().from(whatsappInstance).limit(1);
+type Row = typeof whatsappInstance.$inferSelect;
+
+async function loadDefaultRow(): Promise<Row | null> {
+  const [row] = await db.select().from(whatsappInstance)
+    .where(eq(whatsappInstance.isDefault, true)).limit(1);
+  return row ?? null;
+}
+
+async function loadOrSeedDefault(): Promise<Row | null> {
+  const existing = await loadDefaultRow();
   if (existing) return existing;
 
-  // Seed automático: env vars completas → cria row inicial.
+  // Env-var seed for first-boot convenience (preserves old behavior).
   const baseUrl = process.env.UAZAPI_BASE_URL;
-  const token = uazapiTokenFromEnv();
-  const instanceId = process.env.UAZAPI_INSTANCE_ID;
+  const token = process.env.UAZAPI_ADMIN_TOKEN || process.env.UAZAPI_TOKEN;
+  const envInstanceId = process.env.UAZAPI_INSTANCE_ID;
   const webhookSecret = process.env.UAZAPI_WEBHOOK_SECRET;
+  if (!baseUrl || !token || !envInstanceId || !webhookSecret) return null;
 
-  if (!baseUrl || !token || !instanceId || !webhookSecret) {
-    return null;
-  }
+  const cfg: UazapiConfig = {
+    baseUrl,
+    instanceId: envInstanceId,
+    instanceToken: encryptSecret(token),
+    webhookSecret: encryptSecret(webhookSecret),
+    webhookUrl: buildWebhookUrl(token),
+    webhookSynced: true,
+  };
 
   try {
-    const [created] = await db
-      .insert(whatsappInstance)
-      .values({
-        baseUrl,
-        instanceId,
-        instanceToken: token,
-        webhookSecret,
-        webhookUrl: buildWebhookUrl(token),
-        webhookSynced: true,  // Assume that env-configured webhook está ativo
-      })
-      .returning();
+    const [created] = await db.insert(whatsappInstance).values({
+      provider: 'uazapi',
+      displayName: 'Linha principal',
+      isDefault: true,
+      providerConfig: cfg,
+    }).returning();
     return created;
   } catch {
-    // Race: outra request fez o seed antes. Refaz a query.
-    const [retry] = await db.select().from(whatsappInstance).limit(1);
-    return retry ?? null;
+    return loadDefaultRow();
   }
 }
 
-function buildWebhookUrl(instanceToken?: string | null): string {
-  const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-  const base = `${appUrl.replace(/\/$/, '')}/api/whatsapp/webhook`;
-  // uazapiGO NÃO envia headers de auth nos webhooks — coloca o token na query string
-  // (mesma estratégia do projeto APP_ORION). Nosso handler lê de lá.
-  if (instanceToken) {
-    return `${base}?instanceToken=${encodeURIComponent(instanceToken)}`;
-  }
-  return base;
+function uazCfg(row: Row): UazapiConfig {
+  return uazapiConfigSchema.parse(row.providerConfig);
 }
-
-function uazapiTokenFromEnv(): string | undefined {
-  return process.env.UAZAPI_ADMIN_TOKEN || process.env.UAZAPI_TOKEN || undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 function emptyResponse(): InstanceStatusResponse {
   return {
@@ -88,131 +83,139 @@ function emptyResponse(): InstanceStatusResponse {
   };
 }
 
-/**
- * Retorna estado atual da instância pra frontend.
- * - Sem row no DB → emptyResponse.
- * - Com row mas sem instanceId → "configured: false" (admin precisa clicar conectar).
- * - Com instanceId → consulta UazAPI live e atualiza cache (last_status, etc).
- */
+function buildWebhookUrl(instanceToken?: string | null): string {
+  const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+  const base = `${appUrl.replace(/\/$/, '')}/api/whatsapp/webhook`;
+  if (instanceToken) {
+    return `${base}?instanceToken=${encodeURIComponent(instanceToken)}`;
+  }
+  return base;
+}
+
+function generateWebhookSecret(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Public API — preserved external behavior
+// ──────────────────────────────────────────────────────────────────────────
+
 export async function getStatus(): Promise<InstanceStatusResponse> {
-  const row = await loadOrSeed();
+  const row = await loadOrSeedDefault();
   if (!row) return emptyResponse();
 
-  if (!row.instanceId || !row.instanceToken) {
+  const cfg = uazCfg(row);
+  if (!cfg.instanceId || !cfg.instanceToken) {
     return {
       configured: false,
       status: 'disconnected',
       qrCode: null,
       phoneNumber: null,
       profileName: null,
-      webhookSynced: row.webhookSynced,
-      baseUrl: row.baseUrl,
+      webhookSynced: cfg.webhookSynced,
+      baseUrl: cfg.baseUrl,
       lastStatusAt: row.lastStatusAt?.toISOString() ?? null,
     };
   }
 
-  // Consulta UazAPI live
-  let liveStatus: InstanceStatus = 'error';
-  let qrCode: string | null = null;
-  let phoneNumber: string | null = row.phoneNumber;
-  let profileName: string | null = row.profileName;
-
+  let live: Awaited<ReturnType<typeof getInstanceStatus>> | null = null;
   try {
-    const live = await getInstanceStatus({
-      baseUrl: row.baseUrl,
-      token: row.instanceToken,
+    live = await getInstanceStatus({
+      baseUrl: cfg.baseUrl,
+      token: decryptSecret(cfg.instanceToken),
     });
-    liveStatus = live.status;
-    qrCode = live.qrCode;
-    phoneNumber = live.phoneNumber ?? row.phoneNumber;
-    profileName = live.profileName ?? row.profileName;
   } catch {
-    // UazAPI fora — retorna erro mas mantém cache anterior pra UI.
-    liveStatus = 'error';
+    // upstream offline — return cached
   }
 
-  // Atualiza cache no DB (best-effort)
+  const status = live?.status ?? 'error';
+  const phoneNumber = live?.phoneNumber ?? row.phoneNumber;
+  const profileName = live?.profileName ?? row.profileName;
+
   try {
-    await db
-      .update(whatsappInstance)
+    await db.update(whatsappInstance)
       .set({
-        lastStatus: liveStatus,
+        lastStatus: status,
         lastStatusAt: new Date(),
         phoneNumber,
         profileName,
         updatedAt: new Date(),
       })
       .where(eq(whatsappInstance.id, row.id));
-  } catch {
-    // Ignora — cache é informativo.
-  }
+  } catch { /* informational cache */ }
 
   return {
     configured: true,
-    status: liveStatus,
-    qrCode,
+    status,
+    qrCode: live?.qrCode ?? null,
     phoneNumber,
     profileName,
-    webhookSynced: row.webhookSynced,
-    baseUrl: row.baseUrl,
+    webhookSynced: cfg.webhookSynced,
+    baseUrl: cfg.baseUrl,
     lastStatusAt: new Date().toISOString(),
   };
 }
 
-/**
- * Conecta a instância: cria no UazAPI se ainda não existe, registra webhook, retorna QR.
- */
 export async function connect(input: {
   baseUrl?: string;
   instanceToken?: string;
 }): Promise<InstanceStatusResponse> {
-  // Garante row
-  let [row] = await db.select().from(whatsappInstance).limit(1);
-  const envToken = uazapiTokenFromEnv();
+  let row = await loadDefaultRow();
+  const envToken = process.env.UAZAPI_ADMIN_TOKEN || process.env.UAZAPI_TOKEN;
+  const baseUrl = input.baseUrl ?? process.env.UAZAPI_BASE_URL ?? 'https://api.uazapi.com';
+
   if (!row) {
-    const baseUrl = input.baseUrl ?? process.env.UAZAPI_BASE_URL ?? 'https://api.uazapi.com';
-    [row] = await db
-      .insert(whatsappInstance)
-      .values({ baseUrl, instanceToken: input.instanceToken ?? envToken ?? null })
-      .returning();
+    const tokenPlain = input.instanceToken ?? envToken ?? null;
+    const cfg: UazapiConfig = {
+      baseUrl,
+      instanceId: null,
+      instanceToken: tokenPlain ? encryptSecret(tokenPlain) : null,
+      webhookSecret: null,
+      webhookUrl: null,
+      webhookSynced: false,
+    };
+    [row] = await db.insert(whatsappInstance).values({
+      provider: 'uazapi',
+      displayName: 'Linha principal',
+      isDefault: true,
+      providerConfig: cfg,
+    }).returning();
   } else {
-    // Atualiza credenciais quando admin enviou novas OU quando a row existe sem token e há env disponível
-    const nextBaseUrl = input.baseUrl ?? row.baseUrl;
-    const nextToken = input.instanceToken ?? row.instanceToken ?? envToken ?? null;
-    if (nextBaseUrl !== row.baseUrl || nextToken !== row.instanceToken) {
-      [row] = await db
-        .update(whatsappInstance)
-        .set({
-          baseUrl: nextBaseUrl,
-          instanceToken: nextToken,
-          updatedAt: new Date(),
-        })
-        .where(eq(whatsappInstance.id, row.id))
-        .returning();
+    const cfg = uazCfg(row);
+    const currentToken = cfg.instanceToken ? decryptSecret(cfg.instanceToken) : '';
+    const tokenChanged = input.instanceToken && currentToken !== input.instanceToken;
+    if (input.baseUrl !== undefined || tokenChanged) {
+      const next: UazapiConfig = {
+        ...cfg,
+        baseUrl: input.baseUrl ?? cfg.baseUrl,
+        instanceToken: input.instanceToken
+          ? encryptSecret(input.instanceToken)
+          : cfg.instanceToken,
+      };
+      [row] = await db.update(whatsappInstance)
+        .set({ providerConfig: next, updatedAt: new Date() })
+        .where(eq(whatsappInstance.id, row.id)).returning();
+      invalidateProvider(row.id);
     }
   }
 
-  // Cria instância no UazAPI se ainda não tem ID (usa AdminToken — admin auth).
-  // O token per-instance que volta vai pra DB e é usado nas demais ops.
-  let instanceId = row.instanceId;
-  let instanceToken = row.instanceToken;
-  if (!instanceId) {
+  let cfg = uazCfg(row);
+  if (!cfg.instanceId) {
     const adminToken = envToken;
     if (!adminToken) {
       throw new HttpError(400, 'UAZAPI_ADMIN_TOKEN required to init a new instance');
     }
     try {
-      const init = await initInstance(
-        { baseUrl: row.baseUrl, token: adminToken },
-        'lubritec',
-      );
-      instanceId = init.instanceId;
-      instanceToken = init.token;  // sempre o per-instance token devolvido por uazapiGO
-      [row] = await db
-        .update(whatsappInstance)
-        .set({ instanceId, instanceToken, updatedAt: new Date() })
-        .where(eq(whatsappInstance.id, row.id))
-        .returning();
+      const init = await initInstance({ baseUrl: cfg.baseUrl, token: adminToken }, 'lubritec');
+      cfg = {
+        ...cfg,
+        instanceId: init.instanceId,
+        instanceToken: encryptSecret(init.token),
+      };
+      [row] = await db.update(whatsappInstance)
+        .set({ providerConfig: cfg, updatedAt: new Date() })
+        .where(eq(whatsappInstance.id, row.id)).returning();
+      invalidateProvider(row.id);
     } catch (err) {
       if (err instanceof UazapiInstanceError) {
         throw new HttpError(502, `UazAPI init failed: ${err.message}`);
@@ -221,50 +224,37 @@ export async function connect(input: {
     }
   }
 
-  if (!instanceToken) {
-    throw new HttpError(500, 'Instance token missing after init');
-  }
+  if (!cfg.instanceToken) throw new HttpError(500, 'Instance token missing after init');
+  const tokenPlain = decryptSecret(cfg.instanceToken);
 
-  // Garante webhook_secret e registra webhook (usa instance token).
-  let webhookSecret = row.webhookSecret ?? generateWebhookSecret();
-  // URL inclui instanceToken na query — uazapiGO não envia auth nos webhooks,
-  // então a auth tem que estar embutida na URL cadastrada.
-  const webhookUrl = buildWebhookUrl(instanceToken);
+  // Webhook setup
+  const webhookSecret = cfg.webhookSecret ? decryptSecret(cfg.webhookSecret) : generateWebhookSecret();
+  const webhookUrl = buildWebhookUrl(tokenPlain);
 
   try {
-    const setWebhookResp = await setWebhook(
-      { baseUrl: row.baseUrl, token: instanceToken },
+    await setWebhook(
+      { baseUrl: cfg.baseUrl, token: tokenPlain },
       { url: webhookUrl, secret: webhookSecret, events: ['message.received'] },
     );
-    console.log('[whatsapp:connect] setWebhook response:', JSON.stringify(setWebhookResp));
-    [row] = await db
-      .update(whatsappInstance)
-      .set({
-        webhookSecret,
-        webhookUrl,
-        webhookSynced: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(whatsappInstance.id, row.id))
-      .returning();
+    cfg = { ...cfg, webhookSecret: encryptSecret(webhookSecret), webhookUrl, webhookSynced: true };
+    [row] = await db.update(whatsappInstance)
+      .set({ providerConfig: cfg, updatedAt: new Date() })
+      .where(eq(whatsappInstance.id, row.id)).returning();
+    invalidateProvider(row.id);
   } catch (err) {
-    console.error('[whatsapp:connect] setWebhook FAILED:', err instanceof Error ? err.message : err);
-    // Webhook pode falhar mas instância já existe — marca como não sincronizado.
-    [row] = await db
-      .update(whatsappInstance)
-      .set({ webhookSecret, webhookUrl, webhookSynced: false, updatedAt: new Date() })
-      .where(eq(whatsappInstance.id, row.id))
-      .returning();
+    cfg = { ...cfg, webhookSecret: encryptSecret(webhookSecret), webhookUrl, webhookSynced: false };
+    await db.update(whatsappInstance)
+      .set({ providerConfig: cfg, updatedAt: new Date() })
+      .where(eq(whatsappInstance.id, row.id));
+    invalidateProvider(row.id);
     if (err instanceof UazapiInstanceError) {
       throw new HttpError(502, `Webhook config failed: ${err.message}`);
     }
     throw err;
   }
 
-  // Inicia o pareamento — uazapiGO gera o QR via /instance/connect (chamada explícita).
-  // Sem isso a instância fica em "disconnected" pra sempre.
   try {
-    await connectInstance({ baseUrl: row.baseUrl, token: instanceToken });
+    await connectInstance({ baseUrl: cfg.baseUrl, token: tokenPlain });
   } catch (err) {
     if (err instanceof UazapiInstanceError) {
       throw new HttpError(502, `UazAPI connect failed: ${err.message}`);
@@ -272,80 +262,55 @@ export async function connect(input: {
     throw err;
   }
 
-  // Marca como pareando — frontend vai começar a pollar pelo QR
-  await db
-    .update(whatsappInstance)
+  await db.update(whatsappInstance)
     .set({ lastStatus: 'pairing', lastStatusAt: new Date(), updatedAt: new Date() })
     .where(eq(whatsappInstance.id, row.id));
 
-  // Retorna status atualizado (que vai chamar UazAPI e pegar o QR)
   return getStatus();
 }
 
-function generateWebhookSecret(): string {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-/**
- * Logout sem deletar — admin pode reconectar depois.
- */
 export async function disconnect(): Promise<InstanceStatusResponse> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
-  if (!row || !row.instanceId || !row.instanceToken) {
+  const row = await loadDefaultRow();
+  if (!row) throw new HttpError(400, 'No instance to disconnect');
+  const cfg = uazCfg(row);
+  if (!cfg.instanceId || !cfg.instanceToken) {
     throw new HttpError(400, 'No instance to disconnect');
   }
-
   try {
-    await logoutInstance({
-      baseUrl: row.baseUrl,
-      token: row.instanceToken,
-    });
+    await logoutInstance({ baseUrl: cfg.baseUrl, token: decryptSecret(cfg.instanceToken) });
   } catch (err) {
     if (err instanceof UazapiInstanceError) {
       throw new HttpError(502, `UazAPI logout failed: ${err.message}`);
     }
     throw err;
   }
-
-  await db
-    .update(whatsappInstance)
-    .set({
-      lastStatus: 'disconnected',
-      lastStatusAt: new Date(),
-      phoneNumber: null,
-      profileName: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(whatsappInstance.id, row.id));
-
+  await db.update(whatsappInstance).set({
+    lastStatus: 'disconnected',
+    lastStatusAt: new Date(),
+    phoneNumber: null,
+    profileName: null,
+    updatedAt: new Date(),
+  }).where(eq(whatsappInstance.id, row.id));
+  invalidateProvider(row.id);
   return getStatus();
 }
 
-/**
- * Apaga a instância — UazAPI delete + DB delete. Admin only.
- */
 export async function destroy(): Promise<void> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
+  const row = await loadDefaultRow();
   if (!row) throw new HttpError(404, 'No instance to delete');
-
-  // Tenta deletar no UazAPI (best-effort)
-  if (row.instanceId && row.instanceToken) {
+  const cfg = uazCfg(row);
+  if (cfg.instanceId && cfg.instanceToken) {
     try {
-      await deleteInstance({
-        baseUrl: row.baseUrl,
-        token: row.instanceToken,
-      });
-    } catch {
-      // Ignora — a row local vai ser apagada de qualquer jeito.
-    }
+      await deleteInstance({ baseUrl: cfg.baseUrl, token: decryptSecret(cfg.instanceToken) });
+    } catch { /* best-effort */ }
   }
-
   await db.delete(whatsappInstance).where(eq(whatsappInstance.id, row.id));
+  invalidateProvider(row.id);
 }
 
-// ---------------------------------------------------------------------------
-// Internal: usado pelo uazapiClient e webhook handler
-// ---------------------------------------------------------------------------
+// ──────────────────────────────────────────────────────────────────────────
+// Internal: used by uazapiClient.sendUazapiMessage and webhook handler
+// ──────────────────────────────────────────────────────────────────────────
 
 export interface SendUazapiConfig {
   baseUrl: string;
@@ -353,53 +318,45 @@ export interface SendUazapiConfig {
   token: string;
 }
 
-/**
- * Carrega config para envio de mensagens (lê DB com fallback pra env).
- * Lança UazapiInstanceError(503) se não há config configurada.
- */
 export async function loadSendConfig(): Promise<SendUazapiConfig> {
-  const row = await loadOrSeed();
-  if (!row || !row.instanceId || !row.instanceToken) {
+  const row = await loadOrSeedDefault();
+  if (!row) throw new UazapiInstanceError(503, 'WhatsApp instance not configured');
+  const cfg = uazCfg(row);
+  if (!cfg.instanceId || !cfg.instanceToken) {
     throw new UazapiInstanceError(503, 'WhatsApp instance not configured');
   }
   return {
-    baseUrl: row.baseUrl,
-    instanceId: row.instanceId,
-    token: row.instanceToken,
+    baseUrl: cfg.baseUrl,
+    instanceId: cfg.instanceId,
+    token: decryptSecret(cfg.instanceToken),
   };
 }
 
-/**
- * Carrega o webhook secret ativo. Tenta DB primeiro, depois env como fallback.
- */
 export async function loadWebhookSecret(): Promise<string | null> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
-  if (row?.webhookSecret) return row.webhookSecret;
+  const row = await loadDefaultRow();
+  if (row) {
+    const cfg = uazCfg(row);
+    if (cfg.webhookSecret) return decryptSecret(cfg.webhookSecret);
+  }
   return process.env.UAZAPI_WEBHOOK_SECRET ?? null;
 }
 
-/**
- * Tokens aceitos para autenticar webhook recebido da UazAPI.
- *
- * uazapiGO não armazena nosso `webhook_secret` — quando dispara o webhook,
- * inclui o `token` da própria instância no body do payload. Por isso aceitamos
- * AMBOS: o webhook_secret (caso uma versão futura suporte) e o instance_token
- * (que é o que vem na prática hoje).
- */
 export async function loadValidWebhookTokens(): Promise<string[]> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
+  const row = await loadDefaultRow();
   const tokens: string[] = [];
-  if (row?.webhookSecret) tokens.push(row.webhookSecret);
-  if (row?.instanceToken) tokens.push(row.instanceToken);
+  if (row) {
+    const cfg = uazCfg(row);
+    if (cfg.webhookSecret) tokens.push(decryptSecret(cfg.webhookSecret));
+    if (cfg.instanceToken) tokens.push(decryptSecret(cfg.instanceToken));
+  }
   if (process.env.UAZAPI_WEBHOOK_SECRET) tokens.push(process.env.UAZAPI_WEBHOOK_SECRET);
   return tokens;
 }
 
-/**
- * Diagnóstico — pergunta direto pra UazAPI o que ela tem cadastrado de webhook.
- * Retorna o que cada path tentado respondeu + o que NÓS armazenamos no DB
- * (URL/secret/synced) pra comparação.
- */
+// ──────────────────────────────────────────────────────────────────────────
+// Diagnostics — preserved
+// ──────────────────────────────────────────────────────────────────────────
+
 export async function probeWebhook(): Promise<{
   ours: {
     webhookUrl: string | null;
@@ -410,68 +367,61 @@ export async function probeWebhook(): Promise<{
   } | null;
   uazapi: Array<{ path: string; method: string; status: number; body: unknown }>;
 }> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
-  if (!row || !row.instanceToken) {
-    return { ours: null, uazapi: [] };
-  }
+  const row = await loadDefaultRow();
+  if (!row) return { ours: null, uazapi: [] };
+  const cfg = uazCfg(row);
+  if (!cfg.instanceToken) return { ours: null, uazapi: [] };
   const { probeWebhookConfig } = await import('./whatsapp/uazapi/instanceClient');
   const uazapi = await probeWebhookConfig({
-    baseUrl: row.baseUrl,
-    token: row.instanceToken,
+    baseUrl: cfg.baseUrl,
+    token: decryptSecret(cfg.instanceToken),
   });
   return {
     ours: {
-      webhookUrl: row.webhookUrl,
-      webhookSecretPresent: !!row.webhookSecret,
-      webhookSynced: row.webhookSynced,
-      instanceId: row.instanceId,
-      baseUrl: row.baseUrl,
+      webhookUrl: cfg.webhookUrl,
+      webhookSecretPresent: !!cfg.webhookSecret,
+      webhookSynced: cfg.webhookSynced,
+      instanceId: cfg.instanceId,
+      baseUrl: cfg.baseUrl,
     },
     uazapi,
   };
 }
 
-/**
- * Diagnóstico — busca mensagens recentes direto da UazAPI (sem usar webhook).
- * Se a UazAPI tiver mensagens armazenadas mas webhook não disparou, isolou o bug.
- */
 export async function probeMessages(): Promise<{
   uazapi: Array<{ path: string; method: string; status: number; body: unknown }>;
 }> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
-  if (!row || !row.instanceToken) return { uazapi: [] };
+  const row = await loadDefaultRow();
+  if (!row) return { uazapi: [] };
+  const cfg = uazCfg(row);
+  if (!cfg.instanceToken) return { uazapi: [] };
   const { probeRecentMessages } = await import('./whatsapp/uazapi/instanceClient');
-  const uazapi = await probeRecentMessages({
-    baseUrl: row.baseUrl,
-    token: row.instanceToken,
-  });
-  return { uazapi };
+  return {
+    uazapi: await probeRecentMessages({
+      baseUrl: cfg.baseUrl,
+      token: decryptSecret(cfg.instanceToken),
+    }),
+  };
 }
 
-/**
- * Diagnóstico — auto-fire de um payload sintético na nossa própria URL de webhook.
- * Usa o secret correto. Permite validar TODO o pipeline de ingest sem depender da UazAPI.
- */
 export async function selfTestWebhook(): Promise<{
   posted: { url: string; bodyPreview: Record<string, unknown> };
   response: { status: number; body: unknown };
 }> {
-  const [row] = await db.select().from(whatsappInstance).limit(1);
-  if (!row) {
-    throw new HttpError(503, 'WhatsApp instance not configured');
-  }
-  const url = row.webhookUrl
+  const row = await loadDefaultRow();
+  if (!row) throw new HttpError(503, 'WhatsApp instance not configured');
+  const cfg = uazCfg(row);
+  const url = cfg.webhookUrl
     ?? `${(process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')}/api/whatsapp/webhook`;
-  const token = row.instanceToken ?? row.webhookSecret;
-  if (!token) {
-    throw new HttpError(503, 'No instance token or webhook secret available');
-  }
+  const tokenEnc = cfg.instanceToken ?? cfg.webhookSecret;
+  if (!tokenEnc) throw new HttpError(503, 'No instance token or webhook secret available');
+  const token = decryptSecret(tokenEnc);
 
   const fakeMsgId = `selftest-${Date.now()}`;
   const fakePhone = `5511${String(Date.now()).slice(-8)}`;
   const body: Record<string, unknown> = {
     EventType: 'messages',
-    instance: row.instanceId,
+    instance: cfg.instanceId,
     token,
     message: {
       messageid: fakeMsgId,
@@ -493,8 +443,5 @@ export async function selfTestWebhook(): Promise<{
   let respBody: unknown = text;
   try { respBody = JSON.parse(text); } catch { /* keep raw */ }
 
-  return {
-    posted: { url, bodyPreview: body },
-    response: { status: res.status, body: respBody },
-  };
+  return { posted: { url, bodyPreview: body }, response: { status: res.status, body: respBody } };
 }

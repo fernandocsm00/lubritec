@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { createUser, createWhatsappInstance } from './helpers';
+import { encryptSecret, decryptSecret } from '../lib/crypto';
 
 vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn(),
@@ -88,9 +89,15 @@ describe('POST /api/whatsapp-instance/connect', () => {
 
   it('idempotente: se já tem instanceId, reusa em vez de re-criar', async () => {
     await createWhatsappInstance({
-      instanceId: 'existing-inst',
-      instanceToken: 'tok',
-      webhookSecret: 'sec',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'existing-inst',
+        instanceToken: encryptSecret('tok'),
+        webhookSecret: encryptSecret('sec'),
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
 
     vi.mocked(setWebhook).mockResolvedValueOnce(undefined);
@@ -142,7 +149,8 @@ describe('POST /api/whatsapp-instance/connect', () => {
     expect(res.status).toBe(502);
 
     const [row] = await db.select().from(whatsappInstance);
-    expect(row.instanceId).toBe('new-inst-2');
-    expect(row.webhookSynced).toBe(false);
+    const cfg = row.providerConfig as Record<string, unknown>;
+    expect(cfg.instanceId).toBe('new-inst-2');
+    expect(cfg.webhookSynced).toBe(false);
   });
 });
