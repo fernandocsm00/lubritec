@@ -116,3 +116,85 @@ export function useSelfTest() {
       api<SelfTestResult>('/whatsapp-instance/self-test', { method: 'POST' }),
   });
 }
+
+import type {
+  InstanceListItem,
+  InstanceDetailResponse,
+  CreateInstanceRequest,
+} from './types';
+
+// ── Multi-instance ─────────────────────────────────────────────────────────
+
+const INSTANCES_KEY = ['whatsapp-instances'];
+
+export function useInstancesList() {
+  return useQuery({
+    queryKey: INSTANCES_KEY,
+    queryFn: () => api<{ items: InstanceListItem[] }>('/whatsapp/instances'),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useInstanceDetail(id: string | null) {
+  return useQuery({
+    queryKey: [...INSTANCES_KEY, id],
+    queryFn: () => api<InstanceDetailResponse>(`/whatsapp/instances/${id}`),
+    enabled: !!id,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      if (s === 'pairing') return 2_000;
+      if (s === 'connected') return 30_000;
+      return 5_000;
+    },
+  });
+}
+
+export function useCreateInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateInstanceRequest) =>
+      api<InstanceListItem>('/whatsapp/instances', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: INSTANCES_KEY }),
+  });
+}
+
+export function useUpdateInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      id: string;
+      patch: Partial<Pick<InstanceListItem, 'displayName' | 'isDefault' | 'isArchived'>>;
+    }) =>
+      api<InstanceListItem>(`/whatsapp/instances/${args.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(args.patch),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: INSTANCES_KEY }),
+  });
+}
+
+export function useDeleteInstanceById() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/whatsapp/instances/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: INSTANCES_KEY }),
+  });
+}
+
+export function useConnectInstanceById() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<InstanceDetailResponse>(`/whatsapp/instances/${id}/connect`, {
+        method: 'POST',
+      }),
+    onSuccess: (_d, id) => {
+      qc.invalidateQueries({ queryKey: INSTANCES_KEY });
+      qc.invalidateQueries({ queryKey: [...INSTANCES_KEY, id] });
+    },
+  });
+}
