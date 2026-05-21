@@ -78,9 +78,14 @@ export async function createLead(opts: {
 let _convPhoneSeq = 0;
 
 /**
- * Lazily-created default WhatsApp instance for tests that don't care which
- * instance a conversation belongs to. Always queries the DB (no module-level
- * caching) so it survives the beforeEach TRUNCATE in setup.ts.
+ * Auto-creates a default whatsapp_instance row if none exists, used as a
+ * fallback for createConversation/createMessage helpers.
+ *
+ * WARNING: tests that assert behavior specific to a particular instance MUST
+ * pass `instanceId` explicitly to createConversation/createMessage. Relying on
+ * this auto-creation can silently mask missing test setup (e.g., a test that
+ * intended to verify cross-instance isolation might still pass because both
+ * conversations land in the same auto-created instance).
  */
 async function getOrCreateDefaultInstance(): Promise<string> {
   const existing = await db.query.whatsappInstance.findFirst({

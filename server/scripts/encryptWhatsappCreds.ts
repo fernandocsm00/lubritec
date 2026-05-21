@@ -9,7 +9,7 @@
  */
 import 'dotenv/config';
 import { pool, SCHEMA_NAME } from '../db/client';
-import { encryptSecret, isEncrypted } from '../lib/crypto';
+import { encryptSecret } from '../lib/crypto';
 
 interface LegacyRow {
   id: string;
@@ -41,47 +41,63 @@ async function run() {
     return;
   }
 
-  console.log('Backfilling encrypted provider_config for whatsapp_instance rows...');
-  const { rows } = await pool.query<LegacyRow>(
-    `SELECT id, base_url, instance_id, instance_token, webhook_secret,
-            webhook_url, webhook_synced, provider_config
-     FROM whatsapp_instance`,
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  for (const r of rows) {
-    const cfg = r.provider_config ?? {};
-    if (cfg.instanceToken && isEncrypted(cfg.instanceToken as string)) {
-      console.log(`✓ ${r.id} (already migrated)`);
-      continue;
+    const { rows } = await client.query<LegacyRow>(
+      `SELECT id, base_url, instance_id, instance_token, webhook_secret,
+              webhook_url, webhook_synced, provider_config
+       FROM whatsapp_instance`,
+    );
+
+    for (const r of rows) {
+      const cfg = r.provider_config ?? {};
+      const alreadyMigrated =
+        cfg.baseUrl !== undefined ||
+        cfg.instanceToken !== undefined ||
+        cfg.webhookSecret !== undefined ||
+        cfg.webhookUrl !== undefined;
+      if (alreadyMigrated) {
+        console.log(`✓ ${r.id} (already migrated)`);
+        continue;
+      }
+
+      const next = {
+        baseUrl: r.base_url ?? 'https://api.uazapi.com',
+        instanceId: r.instance_id,
+        instanceToken: r.instance_token ? encryptSecret(r.instance_token) : null,
+        webhookSecret: r.webhook_secret ? encryptSecret(r.webhook_secret) : null,
+        webhookUrl: r.webhook_url,
+        webhookSynced: r.webhook_synced ?? false,
+      };
+
+      await client.query(
+        `UPDATE whatsapp_instance SET provider_config = $1::jsonb, updated_at = now() WHERE id = $2`,
+        [JSON.stringify(next), r.id],
+      );
+      console.log(`→ ${r.id} (encrypted)`);
     }
 
-    const next = {
-      baseUrl: r.base_url ?? 'https://api.uazapi.com',
-      instanceId: r.instance_id,
-      instanceToken: r.instance_token ? encryptSecret(r.instance_token) : null,
-      webhookSecret: r.webhook_secret ? encryptSecret(r.webhook_secret) : null,
-      webhookUrl: r.webhook_url,
-      webhookSynced: r.webhook_synced ?? false,
-    };
+    console.log('Dropping legacy plaintext columns...');
+    await client.query(`
+      ALTER TABLE whatsapp_instance
+        DROP COLUMN IF EXISTS base_url,
+        DROP COLUMN IF EXISTS instance_id,
+        DROP COLUMN IF EXISTS instance_token,
+        DROP COLUMN IF EXISTS webhook_secret,
+        DROP COLUMN IF EXISTS webhook_url,
+        DROP COLUMN IF EXISTS webhook_synced
+    `);
 
-    await pool.query(
-      `UPDATE whatsapp_instance SET provider_config = $1::jsonb, updated_at = now() WHERE id = $2`,
-      [JSON.stringify(next), r.id],
-    );
-    console.log(`→ ${r.id} (encrypted)`);
+    await client.query('COMMIT');
+    console.log('Done.');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  console.log('Dropping legacy plaintext columns...');
-  await pool.query(`
-    ALTER TABLE whatsapp_instance
-      DROP COLUMN IF EXISTS base_url,
-      DROP COLUMN IF EXISTS instance_id,
-      DROP COLUMN IF EXISTS instance_token,
-      DROP COLUMN IF EXISTS webhook_secret,
-      DROP COLUMN IF EXISTS webhook_url,
-      DROP COLUMN IF EXISTS webhook_synced
-  `);
-  console.log('Done.');
 }
 
 run()
