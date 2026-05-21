@@ -437,7 +437,7 @@ export async function whatsappStats(): Promise<DashboardWhatsappStats> {
   const [instRow] = await db
     .select({ lastStatus: whatsappInstance.lastStatus })
     .from(whatsappInstance)
-    .where(eq(whatsappInstance.singleton, true))
+    .where(eq(whatsappInstance.isDefault, true))
     .limit(1);
   const instanceConnected = instRow?.lastStatus === 'connected';
 

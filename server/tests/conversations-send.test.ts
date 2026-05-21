@@ -78,7 +78,7 @@ describe('POST /api/conversations/:id/messages', () => {
     const rows = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(rows).toHaveLength(1);
     expect(rows[0].sentByUserId).toBe(userId);
-    expect(rows[0].uazapiMsgId).toBe('uazapi-out-001');
+    expect(rows[0].providerMsgId).toBe('uazapi-out-001');
   });
 
   it('502 quando UazAPI falha — nada é persistido', async () => {

@@ -101,7 +101,7 @@ describe('POST /api/whatsapp/webhook', () => {
     expect(msgs[0].direction).toBe('in');
     expect(msgs[0].kind).toBe('text');
     expect(msgs[0].body).toMatch(/Civic/);
-    expect(msgs[0].uazapiMsgId).toBe('ABCD-1234-EFGH');
+    expect(msgs[0].providerMsgId).toBe('ABCD-1234-EFGH');
   });
 
   it('idempotência: webhook duplicado é no-op', async () => {
@@ -177,7 +177,7 @@ describe('POST /api/whatsapp/webhook', () => {
     expect(conv).toBeDefined();
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(msgs).toHaveLength(1);
-    expect(msgs[0].uazapiMsgId).toBe('UAZGO-MSG-001');
+    expect(msgs[0].providerMsgId).toBe('UAZGO-MSG-001');
     expect(msgs[0].kind).toBe('text');
     expect(msgs[0].body).toBe('oi tudo bem');
   });
@@ -198,7 +198,7 @@ describe('POST /api/whatsapp/webhook', () => {
         },
       });
     expect(res.status).toBe(200);
-    const all = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-MSG-OUT'));
+    const all = await db.select().from(messages).where(eq(messages.providerMsgId, 'UAZGO-MSG-OUT'));
     expect(all).toHaveLength(0);
   });
 
@@ -217,7 +217,7 @@ describe('POST /api/whatsapp/webhook', () => {
         },
       });
     expect(res.status).toBe(200);
-    const [m] = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-MSG-AUTH-HEADER'));
+    const [m] = await db.select().from(messages).where(eq(messages.providerMsgId, 'UAZGO-MSG-AUTH-HEADER'));
     expect(m).toBeDefined();
   });
 
@@ -236,7 +236,7 @@ describe('POST /api/whatsapp/webhook', () => {
         },
       });
     expect(res.status).toBe(200);
-    const [m] = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-MSG-AUTH-BODY'));
+    const [m] = await db.select().from(messages).where(eq(messages.providerMsgId, 'UAZGO-MSG-AUTH-BODY'));
     expect(m).toBeDefined();
   });
 
@@ -257,7 +257,7 @@ describe('POST /api/whatsapp/webhook', () => {
         },
       });
     expect(res.status).toBe(200);
-    const [m] = await db.select().from(messages).where(eq(messages.uazapiMsgId, 'UAZGO-IMG-001'));
+    const [m] = await db.select().from(messages).where(eq(messages.providerMsgId, 'UAZGO-IMG-001'));
     expect(m).toBeDefined();
     expect(m.kind).toBe('image');
     expect(m.mediaUrl).toBe('https://cdn.example.com/photo.jpg');

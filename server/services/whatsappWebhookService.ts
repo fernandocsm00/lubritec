@@ -1,13 +1,21 @@
 import { db } from '../db/client';
-import { conversations, messages, leads, orgSettings } from '../db/schema';
+import { conversations, messages, leads, orgSettings, whatsappInstance } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { InboundMessage } from '../lib/uazapiSchema';
 import type { ConversationQueue, LeadFlowStage } from '@shared/types';
 import { recordTransition } from './stageTransitions';
+import { HttpError } from '../middleware/errorHandler';
 
 function normalizePhone(raw: string): string {
   // Remove tudo que não é dígito. Funciona pra "+55 11 9...", "5511...@s.whatsapp.net", "5511...@c.us", etc.
   return raw.replace(/\D/g, '');
+}
+
+async function getDefaultInstanceId(): Promise<string> {
+  const [row] = await db.select({ id: whatsappInstance.id }).from(whatsappInstance)
+    .where(eq(whatsappInstance.isDefault, true)).limit(1);
+  if (!row) throw new HttpError(503, 'No default WhatsApp instance configured');
+  return row.id;
 }
 
 /**
@@ -24,11 +32,11 @@ export async function ingestInbound(
   m: InboundMessage,
   rawPayload: unknown,
 ): Promise<{ status: 'inserted' | 'duplicate' | 'ignored'; conversationId?: string; leadId?: string }> {
-  // Idempotência por uazapi_msg_id
+  // Idempotência por provider_msg_id
   const existing = await db
     .select({ id: messages.id })
     .from(messages)
-    .where(eq(messages.uazapiMsgId, m.id))
+    .where(eq(messages.providerMsgId, m.id))
     .limit(1);
   if (existing.length) return { status: 'duplicate' };
 
@@ -107,10 +115,12 @@ export async function ingestInbound(
 
     let conversationId: string;
     if (existingConv.length === 0) {
+      const instanceId = await getDefaultInstanceId();
       const [created] = await tx
         .insert(conversations)
         .values({
           phone,
+          instanceId,
           leadId,
           queue: initialQueue,
           status: 'aguardando_atendimento',
@@ -146,7 +156,8 @@ export async function ingestInbound(
       body: m.kind === 'text' ? m.text : null,
       mediaUrl: m.mediaUrl,
       mediaMime: m.mediaMime,
-      uazapiMsgId: m.id,
+      providerMsgId: m.id,
+      provider: 'uazapi',
       rawPayload: rawPayload as object,
       sentAt,
     });

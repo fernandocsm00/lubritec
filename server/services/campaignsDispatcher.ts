@@ -1,5 +1,5 @@
 ﻿import { db } from '../db/client';
-import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings } from '../db/schema';
+import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings, whatsappInstance } from '../db/schema';
 import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { uazapiClient } from './whatsapp/uazapi/client';
@@ -8,11 +8,19 @@ import { recordTransition } from './stageTransitions';
 import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 import { emitNotification } from './notifications';
 import type { ConversationQueue } from '@shared/types';
+import { HttpError } from '../middleware/errorHandler';
 
 let timer: NodeJS.Timeout | null = null;
 let isProcessing = false;
 
 const TICK_INTERVAL_MS = 60_000;
+
+async function getDefaultInstanceId(): Promise<string> {
+  const [row] = await db.select({ id: whatsappInstance.id }).from(whatsappInstance)
+    .where(eq(whatsappInstance.isDefault, true)).limit(1);
+  if (!row) throw new HttpError(503, 'No default WhatsApp instance configured');
+  return row.id;
+}
 
 export function startDispatcher() {
   if (timer) return;
@@ -189,7 +197,8 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
       mediaUrl: variant.mediaUrl ?? null,
       mediaMime: variant.mediaMime ?? null,
       sentByUserId: c.createdByUserId,
-      uazapiMsgId: resp.messageId,
+      providerMsgId: resp.messageId,
+      provider: 'uazapi',
       rawPayload: { ...(resp.rawPayload as object), variantBody: variant.body } as object,
       sentAt,
     }).returning();
@@ -253,8 +262,10 @@ async function getOrCreateConversationForCampaign(phone: string, leadId: string,
   if (existing) return existing;
 
   const queue = await defaultCampaignQueue();
+  const instanceId = await getDefaultInstanceId();
   const [created] = await db.insert(conversations).values({
     phone,
+    instanceId,
     leadId,
     queue,
     status: queue === 'ia' ? 'aguardando_atendimento' : 'em_atendimento',

@@ -197,7 +197,7 @@ describe('processInboundWithAi', () => {
     expect(msgs[0].direction).toBe('out');
     expect(msgs[0].body).toBe('Olá! Posso te ajudar. Qual o tamanho da sua frota?');
     expect(msgs[0].sentByUserId).toBeNull(); // null = enviado pela IA
-    expect(msgs[0].uazapiMsgId).toBe('uazapi-ai-001');
+    expect(msgs[0].providerMsgId).toBe('uazapi-ai-001');
   });
 
   it('quando Gemini retorna [QUALIFICADO], move conversa pra Comercial + lead pra qualified', async () => {

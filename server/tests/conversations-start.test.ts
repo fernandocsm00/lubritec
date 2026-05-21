@@ -92,7 +92,7 @@ describe('POST /api/conversations/start', () => {
 
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(msgs).toHaveLength(1);
-    expect(msgs[0].uazapiMsgId).toBe('uazapi-start-001');
+    expect(msgs[0].providerMsgId).toBe('uazapi-start-001');
   });
 
   it('200 reusa lead+conversa existentes quando já existem para o telefone', async () => {
