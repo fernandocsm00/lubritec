@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -12,7 +12,7 @@ import {
   deleteInstance,
   setWebhook,
   UazapiInstanceError,
-} from './uazapiInstanceClient';
+} from './whatsapp/uazapi/instanceClient';
 
 // ---------------------------------------------------------------------------
 // Loaders
@@ -414,7 +414,7 @@ export async function probeWebhook(): Promise<{
   if (!row || !row.instanceToken) {
     return { ours: null, uazapi: [] };
   }
-  const { probeWebhookConfig } = await import('./uazapiInstanceClient');
+  const { probeWebhookConfig } = await import('./whatsapp/uazapi/instanceClient');
   const uazapi = await probeWebhookConfig({
     baseUrl: row.baseUrl,
     token: row.instanceToken,
@@ -440,7 +440,7 @@ export async function probeMessages(): Promise<{
 }> {
   const [row] = await db.select().from(whatsappInstance).limit(1);
   if (!row || !row.instanceToken) return { uazapi: [] };
-  const { probeRecentMessages } = await import('./uazapiInstanceClient');
+  const { probeRecentMessages } = await import('./whatsapp/uazapi/instanceClient');
   const uazapi = await probeRecentMessages({
     baseUrl: row.baseUrl,
     token: row.instanceToken,

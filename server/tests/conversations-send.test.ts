@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { db } from '../db/client';
@@ -6,7 +6,7 @@ import { conversations, messages } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { createUser, createLead, createConversation } from './helpers';
 
-vi.mock('../services/uazapiClient', () => ({
+vi.mock('../services/whatsapp/uazapi/client', () => ({
   uazapiClient: {
     sendMessage: vi.fn(),
   },
@@ -15,7 +15,7 @@ vi.mock('../services/uazapiClient', () => ({
   },
 }));
 
-import { uazapiClient } from '../services/uazapiClient';
+import { uazapiClient } from '../services/whatsapp/uazapi/client';
 
 const app = createApp();
 

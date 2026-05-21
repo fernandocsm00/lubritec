@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { createUser, createWhatsappInstance } from './helpers';
 
-vi.mock('../services/uazapiInstanceClient', () => ({
+vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn(),
   getInstanceStatus: vi.fn(),
   logoutInstance: vi.fn(),
@@ -13,7 +13,7 @@ vi.mock('../services/uazapiInstanceClient', () => ({
     constructor(public status: number, public body: string) { super(`${status}`); }
   },
 }));
-import { getInstanceStatus } from '../services/uazapiInstanceClient';
+import { getInstanceStatus } from '../services/whatsapp/uazapi/instanceClient';
 
 const app = createApp();
 

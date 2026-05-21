@@ -1,4 +1,4 @@
-import { db } from '../db/client';
+﻿import { db } from '../db/client';
 import { conversations, messages, leads, users } from '../db/schema';
 import { eq, and, or, ilike, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
@@ -299,7 +299,7 @@ export async function markRead(
 // Send message
 // ---------------------------------------------------------------------------
 
-import { uazapiClient } from './uazapiClient';
+import { uazapiClient } from './whatsapp/uazapi/client';
 
 export interface SendInput {
   conversationId: string;

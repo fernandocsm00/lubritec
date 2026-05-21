@@ -1,8 +1,8 @@
-import { db } from '../db/client';
+﻿import { db } from '../db/client';
 import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings } from '../db/schema';
 import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
-import { uazapiClient } from './uazapiClient';
+import { uazapiClient } from './whatsapp/uazapi/client';
 import { isWithinDispatchWindow, pickVariant, sweepContinuousReenroll } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';

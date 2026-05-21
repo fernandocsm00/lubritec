@@ -1,6 +1,6 @@
 import type { MessageKind } from '@shared/types';
-import { loadSendConfig } from './whatsappInstanceService';
-import { retry } from '../lib/retry';
+import { loadSendConfig } from '../../whatsappInstanceService';
+import { retry } from '../../../lib/retry';
 
 export class UazapiError extends Error {
   constructor(public status: number, public body: string) {

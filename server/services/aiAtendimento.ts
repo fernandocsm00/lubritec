@@ -1,9 +1,9 @@
-import { db } from '../db/client';
+﻿import { db } from '../db/client';
 import { conversations, messages, leads } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
 import { recordAiCall } from './aiMetrics';
-import { uazapiClient } from './uazapiClient';
+import { uazapiClient } from './whatsapp/uazapi/client';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
 import { emitNotification } from './notifications';

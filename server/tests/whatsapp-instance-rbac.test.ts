@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { createUser, createWhatsappInstance } from './helpers';
 
-vi.mock('../services/uazapiInstanceClient', () => ({
+vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn().mockResolvedValue({ instanceId: 'x', rawPayload: {} }),
   getInstanceStatus: vi.fn().mockResolvedValue({
     status: 'disconnected', qrCode: null, phoneNumber: null, profileName: null, rawPayload: {},

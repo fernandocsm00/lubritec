@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { db } from '../db/client';
 import { campaigns, campaignRecipients } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -11,13 +11,13 @@ import {
   cancelCampaign,
 } from '../services/campaignsService';
 
-vi.mock('../services/uazapiClient', () => ({
+vi.mock('../services/whatsapp/uazapi/client', () => ({
   uazapiClient: { sendMessage: vi.fn() },
   UazapiError: class extends Error {
     constructor(public status: number, public body: string) { super(`${status}`); }
   },
 }));
-import { uazapiClient } from '../services/uazapiClient';
+import { uazapiClient } from '../services/whatsapp/uazapi/client';
 
 beforeEach(() => {
   vi.mocked(uazapiClient.sendMessage).mockReset();

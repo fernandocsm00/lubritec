@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { db } from '../db/client';
 import { campaignRecipients, campaigns } from '../db/schema';
 import {
@@ -213,7 +213,7 @@ describe('PublicCampaign.skippedByCooldown', () => {
 });
 
 import { tick } from '../services/campaignsDispatcher';
-import { uazapiClient } from '../services/uazapiClient';
+import { uazapiClient } from '../services/whatsapp/uazapi/client';
 import { vi } from 'vitest';
 
 describe('dispatcher + cooldown safety net', () => {
