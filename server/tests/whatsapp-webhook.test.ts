@@ -7,7 +7,7 @@ import { createApp } from '../app';
 import { db } from '../db/client';
 import { conversations, messages, leads } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createConversation, createLead } from './helpers';
+import { createConversation, createLead, createWhatsappInstance } from './helpers';
 
 const app = createApp();
 
@@ -22,8 +22,11 @@ const imageFixture = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'fixtures/uazapi-inbound-image.json'), 'utf8'),
 );
 
-beforeEach(() => {
+beforeEach(async () => {
   process.env.UAZAPI_WEBHOOK_SECRET = SECRET;
+  // whatsappWebhookService.getDefaultInstanceId() requires a default instance row.
+  // Each test runs in a clean DB, so we seed one here.
+  await createWhatsappInstance({ isDefault: true });
 });
 
 describe('POST /api/whatsapp/webhook', () => {

@@ -55,8 +55,8 @@ describe('dashboardService.whatsappStats', () => {
     let r = await whatsappStats();
     expect(r.instanceConnected).toBe(false);
 
-    // Create connected instance
-    await createWhatsappInstance({ lastStatus: 'connected' });
+    // Create connected default instance (dashboardService queries by is_default=true)
+    await createWhatsappInstance({ lastStatus: 'connected', isDefault: true });
     r = await whatsappStats();
     expect(r.instanceConnected).toBe(true);
   });
