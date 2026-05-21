@@ -269,6 +269,43 @@ export const PROVIDER_KINDS = ['uazapi', 'meta_cloud'] as const;
 export type ProviderKind = typeof PROVIDER_KINDS[number];
 
 // ---------------------------------------------------------------------------
+// WhatsApp multi-instance CRUD (Task 7)
+// ---------------------------------------------------------------------------
+
+export interface InstanceListItem {
+  id: string;
+  provider: ProviderKind;
+  displayName: string;
+  phoneNumber: string | null;
+  profileName: string | null;
+  isDefault: boolean;
+  isArchived: boolean;
+  lastStatus: string | null;
+  lastStatusAt: string | null;
+}
+
+export interface InstanceDetailResponse extends InstanceListItem {
+  status: 'disconnected' | 'pairing' | 'connected' | 'error';
+  qrCode: string | null;
+  // Provider-specific fields exposed (no secrets):
+  uazapi?: { baseUrl: string; webhookSynced: boolean; webhookUrl: string | null };
+  metaCloud?: { wabaId: string; phoneNumberId: string; webhookSubscribed: boolean };
+}
+
+export interface CreateInstanceRequest {
+  provider: ProviderKind;
+  displayName: string;
+  isDefault?: boolean;
+  uazapi?: { baseUrl?: string; adminToken?: string };
+  metaCloud?: {
+    wabaId: string;
+    phoneNumberId: string;
+    accessToken: string;
+    appSecret: string;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Mass Campaigns (sub-projeto 7)
 // ---------------------------------------------------------------------------
 
