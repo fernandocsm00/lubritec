@@ -2,7 +2,7 @@
 import { db } from '../db/client';
 import { campaigns, campaignRecipients } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createCampaign, createCampaignRecipient } from './helpers';
+import { createUser, createLead, createCampaign, createCampaignRecipient, createWhatsappInstance } from './helpers';
 import { processCampaign, tick, interpolatePlaceholders } from '../services/campaignsDispatcher';
 import {
   dispatchCampaign,
@@ -19,8 +19,9 @@ vi.mock('../services/whatsapp/uazapi/client', () => ({
 }));
 import { uazapiClient } from '../services/whatsapp/uazapi/client';
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.mocked(uazapiClient.sendMessage).mockReset();
+  await createWhatsappInstance({ isDefault: true, displayName: 'Test default' });
 });
 
 describe('interpolatePlaceholders', () => {

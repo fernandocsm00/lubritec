@@ -4,7 +4,7 @@ import { createApp } from '../app';
 import { db } from '../db/client';
 import { conversations, leads, messages } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createConversation } from './helpers';
+import { createUser, createLead, createConversation, createWhatsappInstance } from './helpers';
 
 vi.mock('../services/whatsapp/uazapi/client', () => ({
   uazapiClient: {
@@ -25,8 +25,9 @@ async function loginAs(email = 'r@x.com', password = 'pw12345') {
   return { token: res.body.accessToken as string, userId: res.body.user.id as string };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.mocked(uazapiClient.sendMessage).mockReset();
+  await createWhatsappInstance({ isDefault: true, displayName: 'Test default' });
 });
 
 describe('POST /api/conversations/start', () => {
