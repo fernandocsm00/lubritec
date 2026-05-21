@@ -29,9 +29,11 @@ describe('crypto', () => {
 
   it('rejects tampered ciphertext', () => {
     const enc = encryptSecret('original');
-    const parts = enc.split(':');
-    const tampered = parts[3] === 'A' ? 'B' + parts[3].slice(1) : 'A' + parts[3].slice(1);
-    const bad = `${parts[0]}:${parts[1]}:${parts[2]}:${tampered}`;
+    const [, ivB64, tagB64, ctB64] = enc.split(':');
+    const ctBuf = Buffer.from(ctB64, 'base64');
+    // Flip the last byte
+    ctBuf[ctBuf.length - 1] = ctBuf[ctBuf.length - 1] ^ 0xff;
+    const bad = `enc:${ivB64}:${tagB64}:${ctBuf.toString('base64')}`;
     expect(() => decryptSecret(bad)).toThrow();
   });
 
@@ -43,5 +45,26 @@ describe('crypto', () => {
 
   it('decryptSecret returns plain value when string is not encrypted (backward-compat)', () => {
     expect(decryptSecret('plain-token')).toBe('plain-token');
+  });
+
+  it('_resetKeyCache forces re-read of WHATSAPP_CREDENTIALS_KEY', async () => {
+    // Import dynamically to also get the reset helper
+    const { encryptSecret: enc, decryptSecret: dec, _resetKeyCache } = await import('../lib/crypto');
+
+    // Encrypt with current key
+    const ct1 = enc('payload');
+    expect(dec(ct1)).toBe('payload');
+
+    // Swap key and reset cache
+    const newKey = randomBytes(32).toString('hex');
+    process.env.WHATSAPP_CREDENTIALS_KEY = newKey;
+    _resetKeyCache();
+
+    // Old ciphertext must NOT decrypt under new key (auth tag fails)
+    expect(() => dec(ct1)).toThrow();
+
+    // But round-trip with the new key works
+    const ct2 = enc('payload');
+    expect(dec(ct2)).toBe('payload');
   });
 });

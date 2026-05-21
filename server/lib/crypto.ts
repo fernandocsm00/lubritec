@@ -20,9 +20,6 @@ function loadKey(): Buffer {
     throw new Error('WHATSAPP_CREDENTIALS_KEY must be 64 hex chars (32 bytes).');
   }
   cachedKey = Buffer.from(hex, 'hex');
-  if (cachedKey.length !== KEY_BYTES) {
-    throw new Error(`Key must be ${KEY_BYTES} bytes, got ${cachedKey.length}`);
-  }
   return cachedKey;
 }
 
@@ -51,6 +48,9 @@ export function encryptSecret(plaintext: string): string {
  */
 export function decryptSecret(value: string): string {
   if (!isEncrypted(value)) return value;
+  // Safe because base64 alphabet has no colons. If you ever change the
+  // serialization format to one that can contain ':', switch to indexOf-based
+  // parsing or the destructuring will silently break.
   const [, ivB64, tagB64, ctB64] = value.split(':');
   if (!ivB64 || !tagB64 || !ctB64) {
     throw new Error('Malformed encrypted value');
