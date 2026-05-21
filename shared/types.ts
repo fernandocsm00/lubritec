@@ -262,6 +262,13 @@ export interface InstanceStatusResponse {
 }
 
 // ---------------------------------------------------------------------------
+// WhatsApp provider kinds (multi-provider support)
+// ---------------------------------------------------------------------------
+
+export const PROVIDER_KINDS = ['uazapi', 'meta_cloud'] as const;
+export type ProviderKind = typeof PROVIDER_KINDS[number];
+
+// ---------------------------------------------------------------------------
 // Mass Campaigns (sub-projeto 7)
 // ---------------------------------------------------------------------------
 

@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate": "tsx server/scripts/migrate.ts",
+    "migrate:encrypt-creds": "tsx server/scripts/encryptWhatsappCreds.ts",
     "seed": "tsx server/scripts/seed.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down"
