@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { aiCallLogs } from '../db/schema';
-import { sql, and, gte, lt } from 'drizzle-orm';
+import { sql, and, gte, lt, eq, isNotNull } from 'drizzle-orm';
 
 /**
  * Preços oficiais Gemini Flash 2.5 (USD por milhão de tokens).
@@ -51,6 +51,29 @@ export async function recordAiCall(input: RecordAiCallInput): Promise<void> {
   } catch (err) {
     console.warn('[ai-metrics] recordAiCall failed:', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Conta quantas chamadas com erro foram registradas pra uma conversa nos
+ * ultimos `windowMs` milissegundos. Usado pelo fallback de fallback IA:
+ * se 3+ erros consecutivos, conversa eh movida pra recepcao humana.
+ */
+export async function countRecentErrorsForConversation(
+  conversationId: string,
+  windowMs: number,
+): Promise<number> {
+  const since = new Date(Date.now() - windowMs);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(aiCallLogs)
+    .where(
+      and(
+        eq(aiCallLogs.conversationId, conversationId),
+        isNotNull(aiCallLogs.error),
+        gte(aiCallLogs.createdAt, since),
+      ),
+    );
+  return Number(row?.n ?? 0);
 }
 
 export interface AiMetricsSummary {

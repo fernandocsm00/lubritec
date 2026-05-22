@@ -2,7 +2,7 @@
 import { conversations, messages, leads } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
-import { recordAiCall } from './aiMetrics';
+import { recordAiCall, countRecentErrorsForConversation } from './aiMetrics';
 import { uazapiClient } from './whatsapp/uazapi/client';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
@@ -312,6 +312,38 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       qualified: false,
       error: errorMessage,
     });
+
+    // Fallback: se 3+ erros nessa conversa nos ultimos 30min, IA esta "presa"
+    // (rate limit / API key invalida / prompt rejeitado por safety etc).
+    // Move pra recepcao humana e notifica admin pra investigacao manual.
+    const errCount = await countRecentErrorsForConversation(input.conversationId, 30 * 60 * 1000);
+    if (errCount >= 3) {
+      await db
+        .update(conversations)
+        .set({
+          queue: 'recepcao',
+          status: 'aguardando_atendimento',
+          pendingAiResponse: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(conversations.id, input.conversationId));
+
+      await emitNotification({
+        toRoles: ['admin'],
+        kind: 'ai_fallback',
+        title: 'IA falhou repetidamente — conversa movida pra Recepção',
+        body: `${leadRow?.name ?? input.phone}: ${errCount} erros consecutivos. Último: ${errorMessage.slice(0, 200)}`,
+        actionUrl: `/whatsapp?queue=recepcao&statusChips=aguardando,em_atendimento&assignment=all&lead=${input.leadId}`,
+        metadata: {
+          conversationId: input.conversationId,
+          leadId: input.leadId,
+          errorCount: errCount,
+          lastError: errorMessage,
+        },
+      });
+      console.warn(`[ai-fallback] conv ${input.conversationId}: ${errCount} erros -> movida pra recepcao`);
+    }
+
     return { status: 'gemini_error', errorMessage };
   }
   const rawReply = geminiResult.text;
