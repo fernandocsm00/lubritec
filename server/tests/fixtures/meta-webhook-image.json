@@ -1,0 +1,29 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "WABA_ID_123",
+    "changes": [{
+      "field": "messages",
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {
+          "phone_number_id": "PHONE_NUMBER_ID_456",
+          "display_phone_number": "+55 11 99999-0000"
+        },
+        "contacts": [{ "profile": { "name": "João" }, "wa_id": "5511988887777" }],
+        "messages": [{
+          "from": "5511988887777",
+          "id": "wamid.HBgNIMG999",
+          "timestamp": "1729200500",
+          "type": "image",
+          "image": {
+            "id": "MEDIA_ID_789",
+            "mime_type": "image/jpeg",
+            "sha256": "abc",
+            "caption": "Olha o motor"
+          }
+        }]
+      }
+    }]
+  }]
+}
