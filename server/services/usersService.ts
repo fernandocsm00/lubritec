@@ -73,6 +73,7 @@ export async function listUsers() {
     name: u.name,
     role: u.role,
     is_active: u.isActive,
+    phone: u.phone ?? null,
     last_login_at: u.lastLoginAt?.toISOString() ?? null,
     created_at: u.createdAt.toISOString(),
     has_password: u.passwordHash !== null,
@@ -122,6 +123,7 @@ export async function updateUser(input: {
   name?: string;
   role?: Role;
   is_active?: boolean;
+  phone?: string | null;
 }) {
   const isSelf = input.id === input.actorId;
   const touchesProtected = input.role !== undefined || input.is_active !== undefined;
@@ -138,6 +140,7 @@ export async function updateUser(input: {
     if (input.name !== undefined) patch.name = input.name;
     if (input.role !== undefined) patch.role = input.role;
     if (input.is_active !== undefined) patch.isActive = input.is_active;
+    if (input.phone !== undefined) patch.phone = input.phone;
     const [updated] = await tx
       .update(users)
       .set(patch)
@@ -162,6 +165,7 @@ export async function updateUser(input: {
     name: result.name,
     role: result.role,
     is_active: result.isActive,
+    phone: result.phone ?? null,
     last_login_at: result.lastLoginAt?.toISOString() ?? null,
     created_at: result.createdAt.toISOString(),
     has_password: result.passwordHash !== null,

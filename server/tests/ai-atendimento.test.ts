@@ -57,6 +57,9 @@ async function enableAi() {
     aiTone: 'profissional',
     aiObjective: 'Qualificar leads e agendar contato comercial.',
     aiQualifyWhen: 'cliente pediu orçamento ou quer agendar visita',
+    // ai24x7=true nos testes pra evitar flakiness por causa do horario comercial.
+    // Testes especificos de business-hours setam ai24x7=false explicitamente.
+    ai24x7: true,
   }).where(eq(orgSettings.singleton, true));
 }
 
@@ -97,6 +100,36 @@ describe('parseQualificationTag', () => {
     const r = parseQualificationTag('Pode me contar mais?');
     expect(r.qualification).toBeNull();
     expect(r.cleanReply).toBe('Pode me contar mais?');
+    expect(r.summary).toBeNull();
+  });
+
+  it('extrai bloco [RESUMO] junto com [QUALIFICADO]', () => {
+    const r = parseQualificationTag(
+      'Perfeito, vou conectar você com o comercial.\n' +
+      '[RESUMO]\n' +
+      'Frota: 8 caminhões.\n' +
+      'Interesse: contrato mensal de troca.\n' +
+      'Próximo passo: enviar orçamento.\n' +
+      '[/RESUMO]\n' +
+      '[QUALIFICADO]'
+    );
+    expect(r.qualification).toBe('qualified');
+    expect(r.cleanReply).toBe('Perfeito, vou conectar você com o comercial.');
+    expect(r.summary).toContain('Frota: 8 caminhões');
+    expect(r.summary).toContain('Próximo passo');
+  });
+
+  it('summary=null se IA esquece o bloco RESUMO (degrada gracioso)', () => {
+    const r = parseQualificationTag('Vou te conectar. [QUALIFICADO]');
+    expect(r.qualification).toBe('qualified');
+    expect(r.cleanReply).toBe('Vou te conectar.');
+    expect(r.summary).toBeNull();
+  });
+
+  it('NAO_QUALIFICADO nao traz summary', () => {
+    const r = parseQualificationTag('Sem problemas, obrigado pelo contato. [NAO_QUALIFICADO]');
+    expect(r.qualification).toBe('not_qualified');
+    expect(r.summary).toBeNull();
   });
 });
 

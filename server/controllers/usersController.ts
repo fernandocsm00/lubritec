@@ -25,6 +25,9 @@ export const updateUserSchema = z
     name: z.string().min(2).max(100).optional(),
     role: z.enum(ROLES).optional(),
     is_active: z.boolean().optional(),
+    // WhatsApp pessoal do vendedor (pra receber notif de handoff da IA).
+    // Aceita digits + caracteres comuns; string vazia = clear (null).
+    phone: z.string().max(40).nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field required',
@@ -93,6 +96,8 @@ export async function updateHandler(req: Request, res: Response, next: NextFunct
       name: body.name,
       role: body.role,
       is_active: body.is_active,
+      // Empty string → null pra "remover telefone cadastrado".
+      phone: body.phone === '' ? null : body.phone,
     });
     res.json(updated);
   } catch (e) {

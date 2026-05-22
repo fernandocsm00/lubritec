@@ -7,11 +7,15 @@ import { uazapiClient } from './whatsapp/uazapi/client';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
 import { emitNotification } from './notifications';
+import { notifyVendoresWhatsapp } from './whatsappNotify';
+import { isAiBusinessHours } from '../lib/businessHours';
 import type { OrgSettings } from '../db/schema';
 
 const MAX_HISTORY = 20;
 const QUALIFY_TAG = '[QUALIFICADO]';
 const NOT_QUALIFY_TAG = '[NAO_QUALIFICADO]';
+const SUMMARY_OPEN = '[RESUMO]';
+const SUMMARY_CLOSE = '[/RESUMO]';
 
 /**
  * Detecta se o cliente quer falar com humano. Porta a heurística do APP_ORION.
@@ -69,14 +73,26 @@ export function buildSystemPrompt(s: OrgSettings, leadName: string | null, leadP
   sections.push('', '# QUALIFICACAO DO LEAD');
   sections.push(`Considere o lead QUALIFICADO quando: ${s.aiQualifyWhen.trim()}.`);
   sections.push(
-    `Quando voce julgar o lead QUALIFICADO, termine sua resposta com a tag exata ${QUALIFY_TAG} ` +
-    `(em uma linha separada no final). Essa tag NAO sera mostrada ao cliente — e usada internamente ` +
-    `pra mover a conversa pro time comercial.`,
+    `Quando voce julgar o lead QUALIFICADO, termine sua resposta com:`,
   );
   sections.push(
-    `Se o lead for claramente fora do perfil ou nao tiver interesse, termine com ${NOT_QUALIFY_TAG} (mesmo padrao).`,
+    `${SUMMARY_OPEN}\n` +
+    `Resumo em 2-3 linhas curtas pro vendedor:\n` +
+    `- O que o cliente quer / produto de interesse\n` +
+    `- Sinais de qualificacao captados (frota, urgencia, decisor, etc., se houver)\n` +
+    `- Proximo passo sugerido (ex: enviar orcamento, agendar visita)\n` +
+    `${SUMMARY_CLOSE}\n` +
+    `${QUALIFY_TAG}`,
   );
-  sections.push('Se ainda nao deu pra decidir, NAO inclua nenhuma tag — continue a conversa normalmente.');
+  sections.push(
+    `O bloco ${SUMMARY_OPEN}...${SUMMARY_CLOSE} e a tag NAO serao mostrados ao cliente — sao usados ` +
+    `internamente pra mover a conversa pro time comercial com contexto.`,
+  );
+  sections.push(
+    `Se o lead for claramente fora do perfil ou nao tiver interesse, termine apenas com ${NOT_QUALIFY_TAG} ` +
+    `(sem bloco RESUMO).`,
+  );
+  sections.push('Se ainda nao deu pra decidir, NAO inclua tag nem RESUMO — continue a conversa normalmente.');
 
   if (leadName || leadPhone) {
     sections.push('', '# CONTEXTO DO LEAD ATUAL');
@@ -88,27 +104,47 @@ export function buildSystemPrompt(s: OrgSettings, leadName: string | null, leadP
 }
 
 /**
- * Parse das tags de qualificacao no final da resposta. Retorna a resposta
- * limpa (sem a tag) + decisao.
+ * Parse das tags de qualificacao + bloco RESUMO no final da resposta.
+ * Retorna a resposta limpa (sem tag/resumo) + decisao + summary opcional.
+ *
+ * Ordem esperada no fim da resposta:
+ *   [RESUMO]
+ *   ...texto...
+ *   [/RESUMO]
+ *   [QUALIFICADO]
+ *
+ * Se a IA desobedecer (sem bloco RESUMO mas com QUALIFICADO), degrada com
+ * summary = null — handoff continua, vendedor recebe notificacao generica.
  */
 export function parseQualificationTag(reply: string): {
   cleanReply: string;
   qualification: 'qualified' | 'not_qualified' | null;
+  summary: string | null;
 } {
-  const trimmed = reply.trim();
-  if (trimmed.endsWith(QUALIFY_TAG)) {
-    return {
-      cleanReply: trimmed.slice(0, -QUALIFY_TAG.length).trim(),
-      qualification: 'qualified',
-    };
+  let working = reply.trim();
+  let qualification: 'qualified' | 'not_qualified' | null = null;
+
+  if (working.endsWith(QUALIFY_TAG)) {
+    qualification = 'qualified';
+    working = working.slice(0, -QUALIFY_TAG.length).trim();
+  } else if (working.endsWith(NOT_QUALIFY_TAG)) {
+    qualification = 'not_qualified';
+    working = working.slice(0, -NOT_QUALIFY_TAG.length).trim();
   }
-  if (trimmed.endsWith(NOT_QUALIFY_TAG)) {
-    return {
-      cleanReply: trimmed.slice(0, -NOT_QUALIFY_TAG.length).trim(),
-      qualification: 'not_qualified',
-    };
+
+  // Extrai bloco [RESUMO]...[/RESUMO] se presente. Procura no FIM da resposta
+  // (depois do strip da tag de qualificacao) pra evitar capturar exemplos no meio.
+  let summary: string | null = null;
+  const closeIdx = working.lastIndexOf(SUMMARY_CLOSE);
+  if (closeIdx !== -1) {
+    const openIdx = working.lastIndexOf(SUMMARY_OPEN, closeIdx);
+    if (openIdx !== -1 && openIdx < closeIdx) {
+      summary = working.slice(openIdx + SUMMARY_OPEN.length, closeIdx).trim();
+      working = (working.slice(0, openIdx) + working.slice(closeIdx + SUMMARY_CLOSE.length)).trim();
+    }
   }
-  return { cleanReply: trimmed, qualification: null };
+
+  return { cleanReply: working, qualification, summary };
 }
 
 interface ProcessInput {
@@ -126,7 +162,8 @@ export interface ProcessResult {
     | 'ai_disabled'
     | 'queue_not_ia'
     | 'gemini_error'
-    | 'send_error';
+    | 'send_error'
+    | 'after_hours_queued';
   reply?: string;
   errorMessage?: string;
 }
@@ -150,12 +187,60 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
 
   // Confirma que a conversa ainda esta na fila IA (humano pode ter movido).
   const [conv] = await db
-    .select({ id: conversations.id, queue: conversations.queue, status: conversations.status })
+    .select({
+      id: conversations.id,
+      queue: conversations.queue,
+      status: conversations.status,
+      pendingAiResponse: conversations.pendingAiResponse,
+    })
     .from(conversations)
     .where(eq(conversations.id, input.conversationId))
     .limit(1);
   if (!conv || conv.queue !== 'ia') {
     return { status: 'queue_not_ia' };
+  }
+
+  // Gate de horario comercial. Pedido de humano (abaixo) tem prioridade sobre
+  // o gate — se o cliente quer atendente, transfere sempre, inclusive fora do horario.
+  // Se fora do horario, marca conversa como pending e envia mensagem fora-do-horario
+  // (se configurada). Worker reprocessa quando expediente abrir.
+  const hoursCheck = isAiBusinessHours(new Date(), settings);
+  if (!hoursCheck.ok && !detectHumanIntent(input.inboundText)) {
+    const afterMsg = settings.aiAfterHoursMsg.trim();
+    const alreadyPending = conv.pendingAiResponse === true;
+    let sentReply: string | undefined;
+    // Se ja esta pending, nao manda aiAfterHoursMsg de novo — evita duplicar
+    // quando cliente envia varias mensagens em sequencia fora do horario.
+    if (afterMsg && !alreadyPending) {
+      try {
+        const sendResp = await uazapiClient.sendMessage({
+          to: input.phone,
+          kind: 'text',
+          text: afterMsg,
+        });
+        await db.insert(messages).values({
+          conversationId: input.conversationId,
+          direction: 'out',
+          kind: 'text',
+          body: afterMsg,
+          sentByUserId: null,
+          providerMsgId: sendResp.messageId,
+          provider: 'uazapi',
+          rawPayload: { ai: true, afterHours: true, raw: sendResp.rawPayload } as object,
+          sentAt: new Date(),
+        });
+        sentReply = afterMsg;
+      } catch (err) {
+        console.warn('[ai-after-hours] failed to send afterHoursMsg:', err instanceof Error ? err.message : err);
+      }
+    }
+    if (!alreadyPending) {
+      await db
+        .update(conversations)
+        .set({ pendingAiResponse: true, updatedAt: new Date() })
+        .where(eq(conversations.id, input.conversationId));
+    }
+    return { status: 'after_hours_queued', reply: sentReply };
   }
 
   // Escape humano: detecta "quero falar com atendente" e desliga IA pra essa conversa.
@@ -231,7 +316,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   }
   const rawReply = geminiResult.text;
 
-  const { cleanReply, qualification } = parseQualificationTag(rawReply);
+  const { cleanReply, qualification, summary } = parseQualificationTag(rawReply);
   if (!cleanReply) {
     return { status: 'gemini_error', errorMessage: 'reply was empty after stripping tag' };
   }
@@ -269,11 +354,14 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     const convPatch: Partial<typeof conversations.$inferInsert> = {
       lastMessageAt: sentAt,
       updatedAt: new Date(),
+      pendingAiResponse: false,
     };
 
     if (qualification === 'qualified') {
       convPatch.queue = 'comercial';
       convPatch.status = 'aguardando_atendimento';
+      convPatch.enteredQueueAt = sentAt;
+      convPatch.handoffSummary = summary;
     }
 
     await tx.update(conversations).set(convPatch).where(eq(conversations.id, input.conversationId));
@@ -296,13 +384,26 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       metadata: { conversationId: input.conversationId },
     });
     // Notifica admins/comerciais que tem lead qualificado pra atender.
+    const inboxUrl = `/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`;
     await emitNotification({
       toRoles: ['admin', 'comercial'],
       kind: 'lead_qualified',
       title: 'Lead qualificado pela IA',
-      body: `${leadRow?.name ?? input.phone} foi qualificado e enviado pra fila Comercial.`,
-      actionUrl: `/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`,
+      body: summary
+        ? `${leadRow?.name ?? input.phone}: ${summary.split('\n')[0]}`
+        : `${leadRow?.name ?? input.phone} foi qualificado e enviado pra fila Comercial.`,
+      actionUrl: inboxUrl,
       metadata: { leadId: input.leadId, conversationId: input.conversationId },
+    });
+
+    // E1: ping no WhatsApp pessoal de cada vendedor (best-effort, nunca quebra fluxo).
+    notifyVendoresWhatsapp({
+      leadName: leadRow?.name ?? input.phone,
+      leadPhone: input.phone,
+      summary,
+      inboxRelativeUrl: inboxUrl,
+    }).catch((err) => {
+      console.warn('[ai-handoff] notifyVendoresWhatsapp failed:', err instanceof Error ? err.message : err);
     });
   }
   await recordAiCall({

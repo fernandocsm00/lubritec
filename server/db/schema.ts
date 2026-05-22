@@ -41,6 +41,7 @@ export const users = pgTable(
     passwordHash: text('password_hash'),
     role: text('role', { enum: ROLES }).notNull(),
     isActive: boolean('is_active').notNull().default(true),
+    phone: text('phone'),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -104,6 +105,9 @@ export const conversations = pgTable('conversations', {
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
   lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
   unreadCount: integer('unread_count').notNull().default(0),
+  handoffSummary: text('handoff_summary'),
+  enteredQueueAt: timestamp('entered_queue_at', { withTimezone: true }),
+  pendingAiResponse: boolean('pending_ai_response').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -220,6 +224,10 @@ export const orgSettings = pgTable(
     aiQualifyWhen: text('ai_qualify_when').notNull().default('cliente demonstrou interesse claro em comprar, pediu orçamento, ou solicitou agendamento'),
     aiBusinessHours: text('ai_business_hours').notNull().default(''),
     aiAfterHoursMsg: text('ai_after_hours_msg').notNull().default(''),
+    aiBusinessHoursStart: integer('ai_business_hours_start').notNull().default(8),
+    aiBusinessHoursEnd: integer('ai_business_hours_end').notNull().default(18),
+    aiBusinessHoursDays: text('ai_business_hours_days').notNull().default('1,2,3,4,5'),
+    ai24x7: boolean('ai_24x7').notNull().default(false),
     // ── Janela de envio (auto-disparo Sprint 4) ──
     dispatchStartHour: integer('dispatch_start_hour').notNull().default(8),
     dispatchEndHour: integer('dispatch_end_hour').notNull().default(18),
@@ -374,6 +382,19 @@ export const leadStageTransitions = pgTable('lead_stage_transitions', {
 
 export type LeadStageTransition = typeof leadStageTransitions.$inferSelect;
 export type NewLeadStageTransition = typeof leadStageTransitions.$inferInsert;
+
+// ── Conversation SLA events (Sprint IA Enhances) ─────────────────
+// Tracking de escalonamento SLA da fila Comercial.
+// level: 1=5min, 2=10min, 3=30min. Unique index garante uma vez por nível.
+export const conversationSlaEvents = pgTable('conversation_sla_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  conversationId: uuid('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  level: integer('level').notNull(),
+  firedAt: timestamp('fired_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ConversationSlaEvent = typeof conversationSlaEvents.$inferSelect;
+export type NewConversationSlaEvent = typeof conversationSlaEvents.$inferInsert;
 
 export const projectFeedback = pgTable(
   'project_feedback',

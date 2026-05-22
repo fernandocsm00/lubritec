@@ -49,6 +49,36 @@ export function mediaPlaceholder(kind: MessageKind): string {
   }
 }
 
+/**
+ * Calcula minutos esperando na fila desde `enteredQueueAt`.
+ * Retorna `null` se a coluna nao existir (conversa historica anterior ao backfill).
+ */
+export function waitingMinutes(enteredQueueAt: string | null): number | null {
+  if (!enteredQueueAt) return null;
+  const ms = Date.now() - new Date(enteredQueueAt).getTime();
+  return Math.max(0, Math.floor(ms / 60000));
+}
+
+/**
+ * Codificacao de cor por tempo de espera na fila Comercial.
+ * <5min cinza (ok), 5-10min amarelo (atencao), >10min vermelho (escalado).
+ */
+export function waitingToneClasses(minutes: number | null): string {
+  if (minutes == null) return 'text-muted-foreground';
+  if (minutes < 5) return 'text-muted-foreground';
+  if (minutes < 10) return 'text-lc-amber';
+  return 'text-destructive font-medium';
+}
+
+export function formatWaitingLabel(minutes: number | null): string {
+  if (minutes == null) return '';
+  if (minutes < 1) return 'agora';
+  if (minutes < 60) return `${minutes}min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h${m}min`;
+}
+
 export function avatarInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 0 || parts[0] === '') return '?';

@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { Bot } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,6 +48,7 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
   }
 
   return (
+    <>
     <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-background">
       <Avatar className="h-9 w-9">
         <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-primary-foreground text-sm">
@@ -87,5 +89,21 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
         )}
       </div>
     </div>
+    {conv.handoffSummary && (
+      <div className="px-4 py-2.5 border-b border-primary/30 bg-primary/5">
+        <div className="flex items-start gap-2">
+          <Bot className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] uppercase tracking-wide text-primary font-semibold mb-0.5">
+              Resumo da IA
+            </div>
+            <div className="text-xs text-foreground/90 whitespace-pre-line">
+              {conv.handoffSummary}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

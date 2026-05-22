@@ -30,6 +30,7 @@ const listQuery = z.object({
   status: csvOf(CONVERSATION_STATUSES).optional(),
   expired24h: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   noResponse: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  onlyWithInbound: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   origin: csvOf(ORIGIN_KINDS).optional(),
   campaignId: z.string().uuid().optional(),
   assignment: z.enum(['mine', 'unassigned', 'all']).optional(),
@@ -170,5 +171,18 @@ export async function startConversationHandler(req: Request, res: Response, next
       mediaMime: data.mediaMime ?? null,
     });
     res.json(result);
+  } catch (e) { next(e); }
+}
+
+export async function uploadMediaHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Invalid or missing file' });
+    }
+    const filename = req.file.filename;
+    res.json({
+      mediaUrl: `/uploads/conversations/${filename}`,
+      mediaMime: req.file.mimetype,
+    });
   } catch (e) { next(e); }
 }

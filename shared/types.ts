@@ -22,6 +22,7 @@ export interface AdminUser {
   name: string;
   role: Role;
   is_active: boolean;
+  phone: string | null;
   last_login_at: string | null;
   created_at: string;
   has_password: boolean;
@@ -122,6 +123,9 @@ export interface PublicConversation {
   lastInboundAt: string | null;
   unreadCount: number;
   isExpired24h: boolean;
+  enteredQueueAt: string | null;
+  hasAiHandoff: boolean;
+  handoffSummary: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,6 +162,13 @@ export interface ConversationFilters {
   status?: ConversationStatus[];
   expired24h?: boolean;
   noResponse?: boolean;
+  /**
+   * Quando true, esconde conversas que sao so disparos de campanha sem
+   * resposta (origin=campaign + lastInboundAt IS NULL). Default no backend
+   * eh false (sem mudanca de comportamento); frontend Inbox passa true por
+   * padrao pra nao poluir com disparos orfaos.
+   */
+  onlyWithInbound?: boolean;
   origin?: OriginKind[];
   campaignId?: string;
   assignment?: 'mine' | 'unassigned' | 'all';
@@ -418,6 +429,11 @@ export interface PublicOrgSettings {
   aiQualifyWhen: string;
   aiBusinessHours: string;
   aiAfterHoursMsg: string;
+  // ── Horário comercial da IA (Sprint IA Enhances E3) ──
+  aiBusinessHoursStart: number;
+  aiBusinessHoursEnd: number;
+  aiBusinessHoursDays: string;  // CSV de ISO weekdays (1=seg .. 7=dom)
+  ai24x7: boolean;
   // ── Janela de envio (Sprint 4 — auto-disparo respeitando horário comercial) ──
   dispatchStartHour: number;
   dispatchEndHour: number;
@@ -441,6 +457,10 @@ export interface UpdateOrgSettingsInput {
   aiQualifyWhen?: string;
   aiBusinessHours?: string;
   aiAfterHoursMsg?: string;
+  aiBusinessHoursStart?: number;
+  aiBusinessHoursEnd?: number;
+  aiBusinessHoursDays?: string;
+  ai24x7?: boolean;
   dispatchStartHour?: number;
   dispatchEndHour?: number;
   dispatchSkipWeekends?: boolean;
@@ -606,6 +626,7 @@ export const NOTIFICATION_KINDS = [
   'dispatch_failed',        // disparo de campanha falhou
   'whatsapp_disconnected',  // instância UazAPI caiu
   'campaign_cooldown_high',
+  'sla_escalation',         // lead aguardando atendimento na fila Comercial além do SLA
   'system',                 // generic
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
