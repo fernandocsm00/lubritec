@@ -108,24 +108,28 @@ function NowCard({ whatsapp, attention }: { whatsapp: DashboardWhatsappStats | u
           label="Aguardando atendimento"
           value={queuePending}
           tone={queuePending === 0 ? 'muted' : queuePending < 3 ? 'amber' : 'destructive'}
+          href="/whatsapp?queue=comercial&statusChips=aguardando&assignment=all&origin=organic,campaign"
         />
         <NowRow
           icon={<MessageSquare className="h-4 w-4" />}
           label="Conversas em fila"
           value={inQueue}
           tone={inQueue === 0 ? 'muted' : 'foreground'}
+          href="/whatsapp?statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign"
         />
         <NowRow
           icon={<Bot className="h-4 w-4" />}
           label="Sem resposta hoje"
           value={noResponseToday}
           tone={noResponseToday === 0 ? 'muted' : 'amber'}
+          href="/whatsapp?statusChips=sem_retorno&assignment=all&origin=organic,campaign"
         />
         <NowRow
           icon={<Users className="h-4 w-4" />}
           label="Expiradas 24h"
           value={expired24h}
           tone={expired24h === 0 ? 'muted' : 'destructive'}
+          href="/whatsapp?statusChips=expirada&assignment=all&origin=organic,campaign"
         />
       </div>
     </div>
@@ -137,11 +141,13 @@ function NowRow({
   label,
   value,
   tone,
+  href,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number;
   tone: 'muted' | 'foreground' | 'amber' | 'destructive';
+  href?: string;
 }) {
   const tones = {
     muted: 'text-muted-foreground',
@@ -149,13 +155,33 @@ function NowRow({
     amber: 'text-amber-600 dark:text-amber-400 font-semibold',
     destructive: 'text-destructive font-semibold',
   };
-  return (
-    <div className="flex items-center justify-between gap-2">
+
+  const inner = (
+    <>
       <span className="flex items-center gap-2 text-sm text-muted-foreground">
         {icon}
         {label}
       </span>
       <span className={`text-2xl font-bold tabular-nums ${tones[tone]}`}>{value}</span>
+    </>
+  );
+
+  // Quando ha href E o valor eh > 0, vira um link clicavel pra Inbox filtrada.
+  // Valor zero nao linka -- nao tem o que ver e visualmente parece "morto".
+  if (href && value > 0) {
+    return (
+      <Link
+        to={href}
+        className="flex items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md hover:bg-muted/50 transition-colors group"
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      {inner}
     </div>
   );
 }
