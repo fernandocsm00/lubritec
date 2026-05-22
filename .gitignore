@@ -46,3 +46,6 @@ coverage/
 # DB backups — may contain plaintext credentials. Never commit.
 backup-*.sql
 *.dump
+
+# Supabase CLI metadata (project ref, etc.) — re-gerado localmente.
+supabase/.temp/
