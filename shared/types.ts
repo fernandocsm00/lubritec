@@ -353,6 +353,19 @@ export interface CampaignDryRunResponse {
     recentOutbound: number;
     pendingOtherCampaign: number;
   };
+  /**
+   * Lista de leadIds de TODOS os elegiveis (nao so a pagina atual).
+   * Usado pelo frontend pra "marcar/desmarcar todos" sem ter que buscar
+   * todas as paginas. Cap em 10000 — acima disso, omitido (cliente pode
+   * pedir "desmarcar todos" so dentro da pagina visivel).
+   */
+  eligibleIds: string[];
+  /** Numero da pagina atual (1-indexed). */
+  page: number;
+  /** Tamanho da pagina. */
+  pageSize: number;
+  /** Total de paginas (max(1, ceil(totalComPhone / pageSize))). */
+  pageCount: number;
   preview: Array<{
     leadId: string;
     name: string;

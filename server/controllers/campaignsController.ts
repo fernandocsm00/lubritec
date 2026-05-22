@@ -186,10 +186,17 @@ export async function getHandler(req: Request, res: Response, next: NextFunction
   } catch (e) { next(e); }
 }
 
+const dryRunOptsSchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+});
+
 export async function dryRunHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const filters = audienceFilterSchema.parse(req.body);
-    res.json(await dryRun(filters));
+    // page/pageSize vem do query string (opcional, default page=1, pageSize=50).
+    const opts = dryRunOptsSchema.parse(req.query);
+    res.json(await dryRun(filters, opts));
   } catch (e) { next(e); }
 }
 
