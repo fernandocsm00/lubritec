@@ -1,21 +1,40 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 import { useAuthStore } from '@/features/auth/store';
 import type { DashboardView, DashboardPeriod, DashboardSummary } from '@shared/types';
-import { useDashboardSummary, useDashboardAttention, useDashboardWhatsapp, useDashboardMacroFunnel, useDashboardAiMetrics } from './hooks';
+import {
+  useDashboardSummary,
+  useDashboardAttention,
+  useDashboardWhatsapp,
+  useDashboardMacroFunnel,
+} from './hooks';
 import { ViewToggle } from './components/ViewToggle';
 import { PeriodPicker } from './components/PeriodPicker';
 import { BlockSkeleton } from './components/BlockSkeleton';
 import { BlockError } from './components/BlockError';
-import { KpiRow } from './components/KpiRow';
-import { AttentionList } from './components/AttentionList';
-import { FunnelChart } from './components/FunnelChart';
-import { MacroFunnel } from './components/MacroFunnel';
-import { AiMetricsCard } from './components/AiMetricsCard';
-import { PipelineOpen } from './components/PipelineOpen';
-import { WhatsappStats } from './components/WhatsappStats';
+import { StatusRibbon } from './components/StatusRibbon';
+import { OperationsHero } from './components/OperationsHero';
+import { BigFunnelChart } from './components/BigFunnelChart';
 import { Leaderboard } from './components/Leaderboard';
 import { RecentActivities } from './components/RecentActivities';
 import { RefreshCcw } from 'lucide-react';
+
+/**
+ * Dashboard reformulado pra leitura DIARIA visual (feedback Lubritec maio/26):
+ * "menos numerico, mais visual, bate o olho e entende como esta indo".
+ *
+ * Hierarquia:
+ *  1. StatusRibbon — semaforo da operacao (verde/amarelo/vermelho)
+ *  2. OperationsHero — vendas mes + meta + "agora" (fila/ia/etc)
+ *  3. BigFunnelChart — funil horizontal proporcional com maior drop-off
+ *     destacado (admin only)
+ *  4. Leaderboard / RecentActivities — split por view (org/me)
+ *
+ * Movidos pra rota secundaria /dashboard/detalhes (ainda nao implementada):
+ * KpiRow detalhado, FunnelChart pequeno, PipelineOpen, WhatsappStats,
+ * AiMetricsCard, AttentionList textual. Estao acessiveis via "Ver detalhes".
+ */
 
 function RightSection({ view, summary }: { view: DashboardView; summary: DashboardSummary | undefined }) {
   if (!summary) return <BlockSkeleton height={200} />;
@@ -29,22 +48,17 @@ export default function DashboardPage() {
 
   const [view, setView] = useState<DashboardView>(isAdmin ? 'org' : 'me');
   const [period, setPeriod] = useState<DashboardPeriod>('month');
-  // Range customizado pro macro funnel (precedência sobre o period).
-  const [funnelCustomFrom, setFunnelCustomFrom] = useState<string>('');
-  const [funnelCustomTo, setFunnelCustomTo] = useState<string>('');
-  const useCustomRange = !!funnelCustomFrom && !!funnelCustomTo;
 
-  const summary   = useDashboardSummary(view, period);
+  const summary = useDashboardSummary(view, period);
   const attention = useDashboardAttention(view);
-  const whatsapp  = useDashboardWhatsapp(view === 'org');
-  // Macro funnel: visão organizacional do fluxo macro (admin only no backend).
-  const funnelArgs = useCustomRange
-    ? { from: new Date(funnelCustomFrom).toISOString(), to: new Date(funnelCustomTo).toISOString() }
-    : { period };
-  const macroFunnel = useDashboardMacroFunnel(funnelArgs, isAdmin && view === 'org');
-  const aiMetrics = useDashboardAiMetrics(funnelArgs, isAdmin && view === 'org');
+  const whatsapp = useDashboardWhatsapp(view === 'org');
+  const macroFunnel = useDashboardMacroFunnel({ period }, isAdmin && view === 'org');
 
-  const isRefreshing = summary.isFetching || attention.isFetching || (view === 'org' && whatsapp.isFetching) || macroFunnel.isFetching;
+  const isRefreshing =
+    summary.isFetching ||
+    attention.isFetching ||
+    (view === 'org' && whatsapp.isFetching) ||
+    macroFunnel.isFetching;
 
   function refreshAll() {
     summary.refetch();
@@ -54,13 +68,18 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-end justify-between gap-4">
+    <div className="flex flex-col gap-5 p-6">
+      {/* Cabecalho compacto: controles, sem titulo redundante */}
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           {isAdmin && <ViewToggle value={view} onChange={setView} />}
-          {!isAdmin && <h1 className="text-xl font-semibold tracking-tight text-lc-ink">Meu pipeline</h1>}
+          {!isAdmin && (
+            <h1 className="text-xl font-semibold tracking-tight text-lc-ink">
+              Meu pipeline
+            </h1>
+          )}
         </div>
-        <div className="flex items-end gap-3">
+        <div className="flex items-center gap-2">
           <PeriodPicker value={period} onChange={setPeriod} />
           <button
             type="button"
@@ -74,116 +93,60 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI ROW */}
-      <section>
-        {summary.isLoading && !summary.data ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => <BlockSkeleton key={i} height={130} />)}
-          </div>
-        ) : summary.error ? (
-          <BlockError onRetry={() => summary.refetch()} />
-        ) : summary.data ? (
-          <KpiRow data={summary.data} view={view} period={period} />
-        ) : null}
-      </section>
+      {/* 1. Status Ribbon */}
+      <StatusRibbon
+        attention={attention.data}
+        whatsapp={whatsapp.data}
+        currentMonthSales={summary.data?.goal?.currentMonthSales ?? summary.data?.kpis.sales.value}
+      />
 
-      {/* ATENÇÃO */}
-      <section>
-        <h2 className="mb-2 text-xs uppercase tracking-wider text-slate-500">Atenção</h2>
-        {attention.isLoading && !attention.data ? (
-          <BlockSkeleton height={220} />
-        ) : attention.error ? (
-          <BlockError onRetry={() => attention.refetch()} />
-        ) : attention.data ? (
-          <AttentionList data={attention.data} />
-        ) : null}
-      </section>
+      {/* 2. Hero — vendas + agora */}
+      {summary.isLoading && !summary.data ? (
+        <BlockSkeleton height={200} />
+      ) : summary.error ? (
+        <BlockError onRetry={() => summary.refetch()} />
+      ) : (
+        <OperationsHero
+          kpis={summary.data?.kpis}
+          goal={summary.data?.goal}
+          whatsapp={whatsapp.data}
+          attention={attention.data}
+        />
+      )}
 
-      {/* FUNIL MACRO (visão completa do fluxo end-to-end — admin/org only) */}
+      {/* 3. Big Funnel — visualizacao principal pro gestor (admin/org only) */}
       {isAdmin && view === 'org' && (
-        <section>
-          <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
-            <span className="text-xs uppercase tracking-wider text-slate-500">Funil de leads</span>
-            <div className="flex items-center gap-2 text-xs">
-              <label className="text-muted-foreground">Período personalizado:</label>
-              <input
-                type="date"
-                value={funnelCustomFrom}
-                onChange={(e) => setFunnelCustomFrom(e.target.value)}
-                className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-1 text-xs"
-              />
-              <span className="text-muted-foreground">→</span>
-              <input
-                type="date"
-                value={funnelCustomTo}
-                onChange={(e) => setFunnelCustomTo(e.target.value)}
-                className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-1 text-xs"
-              />
-              {useCustomRange && (
-                <button
-                  type="button"
-                  onClick={() => { setFunnelCustomFrom(''); setFunnelCustomTo(''); }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline"
-                >
-                  limpar
-                </button>
-              )}
-            </div>
-          </div>
+        <>
           {macroFunnel.error ? (
             <BlockError onRetry={() => macroFunnel.refetch()} />
           ) : macroFunnel.data ? (
-            <MacroFunnel data={macroFunnel.data} />
+            <BigFunnelChart data={macroFunnel.data} />
           ) : (
             <BlockSkeleton height={400} />
           )}
-        </section>
+        </>
       )}
 
-      {/* MÉTRICAS DE IA (admin/org only — usa o mesmo período do funil) */}
-      {isAdmin && view === 'org' && (
-        <section>
-          {aiMetrics.error ? (
-            <BlockError onRetry={() => aiMetrics.refetch()} />
-          ) : aiMetrics.data ? (
-            <AiMetricsCard data={aiMetrics.data} />
-          ) : (
-            <BlockSkeleton height={200} />
-          )}
-        </section>
-      )}
-
-      {/* FUNIL DE VENDAS + PIPELINE */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {summary.error ? (
-          <>
-            <BlockError onRetry={() => summary.refetch()} />
-            <BlockError onRetry={() => summary.refetch()} />
-          </>
-        ) : summary.data ? (
-          <>
-            <FunnelChart funnel={summary.data.funnel} />
-            <PipelineOpen data={summary.data.pipelineOpen} />
-          </>
-        ) : (
-          <>
-            <BlockSkeleton height={300} />
-            <BlockSkeleton height={300} />
-          </>
-        )}
-      </section>
-
-      {/* WHATSAPP + LEADERBOARD/RECENTES */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {view === 'org' && (
-          whatsapp.data
-            ? <WhatsappStats data={whatsapp.data} />
-            : whatsapp.error
-              ? <BlockError onRetry={() => whatsapp.refetch()} />
-              : <BlockSkeleton height={200} />
-        )}
+      {/* 4. Split: Leaderboard ou Atividades recentes */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <RightSection view={view} summary={summary.data} />
-      </section>
+        {/* Lado direito: link pra detalhes operacionais (KPIs detalhados,
+            pipeline aberto, WhatsApp stats, IA metricas, atencao textual) */}
+        {isAdmin && view === 'org' && (
+          <Link
+            to="/dashboard/detalhes"
+            className="rounded-xl border border-dashed border-border bg-card hover:bg-muted/30 transition-colors p-6 flex items-center justify-between text-sm group"
+          >
+            <div>
+              <div className="font-semibold mb-1">Ver detalhes operacionais</div>
+              <div className="text-xs text-muted-foreground">
+                KPIs detalhados, pipeline aberto, WhatsApp stats, métricas da IA, alertas.
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground group-hover:translate-x-1 transition-all" />
+          </Link>
+        )}
+      </div>
     </div>
   );
 }
