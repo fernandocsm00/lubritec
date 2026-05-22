@@ -53,10 +53,24 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
   const ids = allRows.map((r) => r.leadId);
   const { eligible, blocked } = await filterEligibleLeads(ids, {});
 
+  // Mapa leadId -> reason pra anotar no preview.
+  const blockReasonByLead = new Map<string, 'recent_outbound' | 'pending_other_campaign'>();
+  for (const b of blocked) {
+    blockReasonByLead.set(b.leadId, b.reason);
+  }
+
+  // Preview agora inclui BLOQUEADOS junto com elegiveis -- usuario precisa ver
+  // quem nao vai receber (e por que) antes de confirmar a campanha. Ordena
+  // elegiveis primeiro pra nao "esconder" no fim da lista limitada.
   const eligibleSet = new Set(eligible);
-  const previewRows = allRows
-    .filter((r) => eligibleSet.has(r.leadId))
+  const previewRows = [...allRows]
     .filter((r): r is typeof r & { phone: string } => r.phone !== null)
+    .sort((a, b) => {
+      const aBlocked = !eligibleSet.has(a.leadId);
+      const bBlocked = !eligibleSet.has(b.leadId);
+      if (aBlocked === bBlocked) return 0;
+      return aBlocked ? 1 : -1; // elegiveis primeiro
+    })
     .slice(0, PREVIEW_LIMIT);
 
   const blockedCounts = blocked.reduce(
@@ -78,6 +92,7 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
       phone: r.phone,
       cnpj: r.cnpj,
       createdAt: r.createdAt.toISOString(),
+      blockReason: blockReasonByLead.get(r.leadId) ?? null,
     })),
   };
 }
