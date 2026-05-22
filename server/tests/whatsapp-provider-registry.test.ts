@@ -63,8 +63,21 @@ describe('providerRegistry', () => {
     await expect(resolveDefaultProvider()).rejects.toBeInstanceOf(HttpError);
   });
 
-  it('rejects meta_cloud provider as not yet implemented', async () => {
-    const row = await createWhatsappInstance({ provider: 'meta_cloud', displayName: 'Meta' });
-    await expect(resolveProvider(row.id)).rejects.toThrow(/meta_cloud|not yet/i);
+  it('resolves MetaCloudProvider for a meta_cloud instance', async () => {
+    const { encryptSecret } = await import('../lib/crypto');
+    const { MetaCloudProvider } = await import('../services/whatsapp/metaCloud/provider');
+    const row = await createWhatsappInstance({
+      provider: 'meta_cloud',
+      displayName: 'Meta',
+      providerConfig: {
+        wabaId: 'waba-x', phoneNumberId: 'pn-x',
+        accessToken: encryptSecret('token'), appSecret: encryptSecret('secret'),
+        webhookVerifyToken: 'verify-abc-very-long-string', webhookSubscribed: false,
+      },
+    });
+    const p = await resolveProvider(row.id);
+    expect(p).toBeInstanceOf(MetaCloudProvider);
+    expect(p.kind).toBe('meta_cloud');
+    expect(p.instanceId).toBe(row.id);
   });
 });
