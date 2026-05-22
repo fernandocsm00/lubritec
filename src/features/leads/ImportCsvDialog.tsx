@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Upload, X } from 'lucide-react';
 import {
@@ -29,7 +30,13 @@ export function ImportCsvDialog({
     try {
       const r = await importMut.mutateAsync(file);
       setReport(r);
-      toast.success(`Import concluído: ${r.inserted} novos, ${r.updated} atualizados.`);
+      // Mensagem reforca que validacao CNPJ continua acontecendo, agora em background
+      // — usuario pode acompanhar leads com problemas pelo filtro em /cadastros.
+      toast.success(
+        `Import concluído: ${r.inserted} novos, ${r.updated} atualizados.\n` +
+        `Validação de CNPJ na Receita Federal rolando em background — leads com problema aparecem em "Com problemas" no filtro.`,
+        { duration: 8_000 },
+      );
     } catch (e) {
       const msg = e instanceof Error ? translateError(e.message) : 'Erro ao importar.';
       toast.error(msg);
@@ -100,7 +107,10 @@ export function ImportCsvDialog({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Colunas reconhecidas: <strong>nome, telefone, cnpj</strong> (obrigatórios), email, observacoes. Tamanho máx: 5MB. Cada CNPJ é validado na Receita Federal via BrasilAPI — limite de 200 linhas por importação.
+              Colunas reconhecidas: <strong>nome, cnpj</strong> (obrigatórios), telefone, email, observacoes. Tamanho máx: 5MB.
+              <br />
+              A validação de CNPJ na Receita Federal acontece em background após o import (não bloqueia mais a importação).
+              Leads com CNPJ inativo ou inexistente aparecem com badge em <Link to="/cadastros" className="underline text-primary">Cadastros</Link>.
             </p>
           </div>
         ) : (
@@ -124,6 +134,16 @@ export function ImportCsvDialog({
                   Baixar rejeitados (CSV)
                 </Button>
               </>
+            )}
+            {report.inserted > 0 && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+                ℹ️ Validação de CNPJ rolando em background. Acompanhe leads
+                com problemas (CNPJ inativo / não encontrado / sem telefone)
+                em{' '}
+                <Link to="/cadastros?withIssues=true" className="underline font-medium">
+                  Cadastros &rsaquo; Com problemas
+                </Link>.
+              </div>
             )}
           </div>
         )}

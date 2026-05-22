@@ -33,6 +33,7 @@ export default function CadastrosPage() {
   const [source, setSource] = useState<LeadSource | 'all'>('all');
   const [flowStage, setFlowStage] = useState<LeadFlowStage | 'all'>(initialFlowStage);
   const [pipeline, setPipeline] = useState<'yes' | 'no' | 'all'>('all');
+  const [withIssues, setWithIssues] = useState<boolean>(searchParams.get('withIssues') === 'true');
   const [sort, setSort] = useState<NonNullable<ListParams['sort']>>('created_at');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -48,6 +49,7 @@ export default function CadastrosPage() {
     source: source === 'all' ? undefined : source,
     flowStage: flowStage === 'all' ? undefined : flowStage,
     pipeline: pipeline === 'all' ? undefined : pipeline,
+    withIssues: withIssues || undefined,
     sort,
     order,
     page,
@@ -55,17 +57,21 @@ export default function CadastrosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, source, flowStage, pipeline]);
+  }, [debouncedQ, status, source, flowStage, pipeline, withIssues]);
 
-  // Sincroniza flowStage de volta na URL (assim refresh preserva o filtro).
+  // Sincroniza flowStage e withIssues na URL (refresh preserva o filtro,
+  // e deep-link de toasts do import consegue trazer o usuario direto pra
+  // visao "com problemas").
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     if (flowStage === 'all') next.delete('flowStage');
     else next.set('flowStage', flowStage);
+    if (withIssues) next.set('withIssues', 'true');
+    else next.delete('withIssues');
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [flowStage, searchParams, setSearchParams]);
+  }, [flowStage, withIssues, searchParams, setSearchParams]);
 
   const { data, isLoading } = useLeads(params);
 
@@ -110,11 +116,13 @@ export default function CadastrosPage() {
         source={source}
         flowStage={flowStage}
         pipeline={pipeline}
+        withIssues={withIssues}
         onQChange={setQ}
         onStatusChange={setStatus}
         onSourceChange={setSource}
         onFlowStageChange={setFlowStage}
         onPipelineChange={setPipeline}
+        onWithIssuesChange={setWithIssues}
       />
 
       <LeadsTable

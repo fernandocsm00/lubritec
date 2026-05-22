@@ -2,7 +2,7 @@ import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -15,7 +15,18 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, '');
 }
 
-function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): PublicLead {
+function toPublic(row: typeof leads.$inferSelect & {
+  hasDeal?: boolean;
+  lastEnrichmentResult?: LeadEnrichmentResult | string | null;
+}): PublicLead {
+  // Defensivo: result_status no DB pode ter strings antigas/desconhecidas;
+  // so retornamos os valores que o tipo conhece, resto vira null.
+  const known: ReadonlyArray<LeadEnrichmentResult> = [
+    'phone_found', 'phone_not_in_brasilapi', 'cnpj_not_found', 'cnpj_inactive', 'api_error',
+  ];
+  const result = row.lastEnrichmentResult && known.includes(row.lastEnrichmentResult as LeadEnrichmentResult)
+    ? (row.lastEnrichmentResult as LeadEnrichmentResult)
+    : null;
   return {
     id: row.id,
     name: row.name,
@@ -27,6 +38,7 @@ function toPublic(row: typeof leads.$inferSelect & { hasDeal?: boolean }): Publi
     source: row.source,
     flowStage: row.flowStage,
     hasDeal: row.hasDeal ?? false,
+    lastEnrichmentResult: result,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -267,12 +279,29 @@ const SORT_COLUMNS: Record<SortKey, AnyColumn> = {
   created_at: leads.createdAt,
 };
 
+// Subquery que pega o result_status do enriquecimento MAIS RECENTE pra cada
+// lead. Usada tanto no SELECT (pra mostrar badge na tabela) quanto no WHERE
+// (filtro "com problemas"). Reuso evita codigo duplicado.
+const LATEST_ENRICHMENT_RESULT_SQL = sql<string | null>`(
+  SELECT ejl.result_status FROM enrichment_job_leads ejl
+  WHERE ejl.lead_id = ${leads.id}
+    AND ejl.processed_at IS NOT NULL
+  ORDER BY ejl.processed_at DESC
+  LIMIT 1
+)`;
+
+// Issues: estados problematicos que o usuario quer revisar.
+// phone_found NAO eh issue. phone_not_in_brasilapi e api_error sao "soft"
+// (lead ainda util), mas vale mostrar.
+const ISSUE_STATUSES = ['cnpj_inactive', 'cnpj_not_found', 'phone_not_in_brasilapi', 'api_error'] as const;
+
 export async function listLeads(params: {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
   flowStage?: LeadFlowStage;
   pipeline?: 'yes' | 'no';
+  withIssues?: boolean;
   sort?: SortKey;
   order?: 'asc' | 'desc';
   page?: number;
@@ -291,6 +320,11 @@ export async function listLeads(params: {
   }
   if (params.pipeline === 'no') {
     conditions.push(sql`NOT EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`);
+  }
+  if (params.withIssues) {
+    // Filtra leads cujo enriquecimento mais recente foi um dos status problematicos.
+    const issuesArr = ISSUE_STATUSES.map((s) => `'${s}'`).join(',');
+    conditions.push(sql`(${LATEST_ENRICHMENT_RESULT_SQL}) IN (${sql.raw(issuesArr)})`);
   }
   if (params.q) {
     const escaped = params.q.replace(/[%_\\]/g, '\\$&');
@@ -313,6 +347,7 @@ export async function listLeads(params: {
     .select({
       lead: leads,
       hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`,
+      lastEnrichmentResult: LATEST_ENRICHMENT_RESULT_SQL,
     })
     .from(leads)
     .where(where)
@@ -320,5 +355,14 @@ export async function listLeads(params: {
     .limit(PAGE_SIZE)
     .offset((page - 1) * PAGE_SIZE);
 
-  return { items: rows.map((r) => toPublic({ ...r.lead, hasDeal: Boolean(r.hasDeal) })), total, page, pageSize: PAGE_SIZE };
+  return {
+    items: rows.map((r) => toPublic({
+      ...r.lead,
+      hasDeal: Boolean(r.hasDeal),
+      lastEnrichmentResult: r.lastEnrichmentResult,
+    })),
+    total,
+    page,
+    pageSize: PAGE_SIZE,
+  };
 }

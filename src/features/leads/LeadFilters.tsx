@@ -14,11 +14,13 @@ interface Props {
   source: LeadSource | 'all';
   flowStage: LeadFlowStage | 'all';
   pipeline: 'yes' | 'no' | 'all';
+  withIssues: boolean;
   onQChange: (v: string) => void;
   onStatusChange: (v: LeadStatus | 'all') => void;
   onSourceChange: (v: LeadSource | 'all') => void;
   onFlowStageChange: (v: LeadFlowStage | 'all') => void;
   onPipelineChange: (v: 'yes' | 'no' | 'all') => void;
+  onWithIssuesChange: (v: boolean) => void;
 }
 
 export function LeadFilters({
@@ -27,11 +29,13 @@ export function LeadFilters({
   source,
   flowStage,
   pipeline,
+  withIssues,
   onQChange,
   onStatusChange,
   onSourceChange,
   onFlowStageChange,
   onPipelineChange,
+  onWithIssuesChange,
 }: Props) {
   return (
     <div className="flex flex-wrap gap-3 items-center">
@@ -80,6 +84,18 @@ export function LeadFilters({
           <SelectItem value="no">Sem pipeline</SelectItem>
         </SelectContent>
       </Select>
+      <button
+        type="button"
+        onClick={() => onWithIssuesChange(!withIssues)}
+        className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
+          withIssues
+            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40'
+            : 'border-border text-muted-foreground hover:bg-muted/50'
+        }`}
+        title="Mostra leads cujo enriquecimento BrasilAPI mais recente teve problema (CNPJ inativo, não encontrado, sem telefone, etc.)"
+      >
+        {withIssues ? '⚠ Com problemas (filtrado)' : '⚠ Com problemas'}
+      </button>
     </div>
   );
 }
