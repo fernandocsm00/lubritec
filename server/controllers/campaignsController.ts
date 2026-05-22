@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { CAMPAIGN_STATUSES, LEAD_STATUSES, LEAD_SOURCES } from '../../shared/types';
+import { CAMPAIGN_STATUSES, LEAD_STATUSES, LEAD_SOURCES, type CampaignHsmVariable } from '../../shared/types';
 import {
   listCampaigns,
   getCampaignById,
@@ -31,11 +31,20 @@ const listQuery = z.object({
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });
 
+const hsmVariableSchema = z.object({
+  index: z.number().int().min(1),
+  source: z.enum(['static', 'lead_field']),
+  value: z.string(),
+});
+
 const createBody = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional(),
+  instanceId: z.string().min(1, 'instanceId is required'),
   templateId: z.string().uuid().nullable().optional(),
-  messageBody: z.string().min(1).max(4000),
+  hsmTemplateId: z.string().uuid().nullable().optional(),
+  hsmVariables: z.array(hsmVariableSchema).optional(),
+  messageBody: z.string().min(0).max(4000).optional(),
   mediaUrl: z.string().nullable().optional(),
   mediaMime: z.string().max(60).nullable().optional(),
   audienceFilter: audienceFilterSchema,
@@ -77,8 +86,11 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
     const created = await createCampaign({
       name: data.name,
       description: data.description ?? null,
+      instanceId: data.instanceId,
       templateId: data.templateId ?? null,
-      messageBody: data.messageBody,
+      hsmTemplateId: data.hsmTemplateId ?? null,
+      hsmVariables: (data.hsmVariables ?? []) as CampaignHsmVariable[],
+      messageBody: data.messageBody ?? '',
       mediaUrl: data.mediaUrl ?? null,
       mediaMime: data.mediaMime ?? null,
       audienceFilter: data.audienceFilter,
@@ -86,7 +98,7 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
       ratePerMinute: data.ratePerMinute,
       createdByUserId: req.user!.userId,
     });
-    res.json(created);
+    res.status(201).json(created);
   } catch (e) { next(e); }
 }
 

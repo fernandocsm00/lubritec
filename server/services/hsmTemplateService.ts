@@ -10,7 +10,43 @@ import {
   deleteTemplateOnMeta,
 } from './whatsapp/metaCloud/templates';
 import { MetaGraphError } from './whatsapp/metaCloud/client';
-import type { HsmComponent, HsmStatus, HsmCategory } from '@shared/types';
+import type { HsmComponent, HsmStatus, HsmCategory, CampaignHsmVariable } from '@shared/types';
+
+// ── Variable resolution ─────────────────────────────────────────────────────
+
+export interface ResolveContext {
+  lead: {
+    name?: string | null;
+    phone?: string | null;
+    cnpj?: string | null;
+    email?: string | null;
+    notes?: string | null;
+    [key: string]: unknown;
+  };
+}
+
+export function resolveHsmVariables(
+  mapping: CampaignHsmVariable[],
+  ctx: ResolveContext,
+): Array<{ index: number; value: string }> {
+  return mapping.map((v) => {
+    if (v.source === 'static') return { index: v.index, value: v.value };
+    // lead_field — look up field on lead
+    const fieldValue = ctx.lead[v.value];
+    return { index: v.index, value: String(fieldValue ?? '') };
+  });
+}
+
+/** Count unique {{N}} placeholders in the BODY component of an HSM template. */
+export function countBodyVariables(components: HsmComponent[]): number {
+  for (const c of components) {
+    if (c.type === 'BODY') {
+      const matches = c.text.match(/\{\{\d+\}\}/g);
+      return matches ? new Set(matches).size : 0;
+    }
+  }
+  return 0;
+}
 
 export interface CreateLocalInput {
   instanceId: string;
@@ -20,16 +56,6 @@ export interface CreateLocalInput {
   category: HsmCategory;
   components: HsmComponent[];
   submitNow: boolean;
-}
-
-function countVariables(components: HsmComponent[]): number {
-  for (const c of components) {
-    if (c.type === 'BODY') {
-      const matches = c.text.match(/\{\{\d+\}\}/g);
-      return matches ? new Set(matches).size : 0;
-    }
-  }
-  return 0;
 }
 
 async function loadMetaCfg(instanceId: string) {
@@ -46,7 +72,7 @@ export async function createTemplate(input: CreateLocalInput) {
   if (!/^[a-z0-9_]+$/.test(input.name)) {
     throw new HttpError(422, 'name must be snake_case (lowercase + digits + underscore)');
   }
-  const variableCount = countVariables(input.components);
+  const variableCount = countBodyVariables(input.components);
 
   let metaTemplateId: string | null = null;
   let status: HsmStatus = 'DRAFT';
@@ -88,6 +114,12 @@ export async function createTemplate(input: CreateLocalInput) {
     lastSyncedAt: metaTemplateId ? new Date() : null,
   }).returning();
   return row;
+}
+
+export async function getTemplateById(templateId: string) {
+  const [row] = await db.select().from(whatsappHsmTemplates)
+    .where(eq(whatsappHsmTemplates.id, templateId)).limit(1);
+  return row ?? null;
 }
 
 export async function listTemplates(instanceId: string) {
@@ -142,7 +174,7 @@ export async function syncTemplates(instanceId: string): Promise<{
 
   let created = 0, updated = 0;
   for (const t of fetched) {
-    const variableCount = countVariables(t.components);
+    const variableCount = countBodyVariables(t.components);
     const [existing] = await db.select().from(whatsappHsmTemplates)
       .where(and(
         eq(whatsappHsmTemplates.instanceId, instanceId),
