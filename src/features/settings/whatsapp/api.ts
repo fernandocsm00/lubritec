@@ -198,3 +198,14 @@ export function useConnectInstanceById() {
     },
   });
 }
+
+import type { WebhookInfoResponse } from '@shared/types';
+
+export function useWebhookInfo(instanceId: string | null) {
+  return useQuery({
+    queryKey: ['whatsapp-instances', instanceId, 'webhook-info'],
+    queryFn: () => api<WebhookInfoResponse>(`/whatsapp/instances/${instanceId}/webhook-info`),
+    enabled: !!instanceId,
+    refetchInterval: (q) => (q.state.data?.subscribed ? false : 5_000),
+  });
+}
