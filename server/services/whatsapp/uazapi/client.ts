@@ -42,7 +42,14 @@ export async function sendUazapiMessage(opts: SendMessageOpts): Promise<UazapiSe
   } else {
     body.type = mapMediaType(opts.kind);
     body.file = opts.mediaUrl;
-    if (opts.text) body.caption = opts.text;
+    // UazAPI (/send/media) usa o campo "text" pra legenda de midia, NAO "caption".
+    // Antes mandavamos "caption" e a API ignorava silenciosamente — chegava so
+    // imagem sem texto. Mandamos ambos pra compatibilidade com forks que ainda
+    // possam ler "caption" (custo zero: a API ignora chave extra).
+    if (opts.text) {
+      body.text = opts.text;
+      body.caption = opts.text;
+    }
   }
 
   return retry(
