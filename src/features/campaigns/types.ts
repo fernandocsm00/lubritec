@@ -5,6 +5,7 @@ export type {
   CampaignDryRunResponse,
   PublicCampaign,
   CampaignFunnel,
+  CampaignBlockReason,
   CampaignsAggregateStats,
   CampaignsTimeseries,
   CampaignsTimeseriesBucket,

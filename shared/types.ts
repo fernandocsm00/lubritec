@@ -344,6 +344,8 @@ export interface AudienceFilters {
   phoneCsv?: string[];
 }
 
+export type CampaignBlockReason = 'recent_outbound' | 'pending_other_campaign';
+
 export interface CampaignDryRunResponse {
   total: number;
   eligible: number;
@@ -357,6 +359,8 @@ export interface CampaignDryRunResponse {
     phone: string;
     cnpj: string | null;
     createdAt: string;
+    /** null = elegivel; string = motivo de bloqueio. */
+    blockReason: CampaignBlockReason | null;
   }>;
 }
 

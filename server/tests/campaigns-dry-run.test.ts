@@ -88,8 +88,15 @@ describe('campaignsAudience.dryRun', () => {
     expect(r.eligible).toBe(1);
     expect(r.blocked.recentOutbound).toBe(1);
     expect(r.blocked.pendingOtherCampaign).toBe(0);
-    expect(r.preview.find((p) => p.leadId === blockedLead.id)).toBeUndefined();
-    expect(r.preview.find((p) => p.leadId === eligibleLead.id)).toBeDefined();
+    // Comportamento novo (2026-05-22): preview inclui BLOQUEADOS junto com
+    // elegiveis, com blockReason setado. Usuario precisa ver quem nao vai
+    // receber antes de confirmar.
+    const blockedEntry = r.preview.find((p) => p.leadId === blockedLead.id);
+    expect(blockedEntry).toBeDefined();
+    expect(blockedEntry?.blockReason).toBe('recent_outbound');
+    const eligibleEntry = r.preview.find((p) => p.leadId === eligibleLead.id);
+    expect(eligibleEntry).toBeDefined();
+    expect(eligibleEntry?.blockReason).toBeNull();
   });
 });
 
