@@ -1,0 +1,16 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "WABA_X",
+    "changes": [{
+      "field": "message_template_status_update",
+      "value": {
+        "event": "APPROVED",
+        "message_template_id": 99887766,
+        "message_template_name": "boas_vindas_pos_troca",
+        "message_template_language": "pt_BR",
+        "reason": null
+      }
+    }]
+  }]
+}

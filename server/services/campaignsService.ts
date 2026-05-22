@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { campaigns, campaignRecipients, leads, conversations, messages, deals, users } from '../db/schema';
+import { campaigns, campaignRecipients, leads, conversations, messages, deals, users, whatsappInstance } from '../db/schema';
 import { eq, and, or, ilike, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
@@ -9,10 +9,13 @@ import type {
   AudienceFilters,
   PublicCampaignRecipient,
   LossReason,
+  CampaignHsmVariable,
 } from '@shared/types';
 import { LOSS_REASONS } from '@shared/types';
 import { resolveAudience } from './campaignsAudience';
 import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
+import { getTemplateById, countBodyVariables } from './hsmTemplateService';
+import type { HsmComponent } from '@shared/types';
 
 const LIST_PAGE_SIZE = 50;
 const RECIPIENTS_PAGE_SIZE = 50;
@@ -132,10 +135,42 @@ export async function createCampaign(input: {
   scheduledAt?: Date | null;
   ratePerMinute?: number;
   createdByUserId: string;
+  instanceId: string;
+  hsmTemplateId?: string | null;
+  hsmVariables?: CampaignHsmVariable[];
 }): Promise<PublicCampaign> {
+  // ── XOR validation: exactly one of templateId or hsmTemplateId must be set ──
+  const hasTemplate = !!input.templateId;
+  const hasHsm = !!input.hsmTemplateId;
+  if (hasTemplate && hasHsm) {
+    throw new HttpError(422, 'Provide either templateId or hsmTemplateId, not both');
+  }
+
+  // ── HSM template validation ─────────────────────────────────────────────────
+  if (hasHsm) {
+    const tpl = await getTemplateById(input.hsmTemplateId!);
+    if (!tpl) throw new HttpError(422, 'HSM template not found');
+    if (tpl.status !== 'APPROVED') {
+      throw new HttpError(422, `HSM template must be APPROVED (current status: ${tpl.status})`);
+    }
+    if (tpl.instanceId !== input.instanceId) {
+      throw new HttpError(422, 'HSM template does not belong to the specified instance');
+    }
+    // Validate variable coverage
+    const requiredCount = countBodyVariables(tpl.components as HsmComponent[]);
+    const providedIndices = new Set((input.hsmVariables ?? []).map((v) => v.index));
+    for (let i = 1; i <= requiredCount; i++) {
+      if (!providedIndices.has(i)) {
+        throw new HttpError(422, `hsmVariables must cover all template variables: missing index ${i}`);
+      }
+    }
+  }
+
   const audience = await resolveAudience(input.audienceFilter);
   const audienceIds = audience.map((a) => a.leadId);
   const { eligible } = await filterEligibleLeads(audienceIds, {});
+
+  const instanceId = input.instanceId;
 
   const eligibleSet = new Set(eligible);
   const eligibleRows = audience.filter((a) => eligibleSet.has(a.leadId));
@@ -156,6 +191,9 @@ export async function createCampaign(input: {
       scheduledAt: input.scheduledAt ?? null,
       ratePerMinute: input.ratePerMinute ?? 20,
       createdByUserId: input.createdByUserId,
+      instanceId,
+      hsmTemplateId: input.hsmTemplateId ?? null,
+      hsmVariables: (input.hsmVariables ?? []) as object[],
     }).returning();
 
     if (eligibleRows.length > 0) {

@@ -12,6 +12,7 @@ import messageTemplateRoutes from './routes/messageTemplates';
 import dealRoutes from './routes/deals';
 import whatsappInstanceRoutes from './routes/whatsappInstance';
 import whatsappInstancesRouter from './routes/whatsappInstances';
+import hsmTemplatesRouter from './routes/hsmTemplates';
 import metaWebhookRouter from './routes/whatsappMetaWebhook';
 import orgSettingsRoutes from './routes/orgSettings';
 import campaignRoutes from './routes/campaigns';
@@ -98,6 +99,7 @@ export function createApp() {
   app.use('/api/deals', dealRoutes);
   app.use('/api/whatsapp-instance', whatsappInstanceRoutes);
   app.use('/api/whatsapp/instances', whatsappInstancesRouter);
+  app.use('/api/whatsapp/instances/:instanceId/templates', hsmTemplatesRouter);
   app.use('/api/org-settings', orgSettingsRoutes);
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   app.use('/api/dashboard', dashboardRoutes);

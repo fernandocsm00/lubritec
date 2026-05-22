@@ -1,6 +1,8 @@
 import { AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import type { CampaignHsmVariable } from './types';
+import type { InstanceListItem, HsmTemplateRecord } from '@shared/types';
 
 interface Props {
   scheduledAt: string | null;
@@ -9,9 +11,15 @@ interface Props {
   name: string;
   messageBody: string;
   mediaUrl: string | null;
+  // Instance / HSM
+  selectedInstance?: InstanceListItem | null;
+  hsmTemplate?: HsmTemplateRecord | null;
+  hsmVariables?: CampaignHsmVariable[];
 }
 
 export function ReviewStep(p: Props) {
+  const isMeta = p.selectedInstance?.provider === 'meta_cloud';
+
   return (
     <div className="space-y-4 max-w-2xl">
       <div className="rounded-lg border border-border bg-card p-4 space-y-2">
@@ -20,18 +28,62 @@ export function ReviewStep(p: Props) {
           <span className="text-muted-foreground">Nome</span>
           <span className="font-medium">{p.name || '(sem nome)'}</span>
         </div>
+        {p.selectedInstance && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Linha</span>
+            <span className="font-medium">
+              {p.selectedInstance.displayName}{' '}
+              <span className="text-xs text-zinc-500">
+                ({p.selectedInstance.provider === 'uazapi' ? 'UazAPI' : 'Meta Cloud'})
+              </span>
+            </span>
+          </div>
+        )}
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Audiência</span>
           <span className="font-medium">{p.audienceTotal} lead(s)</span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Mídia</span>
-          <span className="font-medium">{p.mediaUrl ? 'Imagem anexada' : '—'}</span>
-        </div>
-        <div className="text-sm">
-          <span className="text-muted-foreground">Mensagem:</span>
-          <pre className="text-xs bg-muted/30 p-2 rounded mt-1 whitespace-pre-wrap">{p.messageBody}</pre>
-        </div>
+        {!isMeta && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Mídia</span>
+            <span className="font-medium">{p.mediaUrl ? 'Imagem anexada' : '—'}</span>
+          </div>
+        )}
+        {isMeta && p.hsmTemplate ? (
+          <>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Template HSM</span>
+              <span className="font-medium font-mono">{p.hsmTemplate.name}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Idioma / Categoria</span>
+              <span className="font-medium">{p.hsmTemplate.language} / {p.hsmTemplate.category}</span>
+            </div>
+            {p.hsmVariables && p.hsmVariables.length > 0 && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Variáveis:</span>
+                <div className="mt-1 space-y-1">
+                  {p.hsmVariables.map((v) => (
+                    <div key={v.index} className="flex gap-2 text-xs bg-muted/30 rounded px-2 py-1">
+                      <span className="font-mono text-zinc-500">{`{{${v.index}}}`}</span>
+                      <span className="text-zinc-400">→</span>
+                      {v.source === 'lead_field' ? (
+                        <span className="text-lc-navy font-medium">Campo: {v.value}</span>
+                      ) : (
+                        <span className="text-zinc-700">&quot;{v.value}&quot;</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : !isMeta ? (
+          <div className="text-sm">
+            <span className="text-muted-foreground">Mensagem:</span>
+            <pre className="text-xs bg-muted/30 p-2 rounded mt-1 whitespace-pre-wrap">{p.messageBody}</pre>
+          </div>
+        ) : null}
       </div>
 
       <div>

@@ -1,7 +1,8 @@
 import { db } from '../db/client';
-import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance, campaigns, campaignRecipients } from '../db/schema';
+import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance, campaigns, campaignRecipients, whatsappHsmTemplates } from '../db/schema';
 import { hashPassword } from '../lib/hash';
 import type { Role, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
+import type { HsmCategory, HsmStatus, HsmComponent } from '@shared/types';
 import type {
   ConversationQueue,
   ConversationStatus,
@@ -295,7 +296,11 @@ export async function createCampaign(opts: {
   skippedCount?: number;
   ratePerMinute?: number;
   createdByUserId: string;
+  instanceId?: string;
+  hsmTemplateId?: string | null;
+  hsmVariables?: unknown[];
 }) {
+  const instanceId = opts.instanceId ?? await getOrCreateDefaultInstance();
   const [c] = await db.insert(campaigns).values({
     name: opts.name ?? 'Campanha Teste',
     description: opts.description ?? null,
@@ -314,8 +319,36 @@ export async function createCampaign(opts: {
     skippedCount: opts.skippedCount ?? 0,
     ratePerMinute: opts.ratePerMinute ?? 20,
     createdByUserId: opts.createdByUserId,
+    instanceId,
+    hsmTemplateId: opts.hsmTemplateId ?? null,
+    hsmVariables: opts.hsmVariables ?? [],
   }).returning();
   return c;
+}
+
+export async function createHsmTemplate(opts: {
+  instanceId: string;
+  createdBy: string;
+  name?: string;
+  language?: string;
+  category?: HsmCategory;
+  status?: HsmStatus;
+  components?: HsmComponent[];
+  metaTemplateId?: string | null;
+  variableCount?: number;
+}) {
+  const [row] = await db.insert(whatsappHsmTemplates).values({
+    instanceId: opts.instanceId,
+    createdBy: opts.createdBy,
+    name: opts.name ?? `tpl_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    language: opts.language ?? 'pt_BR',
+    category: opts.category ?? 'MARKETING',
+    status: opts.status ?? 'DRAFT',
+    components: opts.components ?? [{ type: 'BODY', text: 'Default body {{1}}' }],
+    metaTemplateId: opts.metaTemplateId ?? null,
+    variableCount: opts.variableCount ?? 0,
+  }).returning();
+  return row;
 }
 
 export async function createCampaignRecipient(opts: {

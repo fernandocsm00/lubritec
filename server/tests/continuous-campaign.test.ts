@@ -9,7 +9,7 @@ import {
   sweepContinuousReenroll,
   upsertContinuousCampaign,
 } from '../services/continuousCampaign';
-import { createUser, createLead, createConversation, createMessage } from './helpers';
+import { createUser, createLead, createConversation, createMessage, createCampaign } from './helpers';
 
 async function setDispatchWindow(opts: {
   startHour?: number;
@@ -249,13 +249,12 @@ describe('enrollment + cooldown', () => {
       sentAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
-    const [cont] = await db.insert(campaigns).values({
+    const cont = await createCampaign({
       name: 'cont',
       status: 'running',
       messageBody: 'oi',
-      isContinuous: true,
       createdByUserId: u.id,
-    }).returning();
+    });
 
     const r = await enrollLeadInContinuous(lead.id);
     expect(r.status).toBe('lead_in_cooldown');
@@ -271,13 +270,12 @@ describe('sweepContinuousReenroll', () => {
     const u = await createUser({ role: 'comercial', email: 'sw1@x.com' });
     const lead = await createLead({ phone: '5511900200001', flowStage: 'complete' });
 
-    const [cont] = await db.insert(campaigns).values({
+    const cont = await createCampaign({
       name: 'cont-sweep',
       status: 'running',
       messageBody: 'oi',
-      isContinuous: true,
       createdByUserId: u.id,
-    }).returning();
+    });
 
     // Lead bouncou por cooldown (mensagem outbound recente).
     const conv = await createConversation({ leadId: lead.id });
@@ -311,13 +309,12 @@ describe('sweepContinuousReenroll', () => {
     const u = await createUser({ role: 'comercial', email: 'sw2@x.com' });
     const lead = await createLead({ phone: '5511900200002', flowStage: 'complete' });
 
-    const [cont] = await db.insert(campaigns).values({
+    const cont = await createCampaign({
       name: 'cont-sweep-2',
       status: 'running',
       messageBody: 'oi',
-      isContinuous: true,
       createdByUserId: u.id,
-    }).returning();
+    });
 
     await db.insert(campaignRecipients).values({
       campaignId: cont.id,

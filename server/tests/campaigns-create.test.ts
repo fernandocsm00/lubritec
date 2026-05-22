@@ -1,12 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { db } from '../db/client';
 import { campaignRecipients } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead } from './helpers';
+import { createUser, createLead, createWhatsappInstance } from './helpers';
 
 const app = createApp();
+
+let defaultInstanceId: string;
+
+beforeEach(async () => {
+  const inst = await createWhatsappInstance({ isDefault: true, displayName: 'Default' });
+  defaultInstanceId = inst.id;
+});
 
 async function loginAdmin() {
   await createUser({ email: 'a@x.com', password: 'pw12345', role: 'admin' });
@@ -29,7 +36,7 @@ describe('POST /api/campaigns/dry-run', () => {
 });
 
 describe('POST /api/campaigns', () => {
-  it('200 cria campanha + materializa recipients', async () => {
+  it('201 cria campanha + materializa recipients', async () => {
     await createLead({ phone: '5511000090001', status: 'frio' });
     await createLead({ phone: '5511000090002', status: 'frio' });
     const token = await loginAdmin();
@@ -38,10 +45,11 @@ describe('POST /api/campaigns', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: 'Lembrete frio',
+        instanceId: defaultInstanceId,
         messageBody: 'Olá {{nome}}, hora de trocar!',
         audienceFilter: { status: ['frio'] },
       });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body.audienceTotal).toBe(2);
 
     const recipients = await db.select().from(campaignRecipients).where(eq(campaignRecipients.campaignId, res.body.id));
@@ -56,9 +64,11 @@ describe('POST /api/campaigns', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: 'X',
+        instanceId: defaultInstanceId,
         messageBody: 'Texto original',
         audienceFilter: { status: ['frio'] },
       });
+    expect(res.status).toBe(201);
     expect(res.body.messageBody).toBe('Texto original');
   });
 });

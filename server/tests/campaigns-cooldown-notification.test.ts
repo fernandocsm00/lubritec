@@ -9,19 +9,19 @@ import { eq } from 'drizzle-orm';
 import {
   createUser,
   createLead,
+  createCampaign,
 } from './helpers';
 import { tick } from '../services/campaignsDispatcher';
 
 async function createCampaignRow(input: { audienceTotal: number; userId: string }) {
-  const [c] = await db.insert(campaigns).values({
+  return createCampaign({
     name: 'cool-notif',
     status: 'running',
     messageBody: 'oi',
     audienceTotal: input.audienceTotal,
     createdByUserId: input.userId,
     ratePerMinute: 1000,
-  }).returning();
-  return c;
+  });
 }
 
 describe('campaign cooldown notification', () => {

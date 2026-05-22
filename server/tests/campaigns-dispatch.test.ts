@@ -10,17 +10,37 @@ import {
   resumeCampaign,
   cancelCampaign,
 } from '../services/campaignsService';
+import type { WhatsAppProvider } from '../services/whatsapp/provider';
 
-vi.mock('../services/whatsapp/uazapi/client', () => ({
-  uazapiClient: { sendMessage: vi.fn() },
-  UazapiError: class extends Error {
-    constructor(public status: number, public body: string) { super(`${status}`); }
-  },
+// Mock the provider registry so sendText/sendMedia calls go to our mock
+vi.mock('../services/whatsapp/providerRegistry', () => ({
+  resolveProvider: vi.fn(),
+  resolveDefaultProvider: vi.fn(),
+  invalidateProvider: vi.fn(),
+  _clearCache: vi.fn(),
 }));
-import { uazapiClient } from '../services/whatsapp/uazapi/client';
+import { resolveProvider } from '../services/whatsapp/providerRegistry';
+
+const mockProvider: WhatsAppProvider = {
+  kind: 'uazapi',
+  instanceId: 'mock-instance',
+  getStatus: vi.fn(),
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  sendText: vi.fn(),
+  sendMedia: vi.fn(),
+  sendTemplate: vi.fn(),
+  listTemplates: vi.fn(),
+  createTemplate: vi.fn(),
+  deleteTemplate: vi.fn(),
+  capabilities: vi.fn(),
+};
 
 beforeEach(async () => {
-  vi.mocked(uazapiClient.sendMessage).mockReset();
+  vi.mocked(mockProvider.sendText).mockReset();
+  vi.mocked(mockProvider.sendMedia).mockReset();
+  vi.mocked(mockProvider.sendTemplate).mockReset();
+  vi.mocked(resolveProvider).mockResolvedValue(mockProvider);
   await createWhatsappInstance({ isDefault: true, displayName: 'Test default' });
 });
 
@@ -84,8 +104,8 @@ describe('dispatch state transitions', () => {
 
 describe('processCampaign', () => {
   it('processa pending recipients e muda pra completed quando vazia', async () => {
-    vi.mocked(uazapiClient.sendMessage).mockResolvedValue({
-      messageId: 'm-1', rawPayload: {},
+    vi.mocked(mockProvider.sendText).mockResolvedValue({
+      providerMsgId: 'm-1', rawPayload: {},
     });
     const u = await createUser({ email: 'a6@x.com', role: 'admin' });
     const lead = await createLead({ phone: '5511000110001' });
@@ -101,7 +121,7 @@ describe('processCampaign', () => {
     const [r] = await db.select().from(campaignRecipients).where(eq(campaignRecipients.campaignId, c.id));
     expect(r.status).toBe('sent');
     expect(r.sentAt).not.toBeNull();
-    expect(vi.mocked(uazapiClient.sendMessage)).toHaveBeenCalled();
+    expect(vi.mocked(mockProvider.sendText)).toHaveBeenCalled();
 
     await processCampaign({ ...c, status: 'running' });
     const [refreshed] = await db.select().from(campaigns).where(eq(campaigns.id, c.id));
@@ -109,8 +129,8 @@ describe('processCampaign', () => {
     expect(refreshed.completedAt).not.toBeNull();
   });
 
-  it('marca recipient failed quando UazAPI rejeita', async () => {
-    vi.mocked(uazapiClient.sendMessage).mockRejectedValueOnce(new Error('uazapi 500'));
+  it('marca recipient failed quando provider rejeita', async () => {
+    vi.mocked(mockProvider.sendText).mockRejectedValueOnce(new Error('provider 500'));
     const u = await createUser({ email: 'a7@x.com', role: 'admin' });
     const lead = await createLead({ phone: '5511000111001' });
     const c = await createCampaign({
@@ -123,7 +143,7 @@ describe('processCampaign', () => {
     await processCampaign({ ...c, status: 'running' });
     const [r] = await db.select().from(campaignRecipients).where(eq(campaignRecipients.campaignId, c.id));
     expect(r.status).toBe('failed');
-    expect(r.failureReason).toContain('uazapi 500');
+    expect(r.failureReason).toContain('provider 500');
   });
 });
 

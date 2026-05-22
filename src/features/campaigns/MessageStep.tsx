@@ -8,9 +8,12 @@ import { useTemplates } from '@/features/whatsapp/api';
 import { useDryRun } from './api';
 import { MediaUpload } from './MediaUpload';
 import { PreviewMessage } from './PreviewMessage';
-import type { AudienceFilters } from './types';
+import { HsmTemplatePickerStep } from './HsmTemplatePickerStep';
+import { HsmVariablesMapper } from './HsmVariablesMapper';
+import type { AudienceFilters, CampaignHsmVariable } from './types';
+import type { HsmTemplateRecord } from '@shared/types';
 
-interface Props {
+export interface MessageStepProps {
   templateId: string | null;
   onTemplateIdChange: (v: string | null) => void;
   messageBody: string;
@@ -19,9 +22,64 @@ interface Props {
   mediaMime: string | null;
   onMediaChange: (url: string | null, mime: string | null) => void;
   audienceFilter: AudienceFilters;
+  // HSM / instance branching (optional — default is UazAPI free-form)
+  instanceProvider?: 'uazapi' | 'meta_cloud';
+  instanceId?: string;
+  hsmTemplateId: string | null;
+  setHsmTemplateId: (id: string | null) => void;
+  hsmVariables: CampaignHsmVariable[];
+  setHsmVariables: (vars: CampaignHsmVariable[]) => void;
+  // Called when a full HSM template record is selected (for ReviewStep display)
+  onHsmTemplateSelect?: (tpl: HsmTemplateRecord) => void;
 }
 
-export function MessageStep(p: Props) {
+export function MessageStep(p: MessageStepProps) {
+  if (p.instanceProvider === 'meta_cloud') {
+    return <MetaHsmMessageStep {...p} />;
+  }
+  return <FreeFormMessageStep {...p} />;
+}
+
+// ── Meta HSM flow ─────────────────────────────────────────────────────────────
+
+function MetaHsmMessageStep(p: MessageStepProps) {
+  const [selectedTemplate, setSelectedTemplate] = useState<HsmTemplateRecord | null>(null);
+
+  const handleSelectTemplate = (tpl: HsmTemplateRecord) => {
+    setSelectedTemplate(tpl);
+    p.setHsmTemplateId(tpl.id);
+    p.onHsmTemplateSelect?.(tpl);
+    // Reset variable mapping when template changes
+    p.setHsmVariables([]);
+  };
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <div>
+        <div className="text-sm font-medium text-zinc-700 mb-3">Template HSM</div>
+        <HsmTemplatePickerStep
+          instanceId={p.instanceId!}
+          selectedTemplateId={p.hsmTemplateId}
+          onSelect={handleSelectTemplate}
+        />
+      </div>
+      {selectedTemplate && (
+        <div>
+          <div className="text-sm font-medium text-zinc-700 mb-3">Variáveis</div>
+          <HsmVariablesMapper
+            template={selectedTemplate}
+            variables={p.hsmVariables}
+            onChange={p.setHsmVariables}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── UazAPI free-form flow ──────────────────────────────────────────────────────
+
+function FreeFormMessageStep(p: MessageStepProps) {
   const { data: templates } = useTemplates();
   const dryRun = useDryRun();
   const [previewLead, setPreviewLead] = useState<{

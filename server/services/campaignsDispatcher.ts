@@ -1,26 +1,19 @@
 ﻿import { db } from '../db/client';
-import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings, whatsappInstance } from '../db/schema';
+import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings } from '../db/schema';
 import { and, eq, lte, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
-import { uazapiClient } from './whatsapp/uazapi/client';
 import { isWithinDispatchWindow, pickVariant, sweepContinuousReenroll } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
 import { emitNotification } from './notifications';
-import type { ConversationQueue } from '@shared/types';
-import { HttpError } from '../middleware/errorHandler';
+import { resolveProvider } from './whatsapp/providerRegistry';
+import { getTemplateById, resolveHsmVariables } from './hsmTemplateService';
+import type { ConversationQueue, CampaignHsmVariable } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
 let isProcessing = false;
 
 const TICK_INTERVAL_MS = 60_000;
-
-async function getDefaultInstanceId(): Promise<string> {
-  const [row] = await db.select({ id: whatsappInstance.id }).from(whatsappInstance)
-    .where(eq(whatsappInstance.isDefault, true)).limit(1);
-  if (!row) throw new HttpError(503, 'No default WhatsApp instance configured');
-  return row.id;
-}
 
 export function startDispatcher() {
   if (timer) return;
@@ -169,37 +162,70 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
     const [lead] = await db.select().from(leads).where(eq(leads.id, r.leadId)).limit(1);
     if (!lead) throw new Error('Lead not found');
 
-    // Continuous: escolhe variant random (A/B). One-shot: usa messageBody.
-    const variant = c.isContinuous ? pickVariant(c) : { body: c.messageBody, mediaUrl: c.mediaUrl, mediaMime: c.mediaMime };
-    const interpolated = interpolatePlaceholders(variant.body, lead);
-    const conv = await getOrCreateConversationForCampaign(r.phone, lead.id, c.id);
+    const conv = await getOrCreateConversationForCampaign(r.phone, lead.id, c.id, c.instanceId);
+    const provider = await resolveProvider(c.instanceId);
 
-    const resp = variant.mediaUrl
-      ? await uazapiClient.sendMessage({
+    let sentResult: { providerMsgId: string; rawPayload: unknown };
+    let msgBody: string;
+    let msgKind: 'text' | 'image' = 'text';
+    let msgMediaUrl: string | null = null;
+    let msgMediaMime: string | null = null;
+    let providerKind: 'uazapi' | 'meta_cloud' = 'uazapi';
+
+    if (c.hsmTemplateId) {
+      // ── HSM (Meta Cloud) path ─────────────────────────────────────────────
+      const tpl = await getTemplateById(c.hsmTemplateId);
+      if (!tpl || tpl.status !== 'APPROVED') {
+        throw new Error(`HSM template not approved (status: ${tpl?.status ?? 'not found'})`);
+      }
+      const variables = resolveHsmVariables(
+        (c.hsmVariables as CampaignHsmVariable[] | null) ?? [],
+        { lead },
+      );
+      sentResult = await provider.sendTemplate({
+        to: r.phone,
+        templateName: tpl.name,
+        language: tpl.language,
+        variables,
+      });
+      msgBody = tpl.name;   // store template name as body for message record
+      providerKind = 'meta_cloud';
+    } else {
+      // ── Free-form (UazAPI) path ────────────────────────────────────────────
+      // Continuous: escolhe variant random (A/B). One-shot: usa messageBody.
+      const variant = c.isContinuous ? pickVariant(c) : { body: c.messageBody, mediaUrl: c.mediaUrl, mediaMime: c.mediaMime };
+      const interpolated = interpolatePlaceholders(variant.body, lead);
+      msgBody = interpolated;
+
+      if (variant.mediaUrl) {
+        msgKind = 'image';
+        msgMediaUrl = variant.mediaUrl;
+        msgMediaMime = variant.mediaMime ?? null;
+        sentResult = await provider.sendMedia({
           to: r.phone,
           kind: 'image',
           mediaUrl: absoluteUrl(variant.mediaUrl),
           mediaMime: variant.mediaMime ?? undefined,
-          text: interpolated,
-        })
-      : await uazapiClient.sendMessage({
-          to: r.phone,
-          kind: 'text',
-          text: interpolated,
+          caption: interpolated,
         });
+      } else {
+        sentResult = await provider.sendText({ to: r.phone, text: interpolated });
+      }
+      providerKind = provider.kind as 'uazapi' | 'meta_cloud';
+    }
 
     const sentAt = new Date();
     const [msg] = await db.insert(messages).values({
       conversationId: conv.id,
       direction: 'out',
-      kind: variant.mediaUrl ? 'image' : 'text',
-      body: interpolated,
-      mediaUrl: variant.mediaUrl ?? null,
-      mediaMime: variant.mediaMime ?? null,
+      kind: msgKind,
+      body: msgBody,
+      mediaUrl: msgMediaUrl,
+      mediaMime: msgMediaMime,
       sentByUserId: c.createdByUserId,
-      providerMsgId: resp.messageId,
-      provider: 'uazapi',
-      rawPayload: { ...(resp.rawPayload as object), variantBody: variant.body } as object,
+      providerMsgId: sentResult.providerMsgId,
+      provider: providerKind,
+      rawPayload: sentResult.rawPayload as object,
       sentAt,
     }).returning();
 
@@ -257,12 +283,16 @@ async function defaultCampaignQueue(): Promise<ConversationQueue> {
   return s?.aiEnabled ? 'ia' : 'recepcao';
 }
 
-async function getOrCreateConversationForCampaign(phone: string, leadId: string, campaignId: string) {
+async function getOrCreateConversationForCampaign(
+  phone: string,
+  leadId: string,
+  campaignId: string,
+  instanceId: string,
+) {
   const [existing] = await db.select().from(conversations).where(eq(conversations.phone, phone)).limit(1);
   if (existing) return existing;
 
   const queue = await defaultCampaignQueue();
-  const instanceId = await getDefaultInstanceId();
   const [created] = await db.insert(conversations).values({
     phone,
     instanceId,

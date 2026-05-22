@@ -6,22 +6,9 @@ import {
   createLead,
   createConversation,
   createMessage,
+  createCampaign,
 } from './helpers';
 import { filterEligibleLeads, COOLDOWN_REASON } from '../services/campaignsCooldown';
-
-async function createCampaign(input: {
-  name?: string;
-  status?: 'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
-  createdByUserId: string;
-}) {
-  const [c] = await db.insert(campaigns).values({
-    name: input.name ?? 'Test',
-    status: input.status ?? 'running',
-    messageBody: 'oi',
-    createdByUserId: input.createdByUserId,
-  }).returning();
-  return c;
-}
 
 describe('filterEligibleLeads', () => {
   it('lead com outbound há 5h é bloqueado por recent_outbound', async () => {
@@ -141,6 +128,7 @@ describe('filterEligibleLeads', () => {
 
 import { eq } from 'drizzle-orm';
 import { createCampaign as createCampaignService } from '../services/campaignsService';
+import { createWhatsappInstance } from './helpers';
 
 describe('createCampaign + cooldown', () => {
   it('separa elegíveis (pending) de bloqueados (skipped cooldown_24h)', async () => {
@@ -156,11 +144,13 @@ describe('createCampaign + cooldown', () => {
       sentAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
+    const inst = await createWhatsappInstance({ isDefault: false });
     const c = await createCampaignService({
       name: 'cooldown-test',
       messageBody: 'oi {{nome}}',
       audienceFilter: { status: ['frio'] },
       createdByUserId: u.id,
+      instanceId: inst.id,
     });
 
     const recs = await db.select().from(campaignRecipients)
@@ -193,11 +183,13 @@ describe('PublicCampaign.skippedByCooldown', () => {
       sentAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
+    const inst = await createWhatsappInstance({ isDefault: false });
     const c = await createCampaignService({
       name: 'pc-cool',
       messageBody: 'oi',
       audienceFilter: { status: ['frio'] },
       createdByUserId: u.id,
+      instanceId: inst.id,
     });
 
     expect(c.skippedByCooldown).toBe(1);
@@ -213,11 +205,37 @@ describe('PublicCampaign.skippedByCooldown', () => {
 });
 
 import { tick } from '../services/campaignsDispatcher';
-import { uazapiClient } from '../services/whatsapp/uazapi/client';
 import { vi } from 'vitest';
+import { resolveProvider } from '../services/whatsapp/providerRegistry';
+import type { WhatsAppProvider } from '../services/whatsapp/provider';
+
+vi.mock('../services/whatsapp/providerRegistry', () => ({
+  resolveProvider: vi.fn(),
+  resolveDefaultProvider: vi.fn(),
+  invalidateProvider: vi.fn(),
+  _clearCache: vi.fn(),
+}));
+
+const cooldownMockProvider: WhatsAppProvider = {
+  kind: 'uazapi',
+  instanceId: 'mock-instance',
+  getStatus: vi.fn(),
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  sendText: vi.fn(),
+  sendMedia: vi.fn(),
+  sendTemplate: vi.fn(),
+  listTemplates: vi.fn(),
+  createTemplate: vi.fn(),
+  deleteTemplate: vi.fn(),
+  capabilities: vi.fn(),
+};
 
 describe('dispatcher + cooldown safety net', () => {
   it('lead que ficou em cooldown entre criação e dispatch é skipped', async () => {
+    vi.mocked(resolveProvider).mockResolvedValue(cooldownMockProvider);
+    vi.mocked(cooldownMockProvider.sendText).mockReset();
+
     const u = await createUser({ role: 'comercial', email: 'ds1@x.com' });
     const lead = await createLead({ phone: '5511900080001', status: 'frio' });
 
@@ -239,20 +257,17 @@ describe('dispatcher + cooldown safety net', () => {
       sentAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
-    const sendSpy = vi.spyOn(uazapiClient, 'sendMessage');
-
     await tick();
 
     const [r] = await db.select().from(campaignRecipients)
       .where(eq(campaignRecipients.campaignId, camp.id));
     expect(r.status).toBe('skipped');
     expect(r.failureReason).toBe(COOLDOWN_REASON);
-    expect(sendSpy).not.toHaveBeenCalled();
+    // sendText should never have been called (cooldown skips before any send)
+    expect(vi.mocked(cooldownMockProvider.sendText)).not.toHaveBeenCalled();
 
     const [campAfter] = await db.select().from(campaigns).where(eq(campaigns.id, camp.id));
     expect(campAfter.skippedCount).toBe(1);
     expect(campAfter.sentCount).toBe(0);
-
-    sendSpy.mockRestore();
   });
 });

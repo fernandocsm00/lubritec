@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { campaigns, campaignRecipients, leads, messages, type Campaign, type CampaignMessageVariant } from '../db/schema';
+import { campaigns, campaignRecipients, leads, messages, whatsappInstance, type Campaign, type CampaignMessageVariant } from '../db/schema';
 import { and, eq, sql, count } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicContinuousCampaign, UpsertContinuousCampaignInput, VariantStat } from '@shared/types';
@@ -171,6 +171,11 @@ export async function upsertContinuousCampaign(
     if (!input.messageBody && (!input.messageVariants || input.messageVariants.length === 0)) {
       throw new HttpError(400, 'Defina messageBody ou messageVariants ao criar a campanha contínua');
     }
+    // Resolve default instance for continuous campaign
+    const defaultInstance = await db.query.whatsappInstance.findFirst({
+      where: (t, { eq }) => eq(t.isDefault, true),
+    });
+    if (!defaultInstance) throw new HttpError(400, 'Nenhuma instância WhatsApp padrão configurada');
     const [created] = await db
       .insert(campaigns)
       .values({
@@ -183,6 +188,7 @@ export async function upsertContinuousCampaign(
         audienceFilter: {},
         audienceTotal: 0,
         createdByUserId: userId,
+        instanceId: defaultInstance.id,
       })
       .returning();
     return buildPublic(created);

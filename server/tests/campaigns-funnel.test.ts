@@ -5,7 +5,7 @@ import {
 } from './helpers';
 import { getCampaignFunnel } from '../services/campaignsService';
 import { db } from '../db/client';
-import { campaigns, campaignRecipients } from '../db/schema';
+import { campaignRecipients } from '../db/schema';
 
 describe('getCampaignFunnel', () => {
   it('contadores básicos: sent/failed/skipped/total', async () => {
@@ -77,13 +77,13 @@ describe('getCampaignFunnel', () => {
     const lead2 = await createLead({ phone: '5511900070002' });
     const lead3 = await createLead({ phone: '5511900070003' });
 
-    const [c] = await db.insert(campaigns).values({
+    const c = await createCampaign({
       name: 'fn-cooldown',
       status: 'running',
       messageBody: 'oi',
       audienceTotal: 3,
       createdByUserId: u.id,
-    }).returning();
+    });
 
     await db.insert(campaignRecipients).values([
       { campaignId: c.id, leadId: lead1.id, phone: lead1.phone!, status: 'sent' },
