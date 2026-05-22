@@ -61,6 +61,7 @@ const listQuery = z.object({
   source: z.enum(LEAD_SOURCES).optional(),
   flowStage: z.enum(LEAD_FLOW_STAGES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
+  withIssues: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   sort: z.enum(['name', 'created_at']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),

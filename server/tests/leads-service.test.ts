@@ -206,19 +206,21 @@ describe('importLeadsFromCsv', () => {
     expect(list.items[0].status).toBe('frio');
   });
 
-  it('CNPJ baixado pela BrasilAPI vira rejected', async () => {
-    vi.mocked(cnpjLookup.lookupCnpj).mockResolvedValueOnce({
-      cnpj: VALID_CNPJ_3,
-      status: 'inactive',
-      razaoSocial: null,
-      situacaoCadastral: 'BAIXADA',
-      telefone: null,
-    });
+  it('CNPJ baixado: import NAO bloqueia mais (mudanca 2026-05-22)', async () => {
+    // Comportamento antigo: import consultava BrasilAPI sincronamente e
+    // rejeitava CNPJs inativos na hora. Causava friccao quando BrasilAPI estava
+    // fora (403) ou pra CSVs grandes (21s entre calls).
+    //
+    // Comportamento novo: import valida so o formato e insere. CNPJ inativo
+    // eh descoberto pelo enrichmentWorker em background e marcado em
+    // enrichment_job_leads.result_status='cnpj_inactive' — leadsService.listLeads
+    // expoe via lastEnrichmentResult e o frontend filtra com "Com problemas".
     const csv = `name,phone,cnpj\nA,11888880010,${VALID_CNPJ_3}\n`;
     const report = await importLeadsFromCsv(Buffer.from(csv));
-    expect(report.inserted).toBe(0);
-    expect(report.rejected).toHaveLength(1);
-    expect(report.rejected[0].reason).toMatch(/baixado|BAIXADA/i);
+    expect(report.inserted).toBe(1);
+    expect(report.rejected).toEqual([]);
+    // lookupCnpj nao deve ter sido chamado durante o import — eh background agora.
+    expect(vi.mocked(cnpjLookup.lookupCnpj)).not.toHaveBeenCalled();
   });
 
   it('upsert seletivo por CNPJ: preenche só campos vazios', async () => {

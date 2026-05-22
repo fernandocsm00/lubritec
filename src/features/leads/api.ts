@@ -8,6 +8,8 @@ export interface ListParams {
   source?: LeadSource;
   flowStage?: LeadFlowStage;
   pipeline?: 'yes' | 'no';
+  /** Filtra leads cujo ultimo enriquecimento BrasilAPI deu problema. */
+  withIssues?: boolean;
   sort?: 'name' | 'created_at';
   order?: 'asc' | 'desc';
   page?: number;

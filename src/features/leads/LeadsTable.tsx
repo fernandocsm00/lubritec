@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { PublicLead, LeadFlowStage } from '@shared/types';
+import type { PublicLead, LeadFlowStage, LeadEnrichmentResult } from '@shared/types';
 import { formatCnpj } from '@/lib/utils';
 import { LeadActions } from './LeadActions';
 
@@ -38,6 +38,32 @@ const SOURCE_LABEL: Record<PublicLead['source'], string> = {
   manual: 'Manual',
   csv: 'CSV',
   whatsapp: 'WhatsApp',
+};
+
+// Badge para "Problemas BrasilAPI" — mostrado quando o ultimo enriquecimento
+// retornou um status problematico. So 4 dos 5 valores aparecem aqui:
+// phone_found nao eh "problema" (eh sucesso) entao nao tem entry.
+const ENRICHMENT_ISSUE: Partial<Record<LeadEnrichmentResult, { label: string; className: string; title: string }>> = {
+  cnpj_inactive: {
+    label: 'CNPJ inativo',
+    className: 'bg-destructive/15 text-destructive border-destructive/40',
+    title: 'CNPJ baixado/inapto na Receita Federal.',
+  },
+  cnpj_not_found: {
+    label: 'CNPJ não encontrado',
+    className: 'bg-destructive/15 text-destructive border-destructive/40',
+    title: 'CNPJ não existe na base da Receita Federal.',
+  },
+  phone_not_in_brasilapi: {
+    label: 'Sem telefone',
+    className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40',
+    title: 'CNPJ ativo, mas BrasilAPI não retornou telefone público.',
+  },
+  api_error: {
+    label: 'BrasilAPI falhou',
+    className: 'bg-slate-200 text-slate-700 border-slate-400 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
+    title: 'Erro temporário na BrasilAPI — será tentado novamente.',
+  },
 };
 
 const STAGE_LABEL: Record<LeadFlowStage, { label: string; className: string }> = {
@@ -125,33 +151,48 @@ export function LeadsTable(props: Props) {
                     </TableCell>
                   </TableRow>
                 )
-                : items.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell className="font-medium">{l.name}</TableCell>
-                    <TableCell className="font-mono text-xs">{formatCnpj(l.cnpj)}</TableCell>
-                    <TableCell className={l.phone ? '' : 'text-muted-foreground italic'}>
-                      {l.phone ?? '—'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={STAGE_LABEL[l.flowStage].className}>
-                        {STAGE_LABEL[l.flowStage].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_LABEL[l.status].variant}>{STATUS_LABEL[l.status].label}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {l.hasDeal && (
-                        <Badge variant="outline" className="text-xs border-primary/40 text-primary">
-                          ● No pipeline
+                : items.map((l) => {
+                  const issue = l.lastEnrichmentResult ? ENRICHMENT_ISSUE[l.lastEnrichmentResult] : null;
+                  return (
+                    <TableRow key={l.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>{l.name}</span>
+                          {issue && (
+                            <span
+                              title={issue.title}
+                              className={`inline-flex items-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${issue.className}`}
+                            >
+                              {issue.label}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{formatCnpj(l.cnpj)}</TableCell>
+                      <TableCell className={l.phone ? '' : 'text-muted-foreground italic'}>
+                        {l.phone ?? '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={STAGE_LABEL[l.flowStage].className}>
+                          {STAGE_LABEL[l.flowStage].label}
                         </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{SOURCE_LABEL[l.source]}</TableCell>
-                    <TableCell>{fmtDateTime(l.createdAt)}</TableCell>
-                    <TableCell><LeadActions lead={l} /></TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={STATUS_LABEL[l.status].variant}>{STATUS_LABEL[l.status].label}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {l.hasDeal && (
+                          <Badge variant="outline" className="text-xs border-primary/40 text-primary">
+                            ● No pipeline
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{SOURCE_LABEL[l.source]}</TableCell>
+                      <TableCell>{fmtDateTime(l.createdAt)}</TableCell>
+                      <TableCell><LeadActions lead={l} /></TableCell>
+                    </TableRow>
+                  );
+                })}
           </TableBody>
         </Table>
       </div>

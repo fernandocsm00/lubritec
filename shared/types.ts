@@ -56,6 +56,17 @@ export const LEAD_FLOW_STAGES = [
 ] as const;
 export type LeadFlowStage = (typeof LEAD_FLOW_STAGES)[number];
 
+/**
+ * Resultado da ultima tentativa de enriquecimento BrasilAPI pra este lead.
+ * null = nunca foi enriquecido (ou enriquecimento ainda nao rodou).
+ */
+export type LeadEnrichmentResult =
+  | 'phone_found'              // sucesso — telefone preenchido
+  | 'phone_not_in_brasilapi'   // CNPJ ativo, mas Receita nao tem telefone publico
+  | 'cnpj_not_found'           // CNPJ nao existe na Receita Federal
+  | 'cnpj_inactive'            // CNPJ baixado / inapto
+  | 'api_error';               // erro transiente da BrasilAPI
+
 export interface PublicLead {
   id: string;
   name: string;
@@ -67,6 +78,8 @@ export interface PublicLead {
   source: LeadSource;
   flowStage: LeadFlowStage;
   hasDeal: boolean;
+  /** Ultimo resultado de enriquecimento BrasilAPI (null se nunca foi enriquecido). */
+  lastEnrichmentResult: LeadEnrichmentResult | null;
   createdAt: string;
   updatedAt: string;
 }
