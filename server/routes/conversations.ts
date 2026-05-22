@@ -4,6 +4,7 @@ import {
   listHandler,
   countsHandler,
   getHandler,
+  byLeadHandler,
   listMessagesHandler,
   claimHandler,
   queueHandler,
@@ -16,6 +17,7 @@ import {
 const router = Router();
 
 router.get('/counts', authGuard, countsHandler);
+router.get('/by-lead/:leadId', authGuard, byLeadHandler);
 router.get('/', authGuard, listHandler);
 router.post('/start', authGuard, startConversationHandler);
 router.get('/:id', authGuard, getHandler);

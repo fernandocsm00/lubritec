@@ -7,7 +7,7 @@ import { Thread } from '@/features/whatsapp/Thread';
 import { ChatHeader } from '@/features/whatsapp/ChatHeader';
 import { LeadSidebar } from '@/features/whatsapp/LeadSidebar';
 import { NewConversationDialog } from '@/features/whatsapp/NewConversationDialog';
-import { useConversations } from '@/features/whatsapp/api';
+import { useConversations, fetchConversationByLead } from '@/features/whatsapp/api';
 import { useAuthStore } from '@/features/auth/store';
 import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
 
@@ -39,6 +39,47 @@ export default function WhatsappPage() {
   // Usado por DealDrawer ("Abrir conversa") e outras telas que querem pular pra um chat.
   const deepLeadId = searchParams.get('lead');
   const deepConvId = searchParams.get('conv');
+
+  // ?lead=<id>: resolve via endpoint /conversations/by-lead/:leadId pra
+  // descobrir em qual fila/status a conversa esta, e atualiza a URL pros
+  // filtros incluirem essa conversa (queue + statusChips). Depois o useEffect
+  // de baixo cuida da auto-selecao quando convsData carregar nessa fila.
+  useEffect(() => {
+    if (!deepLeadId) return;
+    let cancelled = false;
+    fetchConversationByLead(deepLeadId)
+      .then((conv) => {
+        if (cancelled) return;
+        const STATUS_TO_CHIP: Record<typeof conv.status, string> = {
+          aguardando_atendimento: 'aguardando',
+          em_atendimento: 'em_atendimento',
+          encerrada: 'encerradas',
+        };
+        const next = new URLSearchParams(searchParams);
+        next.set('queue', conv.queue);
+        // Mantem chips uteis + adiciona o status atual da conv pra garantir
+        // que aparece no filtro.
+        const chipSet = new Set(statusKeys);
+        chipSet.add(STATUS_TO_CHIP[conv.status]);
+        next.set('statusChips', Array.from(chipSet).join(','));
+        next.set('assignment', 'all');
+        // Origin amplo pra nao filtrar fora.
+        next.set('origin', 'organic,campaign');
+        next.delete('lead');
+        // Substitui por ?conv=<id> -- o useEffect de baixo seleciona.
+        next.set('conv', conv.id);
+        setSearchParams(next, { replace: true });
+      })
+      .catch(() => {
+        // Lead sem conversa: limpa o param pra evitar loop.
+        const next = new URLSearchParams(searchParams);
+        next.delete('lead');
+        setSearchParams(next, { replace: true });
+      });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLeadId]);
+
   useEffect(() => {
     if (!convsData) return;
     if (deepConvId) {
@@ -50,16 +91,8 @@ export default function WhatsappPage() {
       const next = new URLSearchParams(searchParams);
       next.delete('conv');
       setSearchParams(next, { replace: true });
-    } else if (deepLeadId) {
-      const match = convsData.items.find((c) => c.lead.id === deepLeadId);
-      if (match && selectedConvId !== match.id) {
-        setSelectedConvId(match.id);
-      }
-      const next = new URLSearchParams(searchParams);
-      next.delete('lead');
-      setSearchParams(next, { replace: true });
     }
-  }, [convsData, deepConvId, deepLeadId, searchParams, selectedConvId, setSearchParams]);
+  }, [convsData, deepConvId, searchParams, selectedConvId, setSearchParams]);
 
   function patch(updates: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
