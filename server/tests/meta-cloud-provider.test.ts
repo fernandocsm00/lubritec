@@ -5,7 +5,6 @@ import { encryptSecret, _resetKeyCache } from '../lib/crypto';
 import {
   ProviderError,
   OutOfSessionWindowError,
-  TemplatesNotSupportedError,
 } from '../services/whatsapp/provider';
 
 vi.mock('../services/whatsapp/metaCloud/client', () => ({
@@ -123,14 +122,6 @@ describe('MetaCloudProvider', () => {
     expect(call.kind).toBe('image');
     expect(call.mediaUrl).toBe('https://x/y.png');
     expect(call.caption).toBe('hi');
-  });
-
-  it('sendTemplate throws TemplatesNotSupportedError (HSM lands in Plan C)', async () => {
-    await expect(
-      makeProvider().sendTemplate({
-        to: '5511999', templateName: 'x', language: 'pt_BR', variables: [],
-      })
-    ).rejects.toBeInstanceOf(TemplatesNotSupportedError);
   });
 
   it('capabilities reflect Meta restrictions', () => {

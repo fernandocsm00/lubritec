@@ -23,6 +23,10 @@ import {
   isOutOfSessionError,
   MetaGraphError,
 } from './client';
+import {
+  sendTemplateMessage,
+  type SendTemplateComponent,
+} from './templates';
 
 export class MetaCloudProvider implements WhatsAppProvider {
   readonly kind = 'meta_cloud' as const;
@@ -108,9 +112,44 @@ export class MetaCloudProvider implements WhatsAppProvider {
     }
   }
 
-  async sendTemplate(_opts: SendTemplateOpts): Promise<SendResult> {
-    // HSM templates land in Plan C.
-    throw new TemplatesNotSupportedError('meta_cloud');
+  async sendTemplate(opts: SendTemplateOpts): Promise<SendResult> {
+    const components: SendTemplateComponent[] = [];
+
+    // Header media (optional) — image / video / document
+    if (opts.headerMedia) {
+      components.push({
+        type: 'header',
+        parameters: [
+          {
+            type: opts.headerMedia.kind,
+            [opts.headerMedia.kind]: { link: opts.headerMedia.url },
+          } as SendTemplateComponent['parameters'][number],
+        ],
+      });
+    }
+
+    // Body variables (ordered by index)
+    if (opts.variables.length > 0) {
+      const sorted = [...opts.variables].sort((a, b) => a.index - b.index);
+      components.push({
+        type: 'body',
+        parameters: sorted.map((v) => ({ type: 'text' as const, text: v.value })),
+      });
+    }
+
+    try {
+      const res = await sendTemplateMessage({
+        phoneNumberId: this.cfg.phoneNumberId,
+        accessToken: this.decToken(),
+        to: opts.to,
+        name: opts.templateName,
+        language: opts.language,
+        components,
+      });
+      return { providerMsgId: res.messageId, rawPayload: res.rawPayload };
+    } catch (err) {
+      this.translateAndRethrow(err);
+    }
   }
 
   private translateAndRethrow(err: unknown): never {
