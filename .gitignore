@@ -1,6 +1,9 @@
 # deps
 node_modules/
 
+# git worktrees
+.worktrees/
+
 # build
 dist/
 dist-server/

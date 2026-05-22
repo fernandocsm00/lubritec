@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { createUser, createWhatsappInstance } from './helpers';
+import { encryptSecret } from '../lib/crypto';
 
-vi.mock('../services/uazapiInstanceClient', () => ({
+vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn().mockResolvedValue({ instanceId: 'x', rawPayload: {} }),
   getInstanceStatus: vi.fn().mockResolvedValue({
     status: 'disconnected', qrCode: null, phoneNumber: null, profileName: null, rawPayload: {},
@@ -72,9 +73,15 @@ describe('Whatsapp Instance RBAC', () => {
     expect(get.status).toBe(200);
 
     await createWhatsappInstance({
-      instanceId: 'inst-c',
-      instanceToken: 'tok',
-      webhookSecret: 'sec',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'inst-c',
+        instanceToken: encryptSecret('tok'),
+        webhookSecret: encryptSecret('sec'),
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
 
     const connect = await request(app)

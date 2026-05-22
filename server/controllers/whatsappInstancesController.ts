@@ -1,0 +1,202 @@
+import type { Request, Response, NextFunction } from 'express';
+import { eq, and, ne, count } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/client';
+import { whatsappInstance, conversations } from '../db/schema';
+import { HttpError } from '../middleware/errorHandler';
+import { encryptSecret } from '../lib/crypto';
+import { resolveProvider, invalidateProvider } from '../services/whatsapp/providerRegistry';
+import { uazapiConfigSchema } from '../services/whatsapp/uazapi/configSchema';
+import type {
+  InstanceListItem,
+  InstanceDetailResponse,
+  CreateInstanceRequest,
+} from '@shared/types';
+
+const createBodySchema = z.object({
+  provider: z.enum(['uazapi', 'meta_cloud']),
+  displayName: z.string().min(1).max(80),
+  isDefault: z.boolean().optional(),
+  uazapi: z.object({
+    baseUrl: z.string().url().optional(),
+    adminToken: z.string().optional(),
+  }).optional(),
+  metaCloud: z.object({
+    wabaId: z.string().min(1),
+    phoneNumberId: z.string().min(1),
+    accessToken: z.string().min(1),
+    appSecret: z.string().min(1),
+  }).optional(),
+});
+
+const patchBodySchema = z.object({
+  displayName: z.string().min(1).max(80).optional(),
+  isDefault: z.boolean().optional(),
+  isArchived: z.boolean().optional(),
+});
+
+function toListItem(row: typeof whatsappInstance.$inferSelect): InstanceListItem {
+  return {
+    id: row.id,
+    provider: row.provider as InstanceListItem['provider'],
+    displayName: row.displayName,
+    phoneNumber: row.phoneNumber,
+    profileName: row.profileName,
+    isDefault: row.isDefault,
+    isArchived: row.isArchived,
+    lastStatus: row.lastStatus,
+    lastStatusAt: row.lastStatusAt?.toISOString() ?? null,
+  };
+}
+
+export async function listHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await db.select().from(whatsappInstance)
+      .where(eq(whatsappInstance.isArchived, false));
+    res.json({ items: rows.map(toListItem) });
+  } catch (e) { next(e); }
+}
+
+export async function detailHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id;
+    const [row] = await db.select().from(whatsappInstance)
+      .where(eq(whatsappInstance.id, id)).limit(1);
+    if (!row) throw new HttpError(404, 'Instance not found');
+
+    const provider = await resolveProvider(id);
+    const live = await provider.getStatus();
+
+    const body: InstanceDetailResponse = {
+      ...toListItem(row),
+      status: live.status,
+      qrCode: live.qrCode,
+    };
+    if (row.provider === 'uazapi') {
+      const cfg = uazapiConfigSchema.parse(row.providerConfig);
+      body.uazapi = {
+        baseUrl: cfg.baseUrl,
+        webhookSynced: cfg.webhookSynced,
+        webhookUrl: cfg.webhookUrl,
+      };
+    }
+    res.json(body);
+  } catch (e) { next(e); }
+}
+
+export async function createHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const input: CreateInstanceRequest = createBodySchema.parse(req.body);
+
+    if (input.provider === 'meta_cloud') {
+      throw new HttpError(501, 'Meta Cloud provider not yet supported');
+    }
+
+    // UazAPI
+    const baseUrl = input.uazapi?.baseUrl
+      ?? process.env.UAZAPI_BASE_URL ?? 'https://api.uazapi.com';
+    const adminToken = input.uazapi?.adminToken
+      ?? process.env.UAZAPI_ADMIN_TOKEN ?? process.env.UAZAPI_TOKEN ?? null;
+
+    const cfg = {
+      baseUrl,
+      instanceId: null,
+      instanceToken: adminToken ? encryptSecret(adminToken) : null,
+      webhookSecret: null,
+      webhookUrl: null,
+      webhookSynced: false,
+    };
+
+    const [{ value: existingCount }] = await db
+      .select({ value: count() }).from(whatsappInstance);
+    const shouldBeDefault = (existingCount === 0) || input.isDefault === true;
+
+    let createdRow: typeof whatsappInstance.$inferSelect | undefined;
+    await db.transaction(async (tx) => {
+      if (shouldBeDefault) {
+        await tx.update(whatsappInstance)
+          .set({ isDefault: false, updatedAt: new Date() })
+          .where(eq(whatsappInstance.isDefault, true));
+      }
+      const [row] = await tx.insert(whatsappInstance).values({
+        provider: 'uazapi',
+        displayName: input.displayName,
+        isDefault: shouldBeDefault,
+        providerConfig: cfg,
+      }).returning();
+      createdRow = row;
+    });
+
+    if (!createdRow) throw new HttpError(500, 'Insert returned no row');
+    res.status(201).json(toListItem(createdRow));
+  } catch (e) {
+    if (e instanceof z.ZodError) return next(new HttpError(422, e.issues[0].message));
+    next(e);
+  }
+}
+
+export async function patchHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id;
+    const patch = patchBodySchema.parse(req.body);
+    const [existing] = await db.select().from(whatsappInstance)
+      .where(eq(whatsappInstance.id, id)).limit(1);
+    if (!existing) throw new HttpError(404, 'Instance not found');
+
+    await db.transaction(async (tx) => {
+      if (patch.isDefault === true) {
+        await tx.update(whatsappInstance)
+          .set({ isDefault: false, updatedAt: new Date() })
+          .where(and(eq(whatsappInstance.isDefault, true), ne(whatsappInstance.id, id)));
+      }
+      await tx.update(whatsappInstance).set({
+        displayName: patch.displayName ?? existing.displayName,
+        isDefault: patch.isDefault ?? existing.isDefault,
+        isArchived: patch.isArchived ?? existing.isArchived,
+        updatedAt: new Date(),
+      }).where(eq(whatsappInstance.id, id));
+    });
+
+    invalidateProvider(id);
+    const [updated] = await db.select().from(whatsappInstance)
+      .where(eq(whatsappInstance.id, id)).limit(1);
+    if (!updated) throw new HttpError(500, 'Update lost the row');
+    res.json(toListItem(updated));
+  } catch (e) {
+    if (e instanceof z.ZodError) return next(new HttpError(422, e.issues[0].message));
+    next(e);
+  }
+}
+
+export async function deleteHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id;
+    const [{ value: convCount }] = await db.select({ value: count() }).from(conversations)
+      .where(eq(conversations.instanceId, id));
+    if (convCount > 0) {
+      throw new HttpError(409,
+        `Há ${convCount} conversa(s) vinculada(s) a essa linha. Arquive em vez de excluir.`);
+    }
+    await db.delete(whatsappInstance).where(eq(whatsappInstance.id, id));
+    invalidateProvider(id);
+    res.status(204).end();
+  } catch (e) { next(e); }
+}
+
+export async function connectInstanceHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id;
+    const [row] = await db.select().from(whatsappInstance)
+      .where(eq(whatsappInstance.id, id)).limit(1);
+    if (!row) throw new HttpError(404, 'Instance not found');
+    if (!row.isDefault) {
+      throw new HttpError(501,
+        'Connect for non-default instances will be supported in a follow-up. ' +
+        'Mark as default first.');
+    }
+    const { connect } = await import('../services/whatsappInstanceService');
+    const result = await connect({});
+    invalidateProvider(id);
+    res.json(result);
+  } catch (e) { next(e); }
+}

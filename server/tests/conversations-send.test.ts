@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { db } from '../db/client';
@@ -6,7 +6,7 @@ import { conversations, messages } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { createUser, createLead, createConversation } from './helpers';
 
-vi.mock('../services/uazapiClient', () => ({
+vi.mock('../services/whatsapp/uazapi/client', () => ({
   uazapiClient: {
     sendMessage: vi.fn(),
   },
@@ -15,7 +15,7 @@ vi.mock('../services/uazapiClient', () => ({
   },
 }));
 
-import { uazapiClient } from '../services/uazapiClient';
+import { uazapiClient } from '../services/whatsapp/uazapi/client';
 
 const app = createApp();
 
@@ -78,7 +78,7 @@ describe('POST /api/conversations/:id/messages', () => {
     const rows = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(rows).toHaveLength(1);
     expect(rows[0].sentByUserId).toBe(userId);
-    expect(rows[0].uazapiMsgId).toBe('uazapi-out-001');
+    expect(rows[0].providerMsgId).toBe('uazapi-out-001');
   });
 
   it('502 quando UazAPI falha — nada é persistido', async () => {

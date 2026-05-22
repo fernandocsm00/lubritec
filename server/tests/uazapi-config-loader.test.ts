@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { createWhatsappInstance } from './helpers';
 import { loadSendConfig, loadWebhookSecret } from '../services/whatsappInstanceService';
+import { encryptSecret } from '../lib/crypto';
 
 beforeEach(() => {
   delete process.env.UAZAPI_BASE_URL;
@@ -19,9 +20,15 @@ describe('loadSendConfig', () => {
 
   it('lê do DB quando row existe com instanceId+token', async () => {
     await createWhatsappInstance({
-      baseUrl: 'https://x.api',
-      instanceId: 'i',
-      instanceToken: 't',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://x.api',
+        instanceId: 'i',
+        instanceToken: encryptSecret('t'),
+        webhookSecret: null,
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
     const cfg = await loadSendConfig();
     expect(cfg.baseUrl).toBe('https://x.api');
@@ -42,7 +49,8 @@ describe('loadSendConfig', () => {
     // Confirma que row foi criada
     const [row] = await db.select().from(whatsappInstance);
     expect(row).toBeDefined();
-    expect(row.webhookSynced).toBe(true);
+    const provCfg = row.providerConfig as Record<string, unknown>;
+    expect(provCfg.webhookSynced).toBe(true);
   });
 });
 
@@ -53,7 +61,17 @@ describe('loadWebhookSecret', () => {
   });
 
   it('lê do DB quando preenchido', async () => {
-    await createWhatsappInstance({ webhookSecret: 'db-secret' });
+    await createWhatsappInstance({
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: null,
+        instanceToken: null,
+        webhookSecret: encryptSecret('db-secret'),
+        webhookUrl: null,
+        webhookSynced: false,
+      },
+    });
     const s = await loadWebhookSecret();
     expect(s).toBe('db-secret');
   });
@@ -66,7 +84,17 @@ describe('loadWebhookSecret', () => {
 
   it('DB tem precedência sobre env', async () => {
     process.env.UAZAPI_WEBHOOK_SECRET = 'env-secret';
-    await createWhatsappInstance({ webhookSecret: 'db-secret' });
+    await createWhatsappInstance({
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: null,
+        instanceToken: null,
+        webhookSecret: encryptSecret('db-secret'),
+        webhookUrl: null,
+        webhookSynced: false,
+      },
+    });
     const s = await loadWebhookSecret();
     expect(s).toBe('db-secret');
   });

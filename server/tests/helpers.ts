@@ -77,9 +77,29 @@ export async function createLead(opts: {
 
 let _convPhoneSeq = 0;
 
+/**
+ * Auto-creates a default whatsapp_instance row if none exists, used as a
+ * fallback for createConversation/createMessage helpers.
+ *
+ * WARNING: tests that assert behavior specific to a particular instance MUST
+ * pass `instanceId` explicitly to createConversation/createMessage. Relying on
+ * this auto-creation can silently mask missing test setup (e.g., a test that
+ * intended to verify cross-instance isolation might still pass because both
+ * conversations land in the same auto-created instance).
+ */
+async function getOrCreateDefaultInstance(): Promise<string> {
+  const existing = await db.query.whatsappInstance.findFirst({
+    where: (t, { eq }) => eq(t.isDefault, true),
+  });
+  if (existing) return existing.id;
+  const row = await createWhatsappInstance({ isDefault: true });
+  return row.id;
+}
+
 export async function createConversation(opts: {
   phone?: string;
   leadId: string;
+  instanceId?: string;
   queue?: ConversationQueue;
   status?: ConversationStatus;
   assignedTo?: string | null;
@@ -90,11 +110,13 @@ export async function createConversation(opts: {
   unreadCount?: number;
   createdAt?: Date;
 }) {
+  const instanceId = opts.instanceId ?? await getOrCreateDefaultInstance();
   const [c] = await db
     .insert(conversations)
     .values({
       phone: opts.phone ?? `5511${String(++_convPhoneSeq).padStart(8, '0')}`,
       leadId: opts.leadId,
+      instanceId,
       queue: opts.queue ?? 'recepcao',
       status: opts.status ?? 'aguardando_atendimento',
       assignedTo: opts.assignedTo ?? null,
@@ -119,7 +141,10 @@ export async function createMessage(opts: {
   mediaUrl?: string | null;
   mediaMime?: string | null;
   sentByUserId?: string | null;
+  /** @deprecated use providerMsgId instead */
   uazapiMsgId?: string | null;
+  providerMsgId?: string | null;
+  provider?: 'uazapi' | 'meta_cloud';
   rawPayload?: unknown;
   sentAt?: Date;
 }) {
@@ -133,7 +158,8 @@ export async function createMessage(opts: {
       mediaUrl: opts.mediaUrl ?? null,
       mediaMime: opts.mediaMime ?? null,
       sentByUserId: opts.sentByUserId ?? null,
-      uazapiMsgId: opts.uazapiMsgId ?? `test-msg-${++_msgIdSeq}-${Date.now()}`,
+      providerMsgId: opts.providerMsgId ?? opts.uazapiMsgId ?? `test-msg-${++_msgIdSeq}-${Date.now()}`,
+      provider: opts.provider ?? 'uazapi',
       rawPayload: opts.rawPayload ?? {},
       sentAt: opts.sentAt ?? new Date(),
     })
@@ -207,28 +233,43 @@ export async function createDealActivity(opts: {
 }
 
 export async function createWhatsappInstance(opts: {
-  baseUrl?: string;
-  instanceId?: string | null;
-  instanceToken?: string | null;
-  webhookSecret?: string | null;
-  webhookUrl?: string | null;
-  webhookSynced?: boolean;
+  provider?: 'uazapi' | 'meta_cloud';
+  displayName?: string;
+  isDefault?: boolean;
+  isArchived?: boolean;
   phoneNumber?: string | null;
   profileName?: string | null;
   lastStatus?: string | null;
+  providerConfig?: Record<string, unknown>;
 } = {}) {
+  const provider = opts.provider ?? 'uazapi';
+  const defaultConfig = provider === 'uazapi'
+    ? {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: null,
+        instanceToken: null,
+        webhookSecret: null,
+        webhookUrl: null,
+        webhookSynced: false,
+      }
+    : {
+        wabaId: 'test-waba',
+        phoneNumberId: 'test-phone-id',
+        accessToken: null,
+        appSecret: null,
+        webhookVerifyToken: 'test-verify',
+      };
   const [row] = await db
     .insert(whatsappInstance)
     .values({
-      baseUrl: opts.baseUrl ?? 'https://api.uazapi.com',
-      instanceId: opts.instanceId ?? null,
-      instanceToken: opts.instanceToken ?? null,
-      webhookSecret: opts.webhookSecret ?? null,
-      webhookUrl: opts.webhookUrl ?? null,
-      webhookSynced: opts.webhookSynced ?? false,
+      provider,
+      displayName: opts.displayName ?? 'Test Line',
+      isDefault: opts.isDefault ?? false,
+      isArchived: opts.isArchived ?? false,
       phoneNumber: opts.phoneNumber ?? null,
       profileName: opts.profileName ?? null,
       lastStatus: opts.lastStatus ?? null,
+      providerConfig: opts.providerConfig ?? defaultConfig,
     })
     .returning();
   return row;

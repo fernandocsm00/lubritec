@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { createUser, createWhatsappInstance } from './helpers';
+import { encryptSecret } from '../lib/crypto';
 
-vi.mock('../services/uazapiInstanceClient', () => ({
+vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn(),
   getInstanceStatus: vi.fn(),
   logoutInstance: vi.fn(),
@@ -13,7 +14,7 @@ vi.mock('../services/uazapiInstanceClient', () => ({
     constructor(public status: number, public body: string) { super(`${status}`); }
   },
 }));
-import { getInstanceStatus } from '../services/uazapiInstanceClient';
+import { getInstanceStatus } from '../services/whatsapp/uazapi/instanceClient';
 
 const app = createApp();
 
@@ -84,11 +85,15 @@ describe('GET /api/whatsapp-instance', () => {
 
   it('200 com instance_id consulta UazAPI ao vivo', async () => {
     await createWhatsappInstance({
-      baseUrl: 'https://api.uazapi.com',
-      instanceId: 'inst-1',
-      instanceToken: 'tok-1',
-      webhookSecret: 'sec-1',
-      webhookSynced: true,
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'inst-1',
+        instanceToken: encryptSecret('tok-1'),
+        webhookSecret: encryptSecret('sec-1'),
+        webhookUrl: null,
+        webhookSynced: true,
+      },
     });
 
     vi.mocked(getInstanceStatus).mockResolvedValueOnce({
@@ -110,9 +115,15 @@ describe('GET /api/whatsapp-instance', () => {
 
   it('200 retorna status=error quando UazAPI falha', async () => {
     await createWhatsappInstance({
-      baseUrl: 'https://api.uazapi.com',
-      instanceId: 'inst-2',
-      instanceToken: 'tok-2',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'inst-2',
+        instanceToken: encryptSecret('tok-2'),
+        webhookSecret: null,
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
 
     vi.mocked(getInstanceStatus).mockRejectedValueOnce(new Error('connection lost'));
@@ -127,9 +138,15 @@ describe('GET /api/whatsapp-instance', () => {
 
   it('200 sem instance_id (row criada mas não conectada) retorna configured: false', async () => {
     await createWhatsappInstance({
-      baseUrl: 'https://api.uazapi.com',
-      instanceId: null,
-      instanceToken: null,
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: null,
+        instanceToken: null,
+        webhookSecret: null,
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
 
     const token = await loginAs();

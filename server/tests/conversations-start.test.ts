@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { db } from '../db/client';
 import { conversations, leads, messages } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createConversation } from './helpers';
+import { createUser, createLead, createConversation, createWhatsappInstance } from './helpers';
 
-vi.mock('../services/uazapiClient', () => ({
+vi.mock('../services/whatsapp/uazapi/client', () => ({
   uazapiClient: {
     sendMessage: vi.fn(),
   },
@@ -15,7 +15,7 @@ vi.mock('../services/uazapiClient', () => ({
   },
 }));
 
-import { uazapiClient } from '../services/uazapiClient';
+import { uazapiClient } from '../services/whatsapp/uazapi/client';
 
 const app = createApp();
 
@@ -25,8 +25,9 @@ async function loginAs(email = 'r@x.com', password = 'pw12345') {
   return { token: res.body.accessToken as string, userId: res.body.user.id as string };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.mocked(uazapiClient.sendMessage).mockReset();
+  await createWhatsappInstance({ isDefault: true, displayName: 'Test default' });
 });
 
 describe('POST /api/conversations/start', () => {
@@ -92,7 +93,7 @@ describe('POST /api/conversations/start', () => {
 
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(msgs).toHaveLength(1);
-    expect(msgs[0].uazapiMsgId).toBe('uazapi-start-001');
+    expect(msgs[0].providerMsgId).toBe('uazapi-start-001');
   });
 
   it('200 reusa lead+conversa existentes quando já existem para o telefone', async () => {

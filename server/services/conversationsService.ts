@@ -1,5 +1,5 @@
-import { db } from '../db/client';
-import { conversations, messages, leads, users } from '../db/schema';
+﻿import { db } from '../db/client';
+import { conversations, messages, leads, users, whatsappInstance } from '../db/schema';
 import { eq, and, or, ilike, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
@@ -13,6 +13,13 @@ import type {
 
 const PAGE_SIZE = 50;
 const NO_RESPONSE_DAYS = Number(process.env.NO_RESPONSE_DAYS ?? '7');
+
+async function getDefaultInstanceId(): Promise<string> {
+  const [row] = await db.select({ id: whatsappInstance.id }).from(whatsappInstance)
+    .where(eq(whatsappInstance.isDefault, true)).limit(1);
+  if (!row) throw new HttpError(503, 'No default WhatsApp instance configured');
+  return row.id;
+}
 
 function previewFromMessage(row: {
   body: string | null;
@@ -299,7 +306,7 @@ export async function markRead(
 // Send message
 // ---------------------------------------------------------------------------
 
-import { uazapiClient } from './uazapiClient';
+import { uazapiClient } from './whatsapp/uazapi/client';
 
 export interface SendInput {
   conversationId: string;
@@ -345,7 +352,8 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         mediaUrl: input.mediaUrl ?? null,
         mediaMime: input.mediaMime ?? null,
         sentByUserId: input.userId,
-        uazapiMsgId: uazapiResp.messageId,
+        providerMsgId: uazapiResp.messageId,
+        provider: 'uazapi',
         rawPayload: uazapiResp.rawPayload as object,
         sentAt,
       })
@@ -473,10 +481,12 @@ export async function startConversation(
   } else {
     try {
       const now = new Date();
+      const instanceId = await getDefaultInstanceId();
       const [createdConv] = await db
         .insert(conversations)
         .values({
           phone,
+          instanceId,
           leadId,
           queue: 'recepcao',
           status: 'em_atendimento',

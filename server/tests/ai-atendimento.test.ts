@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { conversations, messages, leads, orgSettings } from '../db/schema';
@@ -18,7 +18,7 @@ vi.mock('../services/geminiClient', () => ({
   },
 }));
 
-vi.mock('../services/uazapiClient', () => ({
+vi.mock('../services/whatsapp/uazapi/client', () => ({
   uazapiClient: { sendMessage: vi.fn() },
   UazapiError: class extends Error {
     constructor(public status: number, public body: string) { super(`UazAPI ${status}`); }
@@ -26,7 +26,7 @@ vi.mock('../services/uazapiClient', () => ({
 }));
 
 import { generateReply, generateReplyDetailed } from '../services/geminiClient';
-import { uazapiClient } from '../services/uazapiClient';
+import { uazapiClient } from '../services/whatsapp/uazapi/client';
 
 beforeEach(() => {
   vi.mocked(generateReply).mockReset();
@@ -197,7 +197,7 @@ describe('processInboundWithAi', () => {
     expect(msgs[0].direction).toBe('out');
     expect(msgs[0].body).toBe('Olá! Posso te ajudar. Qual o tamanho da sua frota?');
     expect(msgs[0].sentByUserId).toBeNull(); // null = enviado pela IA
-    expect(msgs[0].uazapiMsgId).toBe('uazapi-ai-001');
+    expect(msgs[0].providerMsgId).toBe('uazapi-ai-001');
   });
 
   it('quando Gemini retorna [QUALIFICADO], move conversa pra Comercial + lead pra qualified', async () => {

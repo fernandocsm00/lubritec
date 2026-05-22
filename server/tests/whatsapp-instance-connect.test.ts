@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { createUser, createWhatsappInstance } from './helpers';
+import { encryptSecret, decryptSecret } from '../lib/crypto';
 
-vi.mock('../services/uazapiInstanceClient', () => ({
+vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn(),
   connectInstance: vi.fn(),
   getInstanceStatus: vi.fn(),
@@ -21,7 +22,7 @@ import {
   connectInstance,
   getInstanceStatus,
   setWebhook,
-} from '../services/uazapiInstanceClient';
+} from '../services/whatsapp/uazapi/instanceClient';
 
 const app = createApp();
 
@@ -88,9 +89,15 @@ describe('POST /api/whatsapp-instance/connect', () => {
 
   it('idempotente: se já tem instanceId, reusa em vez de re-criar', async () => {
     await createWhatsappInstance({
-      instanceId: 'existing-inst',
-      instanceToken: 'tok',
-      webhookSecret: 'sec',
+      isDefault: true,
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'existing-inst',
+        instanceToken: encryptSecret('tok'),
+        webhookSecret: encryptSecret('sec'),
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
 
     vi.mocked(setWebhook).mockResolvedValueOnce(undefined);
@@ -113,7 +120,7 @@ describe('POST /api/whatsapp-instance/connect', () => {
   });
 
   it('502 quando UazAPI init falha', async () => {
-    const { UazapiInstanceError } = await import('../services/uazapiInstanceClient');
+    const { UazapiInstanceError } = await import('../services/whatsapp/uazapi/instanceClient');
     vi.mocked(initInstance).mockRejectedValueOnce(new UazapiInstanceError(500, 'down'));
 
     const token = await loginAdmin();
@@ -131,7 +138,7 @@ describe('POST /api/whatsapp-instance/connect', () => {
       status: 'disconnected',
       rawPayload: {},
     });
-    const { UazapiInstanceError } = await import('../services/uazapiInstanceClient');
+    const { UazapiInstanceError } = await import('../services/whatsapp/uazapi/instanceClient');
     vi.mocked(setWebhook).mockRejectedValueOnce(new UazapiInstanceError(500, 'down'));
 
     const token = await loginAdmin();
@@ -142,7 +149,8 @@ describe('POST /api/whatsapp-instance/connect', () => {
     expect(res.status).toBe(502);
 
     const [row] = await db.select().from(whatsappInstance);
-    expect(row.instanceId).toBe('new-inst-2');
-    expect(row.webhookSynced).toBe(false);
+    const cfg = row.providerConfig as Record<string, unknown>;
+    expect(cfg.instanceId).toBe('new-inst-2');
+    expect(cfg.webhookSynced).toBe(false);
   });
 });

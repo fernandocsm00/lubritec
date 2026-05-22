@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
 import { createUser, createWhatsappInstance } from './helpers';
+import { encryptSecret } from '../lib/crypto';
 
-vi.mock('../services/uazapiInstanceClient', () => ({
+vi.mock('../services/whatsapp/uazapi/instanceClient', () => ({
   initInstance: vi.fn(),
   getInstanceStatus: vi.fn(),
   logoutInstance: vi.fn(),
@@ -15,7 +16,7 @@ vi.mock('../services/uazapiInstanceClient', () => ({
     constructor(public status: number, public body: string) { super(`${status}`); }
   },
 }));
-import { logoutInstance, getInstanceStatus } from '../services/uazapiInstanceClient';
+import { logoutInstance, getInstanceStatus } from '../services/whatsapp/uazapi/instanceClient';
 
 const app = createApp();
 
@@ -42,11 +43,17 @@ describe('POST /api/whatsapp-instance/disconnect', () => {
 
   it('200 chama UazAPI logout e mantém row', async () => {
     await createWhatsappInstance({
-      instanceId: 'inst-x',
-      instanceToken: 'tok',
+      isDefault: true,
       phoneNumber: '5511999999999',
       profileName: 'Old',
-      webhookSecret: 'sec',
+      providerConfig: {
+        baseUrl: 'https://api.uazapi.com',
+        instanceId: 'inst-x',
+        instanceToken: encryptSecret('tok'),
+        webhookSecret: encryptSecret('sec'),
+        webhookUrl: null,
+        webhookSynced: false,
+      },
     });
 
     vi.mocked(logoutInstance).mockResolvedValueOnce(undefined);
@@ -69,7 +76,8 @@ describe('POST /api/whatsapp-instance/disconnect', () => {
     // Row preservada, mas phone/profile limpos
     const [row] = await db.select().from(whatsappInstance);
     expect(row).toBeDefined();
-    expect(row.instanceId).toBe('inst-x');
+    const cfg = row.providerConfig as Record<string, unknown>;
+    expect(cfg.instanceId).toBe('inst-x');
     expect(row.phoneNumber).toBeNull();
     expect(row.profileName).toBeNull();
   });

@@ -11,6 +11,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import {
   ROLES,
   LEAD_STATUSES,
@@ -26,6 +27,7 @@ import {
   DEAL_ACTIVITY_KINDS,
   CAMPAIGN_STATUSES,
   CAMPAIGN_RECIPIENT_STATUSES,
+  PROVIDER_KINDS,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -89,7 +91,8 @@ export const leads = pgTable('leads', {
 
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
-  phone: text('phone').notNull().unique(),
+  phone: text('phone').notNull(),
+  instanceId: uuid('instance_id').notNull().references(() => whatsappInstance.id, { onDelete: 'restrict' }),
   leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'restrict' }),
   queue: text('queue', { enum: CONVERSATION_QUEUES }).notNull().default('recepcao'),
   status: text('status', { enum: CONVERSATION_STATUSES }).notNull().default('aguardando_atendimento'),
@@ -101,7 +104,9 @@ export const conversations = pgTable('conversations', {
   unreadCount: integer('unread_count').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  instancePhoneUniq: uniqueIndex('idx_conversations_instance_phone').on(t.instanceId, t.phone),
+}));
 
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -112,11 +117,16 @@ export const messages = pgTable('messages', {
   mediaUrl: text('media_url'),
   mediaMime: text('media_mime'),
   sentByUserId: uuid('sent_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
-  uazapiMsgId: text('uazapi_msg_id').unique(),
+  providerMsgId: text('provider_msg_id'),
+  provider: text('provider', { enum: PROVIDER_KINDS }).notNull().default('uazapi'),
   rawPayload: jsonb('raw_payload').notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  providerMsgidUniq: uniqueIndex('idx_messages_provider_msgid')
+    .on(t.provider, t.providerMsgId)
+    .where(sql`${t.providerMsgId} IS NOT NULL`),
+}));
 
 export const messageTemplates = pgTable('message_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -151,20 +161,22 @@ export const dealActivities = pgTable('deal_activities', {
 
 export const whatsappInstance = pgTable('whatsapp_instance', {
   id: uuid('id').primaryKey().defaultRandom(),
-  singleton: boolean('singleton').notNull().default(true),
-  baseUrl: text('base_url').notNull(),
-  instanceId: text('instance_id'),
-  instanceToken: text('instance_token'),
-  webhookSecret: text('webhook_secret'),
-  webhookUrl: text('webhook_url'),
-  webhookSynced: boolean('webhook_synced').notNull().default(false),
+  provider: text('provider', { enum: PROVIDER_KINDS }).notNull(),
+  displayName: text('display_name').notNull(),
   phoneNumber: text('phone_number'),
   profileName: text('profile_name'),
+  providerConfig: jsonb('provider_config').notNull().default({}),
+  isDefault: boolean('is_default').notNull().default(false),
+  isArchived: boolean('is_archived').notNull().default(false),
   lastStatus: text('last_status'),
   lastStatusAt: timestamp('last_status_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  defaultUniq: uniqueIndex('idx_whatsapp_instance_default')
+    .on(t.isDefault)
+    .where(sql`${t.isDefault} = true`),
+}));
 
 export const orgSettings = pgTable(
   'org_settings',
