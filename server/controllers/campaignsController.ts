@@ -13,8 +13,10 @@ import {
   listRecipients,
   getCampaignFunnel,
   getCampaignsAggregateStats,
+  getCampaignsTimeseries,
 } from '../services/campaignsService';
 import { dryRun } from '../services/campaignsAudience';
+import { resolvePeriod, type PeriodKey } from '../lib/period';
 
 const idParams = z.object({ id: z.string().uuid() });
 
@@ -65,9 +67,83 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
-export async function aggregateStatsHandler(_req: Request, res: Response, next: NextFunction) {
+const aggregateStatsQuery = z.object({
+  period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
+  kind: z.enum(['all', 'one_shot', 'continuous']).optional(),
+  compare: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+});
+
+export async function aggregateStatsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await getCampaignsAggregateStats());
+    const q = aggregateStatsQuery.parse(req.query);
+    const periodKey: PeriodKey = q.period ?? '30d';
+    const range = resolvePeriod(periodKey);
+    const kind = q.kind ?? 'all';
+
+    const current = await getCampaignsAggregateStats({
+      start: range.start,
+      end: range.end,
+      kind,
+    });
+    const base = {
+      ...current,
+      period: {
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+        key: range.key,
+        label: range.label,
+      },
+      kind,
+    };
+    if (!q.compare) {
+      res.json(base);
+      return;
+    }
+    const prev = await getCampaignsAggregateStats({
+      start: range.prevStart,
+      end: range.prevEnd,
+      kind,
+    });
+    res.json({
+      ...base,
+      compareWith: {
+        ...prev,
+        period: {
+          start: range.prevStart.toISOString(),
+          end: range.prevEnd.toISOString(),
+          key: range.key,
+          label: 'Período anterior',
+        },
+        kind,
+      },
+    });
+  } catch (e) { next(e); }
+}
+
+const timeseriesQuery = z.object({
+  period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
+  kind: z.enum(['all', 'one_shot', 'continuous']).optional(),
+});
+
+export async function timeseriesHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const q = timeseriesQuery.parse(req.query);
+    const periodKey: PeriodKey = q.period ?? '30d';
+    const range = resolvePeriod(periodKey);
+    const buckets = await getCampaignsTimeseries({
+      start: range.start,
+      end: range.end,
+      kind: q.kind ?? 'all',
+    });
+    res.json({
+      buckets,
+      period: {
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+        key: range.key,
+        label: range.label,
+      },
+    });
   } catch (e) { next(e); }
 }
 

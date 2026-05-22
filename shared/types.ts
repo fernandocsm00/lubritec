@@ -401,7 +401,13 @@ export interface CampaignFunnel {
 
 /**
  * Stats agregadas de todas as campanhas. Usado pra dashboard de relatorio
- * na pagina /campanhas.
+ * na pagina /campanhas e /campanhas/relatorio.
+ *
+ * Filtravel por periodo (filtra atividade — sent_at de recipients + closed_at
+ * de deals) e por tipo (one-shot / continuous / all).
+ *
+ * Se compareWith for retornado, eh stats do periodo imediatamente anterior
+ * (mesma duracao) — frontend usa pra mostrar Δ%.
  */
 export interface CampaignsAggregateStats {
   totalCampaigns: number;
@@ -415,6 +421,25 @@ export interface CampaignsAggregateStats {
   totalLost: number;
   totalWonValue: number;
   conversionRate: number;
+  period: { start: string; end: string; key: string; label: string };
+  kind: 'all' | 'one_shot' | 'continuous';
+  compareWith?: Omit<CampaignsAggregateStats, 'compareWith'>;
+}
+
+/**
+ * Serie temporal diaria pra grafico no relatorio dedicado.
+ * Cada bucket cobre 1 dia (timezone America/Sao_Paulo).
+ */
+export interface CampaignsTimeseriesBucket {
+  date: string;       // YYYY-MM-DD
+  sent: number;
+  replied: number;
+  won: number;
+}
+
+export interface CampaignsTimeseries {
+  buckets: CampaignsTimeseriesBucket[];
+  period: { start: string; end: string; key: string; label: string };
 }
 
 export interface PublicCampaignRecipient {

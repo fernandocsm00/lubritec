@@ -6,6 +6,8 @@ export type {
   PublicCampaign,
   CampaignFunnel,
   CampaignsAggregateStats,
+  CampaignsTimeseries,
+  CampaignsTimeseriesBucket,
   PublicCampaignRecipient,
   LeadStatus,
   LeadSource,

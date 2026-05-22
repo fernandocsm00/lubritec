@@ -6,6 +6,8 @@ import type {
   PublicCampaign,
   CampaignFunnel,
   CampaignsAggregateStats,
+  CampaignsTimeseries,
+  CampaignsTimeseriesBucket,
   CampaignStatus,
   AudienceFilters,
   PublicCampaignRecipient,
@@ -342,59 +344,101 @@ export async function listRecipients(input: {
 }
 
 /**
- * Agrega metricas de TODAS as campanhas pra dashboard de relatorio.
+ * Agrega metricas de campanhas no periodo dado.
  *
- * Difere de getCampaignFunnel (por-campanha) em que aqui:
- * - totaliza recipients/sent/replied/won/lost/wonValue across todas campanhas
- * - conta campanhas por status (totalCampaigns, completedCampaigns, activeCampaigns)
- * - calcula replyRate e conversionRate como percentuais
+ * Filtros:
+ *   - period (start/end): filtra atividade (recipients.sent_at e deals.closed_at).
+ *     totalCampaigns conta campanhas com atividade no periodo.
+ *   - kind: 'all' | 'one_shot' | 'continuous' — filtra por campaigns.is_continuous.
  *
- * Implementacao: uma query agregadora pra campaign_recipients (sent/total),
- * uma pra replied via EXISTS messages.in apos sent_at, uma pra deals.
- * Campanhas "continuas" sao incluidas (afinal o usuario quer ver todo movimento).
+ * Para period-over-period (Δ%), o handler chama essa funcao 2 vezes:
+ *   uma com periodo atual, outra com periodo anterior (mesma duracao).
  */
-export async function getCampaignsAggregateStats(): Promise<CampaignsAggregateStats> {
-  // Contagem de campanhas por status.
-  const campaignCounts = await db
-    .select({
-      total: sql<number>`count(*)::int`,
-      completed: sql<number>`count(*) FILTER (WHERE status = 'completed')::int`,
-      active: sql<number>`count(*) FILTER (WHERE status IN ('running', 'scheduled'))::int`,
-    })
-    .from(campaigns);
+export interface AggregateStatsInput {
+  start: Date;
+  end: Date;
+  kind?: 'all' | 'one_shot' | 'continuous';
+}
 
-  // Sent/total recipients agregado.
-  const [recipientCounts] = await db
-    .select({
-      sent: sql<number>`count(*) FILTER (WHERE status = 'sent')::int`,
-    })
-    .from(campaignRecipients);
+export async function getCampaignsAggregateStats(input: AggregateStatsInput): Promise<Omit<CampaignsAggregateStats, 'period' | 'kind' | 'compareWith'>> {
+  const { start, end } = input;
+  const kind = input.kind ?? 'all';
 
-  // Replied: count distinct lead_id que tem inbound apos o sent_at do recipient.
+  // SQL fragments reutilizaveis pra filtro de kind via subquery em campaign_recipients.
+  const kindCampaignFilter = kind === 'all'
+    ? sql``
+    : kind === 'continuous'
+      ? sql`AND c.is_continuous = true`
+      : sql`AND c.is_continuous = false`;
+
+  const kindRecipientFilter = kind === 'all'
+    ? sql``
+    : kind === 'continuous'
+      ? sql`AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = cr.campaign_id AND c.is_continuous = true)`
+      : sql`AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = cr.campaign_id AND c.is_continuous = false)`;
+
+  // Contagem de campanhas com atividade no periodo (ao menos 1 recipient sent_at no range).
+  const campaignCountRows = await db.execute(sql`
+    SELECT
+      COUNT(DISTINCT cr.campaign_id)::int AS total,
+      COUNT(DISTINCT cr.campaign_id) FILTER (WHERE c.status = 'completed')::int AS completed,
+      COUNT(DISTINCT cr.campaign_id) FILTER (WHERE c.status IN ('running', 'scheduled'))::int AS active
+    FROM campaign_recipients cr
+    JOIN campaigns c ON c.id = cr.campaign_id
+    WHERE cr.sent_at >= ${start} AND cr.sent_at < ${end}
+      ${kindCampaignFilter}
+  `);
+  const cc = campaignCountRows.rows[0] as { total: number; completed: number; active: number };
+
+  // Sent recipients no periodo.
+  const sentRows = await db.execute(sql`
+    SELECT COUNT(*)::int AS sent
+    FROM campaign_recipients cr
+    WHERE cr.status = 'sent'
+      AND cr.sent_at >= ${start} AND cr.sent_at < ${end}
+      ${kindRecipientFilter}
+  `);
+  const sent = (sentRows.rows[0] as { sent: number }).sent ?? 0;
+
+  // Replied: leads distintos que receberam disparo no periodo E responderam (inbound apos sent_at).
   const repliedRows = await db.execute(sql`
     SELECT COUNT(DISTINCT cr.lead_id)::int AS replied
     FROM campaign_recipients cr
     WHERE cr.status = 'sent'
+      AND cr.sent_at >= ${start} AND cr.sent_at < ${end}
+      ${kindRecipientFilter}
       AND EXISTS (
-        SELECT 1 FROM conversations c
-        JOIN messages m ON m.conversation_id = c.id
-        WHERE c.lead_id = cr.lead_id
+        SELECT 1 FROM conversations c2
+        JOIN messages m ON m.conversation_id = c2.id
+        WHERE c2.lead_id = cr.lead_id
           AND m.direction = 'in'
           AND m.sent_at > cr.sent_at
       )
   `);
   const replied = (repliedRows.rows[0] as { replied: number }).replied ?? 0;
 
-  // Deals agregados (so leads que vieram de alguma campanha).
+  // Deals agregados: usa closed_at quando ganho/perdido (estagios terminais), senao
+  // usa created_at — captura tanto deals fechados no periodo quanto deals abertos no periodo.
   const dealsAgg = await db.execute(sql`
     SELECT
-      COUNT(*) FILTER (WHERE d.stage IN ('lead_no_comercial','proposta_enviada','em_negociacao'))::int AS in_deal,
-      COUNT(*) FILTER (WHERE d.stage = 'ganho')::int AS won,
-      COUNT(*) FILTER (WHERE d.stage = 'perdido')::int AS lost,
-      COALESCE(SUM(CASE WHEN d.stage = 'ganho' THEN d.proposal_value ELSE 0 END), 0) AS won_value
+      COUNT(*) FILTER (WHERE d.stage IN ('lead_no_comercial','proposta_enviada','em_negociacao')
+                       AND d.created_at >= ${start} AND d.created_at < ${end})::int AS in_deal,
+      COUNT(*) FILTER (WHERE d.stage = 'ganho'
+                       AND COALESCE(d.closed_at, d.created_at) >= ${start}
+                       AND COALESCE(d.closed_at, d.created_at) < ${end})::int AS won,
+      COUNT(*) FILTER (WHERE d.stage = 'perdido'
+                       AND COALESCE(d.closed_at, d.created_at) >= ${start}
+                       AND COALESCE(d.closed_at, d.created_at) < ${end})::int AS lost,
+      COALESCE(SUM(CASE WHEN d.stage = 'ganho'
+                        AND COALESCE(d.closed_at, d.created_at) >= ${start}
+                        AND COALESCE(d.closed_at, d.created_at) < ${end}
+                   THEN d.proposal_value ELSE 0 END), 0) AS won_value
     FROM deals d
     WHERE EXISTS (
-      SELECT 1 FROM campaign_recipients cr WHERE cr.lead_id = d.lead_id
+      SELECT 1 FROM campaign_recipients cr
+      JOIN campaigns c ON c.id = cr.campaign_id
+      WHERE cr.lead_id = d.lead_id
+        ${kindCampaignFilter}
     )
   `);
   const deal = dealsAgg.rows[0] as { in_deal: number; won: number; lost: number; won_value: string | number };
@@ -403,14 +447,13 @@ export async function getCampaignsAggregateStats(): Promise<CampaignsAggregateSt
   const lost = deal.lost ?? 0;
   const wonValue = Number(deal.won_value ?? 0);
 
-  const sent = recipientCounts.sent ?? 0;
   const replyRate = sent === 0 ? 0 : Math.round((replied / sent) * 1000) / 10;
   const conversionRate = sent === 0 ? 0 : Math.round((won / sent) * 1000) / 10;
 
   return {
-    totalCampaigns: campaignCounts[0].total ?? 0,
-    completedCampaigns: campaignCounts[0].completed ?? 0,
-    activeCampaigns: campaignCounts[0].active ?? 0,
+    totalCampaigns: cc.total ?? 0,
+    completedCampaigns: cc.completed ?? 0,
+    activeCampaigns: cc.active ?? 0,
     totalSent: sent,
     totalReplied: replied,
     replyRate,
@@ -420,6 +463,91 @@ export async function getCampaignsAggregateStats(): Promise<CampaignsAggregateSt
     totalWonValue: wonValue,
     conversionRate,
   };
+}
+
+/**
+ * Serie temporal diaria de sent/replied/won pra grafico no relatorio dedicado.
+ * Buckets cobrem dia completo em America/Sao_Paulo (UTC-3 fixo, sem DST).
+ * Datas sem atividade aparecem com 0 (zero-fill).
+ */
+export async function getCampaignsTimeseries(input: {
+  start: Date;
+  end: Date;
+  kind?: 'all' | 'one_shot' | 'continuous';
+}): Promise<CampaignsTimeseriesBucket[]> {
+  const { start, end } = input;
+  const kind = input.kind ?? 'all';
+  const kindRecipientFilter = kind === 'all'
+    ? sql``
+    : kind === 'continuous'
+      ? sql`AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = cr.campaign_id AND c.is_continuous = true)`
+      : sql`AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = cr.campaign_id AND c.is_continuous = false)`;
+  const kindCampaignFilter = kind === 'all'
+    ? sql``
+    : kind === 'continuous'
+      ? sql`AND c.is_continuous = true`
+      : sql`AND c.is_continuous = false`;
+
+  // Dias do periodo no timezone SP (cada bucket fecha em [00:00, 23:59:59.999]).
+  const sentByDay = await db.execute(sql`
+    SELECT
+      to_char(cr.sent_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS d,
+      COUNT(*)::int AS sent,
+      COUNT(DISTINCT cr.lead_id) FILTER (WHERE EXISTS (
+        SELECT 1 FROM conversations c2
+        JOIN messages m ON m.conversation_id = c2.id
+        WHERE c2.lead_id = cr.lead_id
+          AND m.direction = 'in'
+          AND m.sent_at > cr.sent_at
+      ))::int AS replied
+    FROM campaign_recipients cr
+    WHERE cr.status = 'sent'
+      AND cr.sent_at >= ${start} AND cr.sent_at < ${end}
+      ${kindRecipientFilter}
+    GROUP BY 1
+  `);
+
+  const wonByDay = await db.execute(sql`
+    SELECT
+      to_char(COALESCE(d.closed_at, d.created_at) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS d,
+      COUNT(*)::int AS won
+    FROM deals d
+    WHERE d.stage = 'ganho'
+      AND COALESCE(d.closed_at, d.created_at) >= ${start}
+      AND COALESCE(d.closed_at, d.created_at) < ${end}
+      AND EXISTS (
+        SELECT 1 FROM campaign_recipients cr
+        JOIN campaigns c ON c.id = cr.campaign_id
+        WHERE cr.lead_id = d.lead_id
+          ${kindCampaignFilter}
+      )
+    GROUP BY 1
+  `);
+
+  // Indexa por data.
+  const byDate = new Map<string, CampaignsTimeseriesBucket>();
+  for (const r of sentByDay.rows as { d: string; sent: number; replied: number }[]) {
+    byDate.set(r.d, { date: r.d, sent: r.sent ?? 0, replied: r.replied ?? 0, won: 0 });
+  }
+  for (const r of wonByDay.rows as { d: string; won: number }[]) {
+    const ex = byDate.get(r.d);
+    if (ex) ex.won = r.won ?? 0;
+    else byDate.set(r.d, { date: r.d, sent: 0, replied: 0, won: r.won ?? 0 });
+  }
+
+  // Zero-fill: gera array continuo de dias entre start e end.
+  const buckets: CampaignsTimeseriesBucket[] = [];
+  const dayMs = 86_400_000;
+  // start ja eh UTC; convertemos pra dia SP usando offset fixo -3h.
+  const cursor = new Date(start.getTime() - 3 * 3600_000);
+  cursor.setUTCHours(0, 0, 0, 0);
+  const endShifted = end.getTime() - 3 * 3600_000;
+  while (cursor.getTime() < endShifted) {
+    const dateStr = cursor.toISOString().slice(0, 10);
+    buckets.push(byDate.get(dateStr) ?? { date: dateStr, sent: 0, replied: 0, won: 0 });
+    cursor.setTime(cursor.getTime() + dayMs);
+  }
+  return buckets;
 }
 
 // Funnel
