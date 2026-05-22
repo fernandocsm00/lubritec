@@ -14,6 +14,27 @@ type FormState = Pick<PublicOrgSettings,
   | 'aiQualifyWhen' | 'aiBusinessHours' | 'aiAfterHoursMsg'
   | 'aiBusinessHoursStart' | 'aiBusinessHoursEnd' | 'aiBusinessHoursDays' | 'ai24x7'>;
 
+// Labels human-friendly pros campos que aparecem em erro de validacao.
+// Cobre todos os campos editaveis em AiTab + os de horario comercial.
+const FIELD_LABELS: Record<string, string> = {
+  aiAgentName: 'Nome do agente',
+  aiBusinessName: 'Nome da empresa',
+  aiBusinessDesc: 'Descrição do negócio',
+  aiProducts: 'Produtos e serviços',
+  aiTargetAudience: 'Público-alvo',
+  aiTone: 'Tom de voz',
+  aiObjective: 'Objetivo principal',
+  aiDontTalk: 'NÃO falar sobre',
+  aiAlwaysAsk: 'SEMPRE perguntar',
+  aiQualifyWhen: 'Critério de qualificação',
+  aiBusinessHours: 'Horário de atendimento (texto)',
+  aiAfterHoursMsg: 'Mensagem fora do horário',
+  aiBusinessHoursStart: 'Início do horário comercial',
+  aiBusinessHoursEnd: 'Fim do horário comercial',
+  aiBusinessHoursDays: 'Dias da semana (ISO)',
+  ai24x7: 'IA 24/7',
+};
+
 const EMPTY: FormState = {
   aiEnabled: false,
   aiAgentName: '',
@@ -104,7 +125,19 @@ export default function AiTab() {
       await updateOrgSettings(payload);
       toast.success('Configuração da IA salva.');
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao salvar');
+      // ApiError tras body.issues quando eh Zod validation -- mostra o campo
+      // que falhou no toast em vez de "Validation error" generico.
+      const body = (e as { body?: { error?: string; issues?: Array<{ path: (string | number)[]; message: string }> } } | undefined)?.body;
+      const issues = body?.issues;
+      if (issues && issues.length > 0) {
+        const msg = issues.slice(0, 3).map((iss) => {
+          const field = iss.path.join('.') || 'campo';
+          return `${FIELD_LABELS[field] ?? field}: ${iss.message}`;
+        }).join('\n');
+        toast.error(msg, { duration: 8_000 });
+      } else {
+        toast.error(e instanceof Error ? e.message : 'Erro ao salvar');
+      }
     } finally {
       setSaving(false);
     }
