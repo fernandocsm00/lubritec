@@ -5,16 +5,15 @@ import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { ImportReport } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
-import { lookupCnpj } from './cnpjLookup';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 
-// BrasilAPI free tier is roughly 3 req/min; adding ~21s between calls keeps us
-// under that ceiling. Larger imports are rejected up-front so a CSV with 1000
-// rows doesn't quietly take 6 hours to process. Tests override the throttle
-// via the `throttleMs` option to keep the suite fast.
-const DEFAULT_BRASILAPI_THROTTLE_MS = 21_000;
-const MAX_CNPJ_LOOKUPS_PER_IMPORT = 200;
+// Mudanca 2026-05-22: removida a validacao SINCRONA via BrasilAPI durante o
+// import. Antes: cada CNPJ era consultado na hora (21s entre calls -> 200 linhas
+// levavam 70min, e BrasilAPI fora derrubava tudo). Agora: validamos so o formato
+// (digitos verificadores), inserimos imediatamente, e deixamos o enrichmentWorker
+// validar ativo/inativo + buscar telefone em background.
+// Limite removido — qualquer tamanho de CSV agora roda em ~1s.
 
 const HEADER_ALIASES: Record<string, string> = {
   name: 'name',
@@ -59,10 +58,6 @@ function normalizeHeader(h: string): string | null {
 
 function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, '');
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function parseLeadsCsv(buf: Buffer): Promise<{
@@ -147,46 +142,22 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   return { rows, rejected, missingHeaders: [] };
 }
 
+// Mantemos a assinatura `opts` por backwards-compat com chamadores e testes,
+// mas o parametro `throttleMs` nao tem mais efeito (nao ha mais throttle).
 export async function importLeadsFromCsv(
   buf: Buffer,
-  opts: { throttleMs?: number } = {},
+  _opts: { throttleMs?: number } = {},
 ): Promise<ImportReport> {
-  // Tests bypass throttle via opts.throttleMs OR NODE_ENV=test default.
-  const throttleMs = opts.throttleMs
-    ?? (process.env.NODE_ENV === 'test' ? 0 : DEFAULT_BRASILAPI_THROTTLE_MS);
   const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
   if (missingHeaders.length > 0) {
     throw new HttpError(400, `Coluna obrigatória ausente: ${missingHeaders.join(', ')}`);
   }
-  if (rows.length > MAX_CNPJ_LOOKUPS_PER_IMPORT) {
-    throw new HttpError(
-      400,
-      `Importação limitada a ${MAX_CNPJ_LOOKUPS_PER_IMPORT} linhas válidas (validação de CNPJ via BrasilAPI tem rate limit gratuito).`,
-    );
-  }
 
-  // Validate each CNPJ against the Receita Federal (via BrasilAPI). Any row
-  // whose CNPJ is inactive, not found, or fails the lookup is rejected with a
-  // descriptive reason. We throttle between calls to stay under the free tier.
-  const validRows: CsvRow[] = [];
-  for (let i = 0; i < rows.length; i++) {
-    if (i > 0 && throttleMs > 0) await sleep(throttleMs);
-    const row = rows[i];
-    const result = await lookupCnpj(row.cnpj);
-    if (result.status === 'inactive') {
-      rejected.push({ line: row.line, reason: `CNPJ baixado/inapto (${result.situacaoCadastral ?? 'situação desconhecida'})` });
-      continue;
-    }
-    if (result.status === 'not_found') {
-      rejected.push({ line: row.line, reason: 'CNPJ não encontrado na Receita Federal' });
-      continue;
-    }
-    if (result.status === 'error') {
-      rejected.push({ line: row.line, reason: `falha ao consultar BrasilAPI: ${result.errorMessage ?? 'erro desconhecido'}` });
-      continue;
-    }
-    validRows.push(row);
-  }
+  // Sem mais validacao SINCRONA de CNPJ — todas linhas com formato valido
+  // (validado em parseLeadsCsv) sao inseridas. O enrichmentWorker em background
+  // valida ativo/inativo + busca telefone faltante via BrasilAPI respeitando
+  // o rate limit, sem segurar o request do usuario.
+  const validRows: CsvRow[] = rows;
 
   let inserted = 0;
   let updated = 0;
