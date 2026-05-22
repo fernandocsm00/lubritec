@@ -727,3 +727,79 @@ export interface DashboardMacroFunnel {
     transitionCount: number;        // quantas amostras geraram essa média
   }>;
 }
+
+// ---------------------------------------------------------------------------
+// WhatsApp HSM Templates (Plan C — multi-provider + Meta HSM)
+// ---------------------------------------------------------------------------
+
+export const HSM_CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION'] as const;
+export type HsmCategory = typeof HSM_CATEGORIES[number];
+
+export const HSM_STATUSES = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'PAUSED', 'DISABLED'] as const;
+export type HsmStatus = typeof HSM_STATUSES[number];
+
+export interface HsmHeaderText {
+  type: 'HEADER';
+  format: 'TEXT';
+  text: string;
+  example?: { header_text: string[] };
+}
+export interface HsmHeaderMedia {
+  type: 'HEADER';
+  format: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  example?: { header_handle: string[] };
+}
+export type HsmHeader = HsmHeaderText | HsmHeaderMedia;
+
+export interface HsmBody {
+  type: 'BODY';
+  text: string;
+  example?: { body_text: string[][] };
+}
+
+export interface HsmFooter {
+  type: 'FOOTER';
+  text: string;
+}
+
+export interface HsmQuickReplyButton { type: 'QUICK_REPLY'; text: string }
+export interface HsmUrlButton { type: 'URL'; text: string; url: string }
+export interface HsmPhoneButton { type: 'PHONE_NUMBER'; text: string; phone_number: string }
+export type HsmButton = HsmQuickReplyButton | HsmUrlButton | HsmPhoneButton;
+
+export interface HsmButtons {
+  type: 'BUTTONS';
+  buttons: HsmButton[];
+}
+
+export type HsmComponent = HsmHeader | HsmBody | HsmFooter | HsmButtons;
+
+export interface HsmTemplateRecord {
+  id: string;
+  instanceId: string;
+  metaTemplateId: string | null;
+  name: string;
+  language: string;
+  category: HsmCategory;
+  status: HsmStatus;
+  components: HsmComponent[];
+  variableCount: number;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastSyncedAt: string | null;
+}
+
+export interface CreateHsmTemplateRequest {
+  name: string;          // snake_case
+  language: string;
+  category: HsmCategory;
+  components: HsmComponent[];
+  submitNow?: boolean;
+}
+
+export interface CampaignHsmVariable {
+  index: number;
+  source: 'static' | 'lead_field';
+  value: string;
+}

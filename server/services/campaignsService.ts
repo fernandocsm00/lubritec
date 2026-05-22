@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { campaigns, campaignRecipients, leads, conversations, messages, deals, users } from '../db/schema';
+import { campaigns, campaignRecipients, leads, conversations, messages, deals, users, whatsappInstance } from '../db/schema';
 import { eq, and, or, ilike, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
@@ -132,10 +132,21 @@ export async function createCampaign(input: {
   scheduledAt?: Date | null;
   ratePerMinute?: number;
   createdByUserId: string;
+  instanceId?: string;
 }): Promise<PublicCampaign> {
   const audience = await resolveAudience(input.audienceFilter);
   const audienceIds = audience.map((a) => a.leadId);
   const { eligible } = await filterEligibleLeads(audienceIds, {});
+
+  // Resolve instance: use provided or fall back to the default instance
+  let instanceId = input.instanceId;
+  if (!instanceId) {
+    const defaultInstance = await db.query.whatsappInstance.findFirst({
+      where: (t, { eq }) => eq(t.isDefault, true),
+    });
+    if (!defaultInstance) throw new HttpError(400, 'Nenhuma instância WhatsApp padrão configurada');
+    instanceId = defaultInstance.id;
+  }
 
   const eligibleSet = new Set(eligible);
   const eligibleRows = audience.filter((a) => eligibleSet.has(a.leadId));
@@ -156,6 +167,7 @@ export async function createCampaign(input: {
       scheduledAt: input.scheduledAt ?? null,
       ratePerMinute: input.ratePerMinute ?? 20,
       createdByUserId: input.createdByUserId,
+      instanceId: instanceId!,
     }).returning();
 
     if (eligibleRows.length > 0) {

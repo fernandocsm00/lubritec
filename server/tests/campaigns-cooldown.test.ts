@@ -6,22 +6,9 @@ import {
   createLead,
   createConversation,
   createMessage,
+  createCampaign,
 } from './helpers';
 import { filterEligibleLeads, COOLDOWN_REASON } from '../services/campaignsCooldown';
-
-async function createCampaign(input: {
-  name?: string;
-  status?: 'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
-  createdByUserId: string;
-}) {
-  const [c] = await db.insert(campaigns).values({
-    name: input.name ?? 'Test',
-    status: input.status ?? 'running',
-    messageBody: 'oi',
-    createdByUserId: input.createdByUserId,
-  }).returning();
-  return c;
-}
 
 describe('filterEligibleLeads', () => {
   it('lead com outbound há 5h é bloqueado por recent_outbound', async () => {

@@ -28,6 +28,8 @@ import {
   CAMPAIGN_STATUSES,
   CAMPAIGN_RECIPIENT_STATUSES,
   PROVIDER_KINDS,
+  HSM_CATEGORIES,
+  HSM_STATUSES,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -178,6 +180,26 @@ export const whatsappInstance = pgTable('whatsapp_instance', {
     .where(sql`${t.isDefault} = true`),
 }));
 
+export const whatsappHsmTemplates = pgTable('whatsapp_hsm_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  instanceId: uuid('instance_id').notNull().references(() => whatsappInstance.id, { onDelete: 'cascade' }),
+  metaTemplateId: text('meta_template_id'),
+  name: text('name').notNull(),
+  language: text('language').notNull(),
+  category: text('category', { enum: HSM_CATEGORIES }).notNull(),
+  status: text('status', { enum: HSM_STATUSES }).notNull(),
+  components: jsonb('components').notNull(),
+  variableCount: integer('variable_count').notNull().default(0),
+  rejectionReason: text('rejection_reason'),
+  createdBy: uuid('created_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+}, (t) => ({
+  instanceNameLangUniq: uniqueIndex('idx_hsm_instance_name_lang').on(t.instanceId, t.name, t.language),
+  statusIdx: index('idx_hsm_status').on(t.status),
+}));
+
 export const orgSettings = pgTable(
   'org_settings',
   {
@@ -231,6 +253,10 @@ export const campaigns = pgTable('campaigns', {
   isContinuous: boolean('is_continuous').notNull().default(false),
   // A/B testing: array de variantes. Quando null/vazio, usa messageBody legado.
   messageVariants: jsonb('message_variants').$type<CampaignMessageVariant[] | null>(),
+  // Multi-instance + HSM (Plan C — migration 027)
+  instanceId: uuid('instance_id').notNull().references(() => whatsappInstance.id, { onDelete: 'restrict' }),
+  hsmTemplateId: uuid('hsm_template_id').references(() => whatsappHsmTemplates.id, { onDelete: 'restrict' }),
+  hsmVariables: jsonb('hsm_variables').default([]),
   createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   cooldownAlertSentAt: timestamp('cooldown_alert_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -389,5 +415,7 @@ export type DealActivity = typeof dealActivities.$inferSelect;
 export type NewDealActivity = typeof dealActivities.$inferInsert;
 export type WhatsappInstance = typeof whatsappInstance.$inferSelect;
 export type NewWhatsappInstance = typeof whatsappInstance.$inferInsert;
+export type WhatsappHsmTemplate = typeof whatsappHsmTemplates.$inferSelect;
+export type NewWhatsappHsmTemplate = typeof whatsappHsmTemplates.$inferInsert;
 export type OrgSettings = typeof orgSettings.$inferSelect;
 export type NewOrgSettings = typeof orgSettings.$inferInsert;
