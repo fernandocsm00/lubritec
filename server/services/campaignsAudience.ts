@@ -6,7 +6,9 @@ import { filterEligibleLeads } from './campaignsCooldown';
 
 void eq; void lte;
 
-const PREVIEW_LIMIT = 5;
+const PREVIEW_PAGE_SIZE_DEFAULT = 50;
+const PREVIEW_PAGE_SIZE_MAX = 200;
+const ELIGIBLE_IDS_CAP = 10_000;
 
 function buildWhere(filter: AudienceFilters): SQL | undefined {
   const conds: SQL[] = [
@@ -35,7 +37,12 @@ function buildWhere(filter: AudienceFilters): SQL | undefined {
   return and(...conds);
 }
 
-export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunResponse> {
+export interface DryRunOpts {
+  page?: number;
+  pageSize?: number;
+}
+
+export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Promise<CampaignDryRunResponse> {
   const where = buildWhere(filter);
 
   const allRows = await db
@@ -61,17 +68,21 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
 
   // Preview agora inclui BLOQUEADOS junto com elegiveis -- usuario precisa ver
   // quem nao vai receber (e por que) antes de confirmar a campanha. Ordena
-  // elegiveis primeiro pra nao "esconder" no fim da lista limitada.
+  // elegiveis primeiro pra paginacao consistente.
   const eligibleSet = new Set(eligible);
-  const previewRows = [...allRows]
+  const sortedRows = [...allRows]
     .filter((r): r is typeof r & { phone: string } => r.phone !== null)
     .sort((a, b) => {
       const aBlocked = !eligibleSet.has(a.leadId);
       const bBlocked = !eligibleSet.has(b.leadId);
       if (aBlocked === bBlocked) return 0;
       return aBlocked ? 1 : -1; // elegiveis primeiro
-    })
-    .slice(0, PREVIEW_LIMIT);
+    });
+
+  const pageSize = Math.min(PREVIEW_PAGE_SIZE_MAX, Math.max(1, opts.pageSize ?? PREVIEW_PAGE_SIZE_DEFAULT));
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const page = Math.min(pageCount, Math.max(1, opts.page ?? 1));
+  const previewRows = sortedRows.slice((page - 1) * pageSize, page * pageSize);
 
   const blockedCounts = blocked.reduce(
     (acc, b) => {
@@ -82,10 +93,19 @@ export async function dryRun(filter: AudienceFilters): Promise<CampaignDryRunRes
     { recentOutbound: 0, pendingOtherCampaign: 0 },
   );
 
+  // eligibleIds: lista completa pra "marcar/desmarcar todos" no frontend
+  // sem precisar buscar pagina por pagina. Cap pra evitar payload absurdo
+  // em audiencias gigantes (improvavel, mas defensivo).
+  const eligibleIds = eligible.length <= ELIGIBLE_IDS_CAP ? eligible : [];
+
   return {
     total,
     eligible: eligible.length,
     blocked: blockedCounts,
+    eligibleIds,
+    page,
+    pageSize,
+    pageCount,
     preview: previewRows.map((r) => ({
       leadId: r.leadId,
       name: r.name,

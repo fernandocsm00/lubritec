@@ -61,13 +61,37 @@ describe('campaignsAudience.dryRun', () => {
     expect(r.total).toBe(2);
   });
 
-  it('preview limita a 5 leads', async () => {
+  it('preview paginado por pageSize (default 50, configurável)', async () => {
     for (let i = 1; i <= 7; i++) {
       await createLead({ phone: `5511000060${String(i).padStart(3, '0')}`, status: 'frio' });
     }
-    const r = await dryRun({ status: ['frio'] });
-    expect(r.total).toBe(7);
-    expect(r.preview).toHaveLength(5);
+    // Default pageSize=50 -> tudo cabe em uma pagina
+    const r1 = await dryRun({ status: ['frio'] });
+    expect(r1.total).toBe(7);
+    expect(r1.preview).toHaveLength(7);
+    expect(r1.page).toBe(1);
+    expect(r1.pageCount).toBe(1);
+
+    // pageSize=5 -> 2 paginas (5 + 2)
+    const r2a = await dryRun({ status: ['frio'] }, { page: 1, pageSize: 5 });
+    expect(r2a.preview).toHaveLength(5);
+    expect(r2a.pageCount).toBe(2);
+    expect(r2a.page).toBe(1);
+
+    const r2b = await dryRun({ status: ['frio'] }, { page: 2, pageSize: 5 });
+    expect(r2b.preview).toHaveLength(2);
+    expect(r2b.pageCount).toBe(2);
+    expect(r2b.page).toBe(2);
+  });
+
+  it('eligibleIds retorna lista completa de elegíveis (não só da página)', async () => {
+    for (let i = 1; i <= 4; i++) {
+      await createLead({ phone: `5511000061${String(i).padStart(3, '0')}`, status: 'frio' });
+    }
+    const r = await dryRun({ status: ['frio'] }, { page: 1, pageSize: 2 });
+    expect(r.preview).toHaveLength(2);
+    expect(r.pageCount).toBe(2);
+    expect(r.eligibleIds).toHaveLength(4); // todos elegíveis, não só os 2 da página
   });
 
   it('retorna eligible e blocked com cooldown', async () => {

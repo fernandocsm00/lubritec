@@ -113,12 +113,30 @@ export function useCampaign(id: string | null) {
   });
 }
 
+export interface DryRunArgs {
+  filters: AudienceFilters;
+  page?: number;
+  pageSize?: number;
+}
+
 export function useDryRun() {
   return useMutation({
-    mutationFn: (filters: AudienceFilters) =>
-      api<CampaignDryRunResponse>('/campaigns/dry-run', {
-        method: 'POST', body: JSON.stringify(filters),
-      }),
+    mutationFn: (input: AudienceFilters | DryRunArgs) => {
+      // Backwards compat: AudienceStep passa AudienceFilters direto. Componentes
+      // novos (AudiencePreviewTable) passam {filters, page, pageSize}.
+      const isWrapped = (v: unknown): v is DryRunArgs =>
+        typeof v === 'object' && v !== null && 'filters' in v;
+      const args: DryRunArgs = isWrapped(input)
+        ? input
+        : { filters: input };
+      const qs = new URLSearchParams();
+      if (args.page) qs.set('page', String(args.page));
+      if (args.pageSize) qs.set('pageSize', String(args.pageSize));
+      const url = qs.toString() ? `/campaigns/dry-run?${qs}` : '/campaigns/dry-run';
+      return api<CampaignDryRunResponse>(url, {
+        method: 'POST', body: JSON.stringify(args.filters),
+      });
+    },
   });
 }
 
