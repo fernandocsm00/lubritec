@@ -15,6 +15,7 @@ import {
   deleteHandler,
   recipientsHandler,
   uploadMediaHandler,
+  aggregateStatsHandler,
 } from '../controllers/campaignsController';
 import {
   getHandler as continuousGetHandler,
@@ -27,6 +28,7 @@ const adminOnly = [authGuard, requireRole('admin')];
 
 router.get('/continuous', ...guard, continuousGetHandler);
 router.put('/continuous', ...adminOnly, continuousUpsertHandler);
+router.get('/aggregate-stats', ...guard, aggregateStatsHandler);
 
 router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);

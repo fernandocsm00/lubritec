@@ -5,6 +5,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicCampaign,
   CampaignFunnel,
+  CampaignsAggregateStats,
   CampaignStatus,
   AudienceFilters,
   PublicCampaignRecipient,
@@ -337,6 +338,87 @@ export async function listRecipients(input: {
     total,
     page,
     pageSize: RECIPIENTS_PAGE_SIZE,
+  };
+}
+
+/**
+ * Agrega metricas de TODAS as campanhas pra dashboard de relatorio.
+ *
+ * Difere de getCampaignFunnel (por-campanha) em que aqui:
+ * - totaliza recipients/sent/replied/won/lost/wonValue across todas campanhas
+ * - conta campanhas por status (totalCampaigns, completedCampaigns, activeCampaigns)
+ * - calcula replyRate e conversionRate como percentuais
+ *
+ * Implementacao: uma query agregadora pra campaign_recipients (sent/total),
+ * uma pra replied via EXISTS messages.in apos sent_at, uma pra deals.
+ * Campanhas "continuas" sao incluidas (afinal o usuario quer ver todo movimento).
+ */
+export async function getCampaignsAggregateStats(): Promise<CampaignsAggregateStats> {
+  // Contagem de campanhas por status.
+  const campaignCounts = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      completed: sql<number>`count(*) FILTER (WHERE status = 'completed')::int`,
+      active: sql<number>`count(*) FILTER (WHERE status IN ('running', 'scheduled'))::int`,
+    })
+    .from(campaigns);
+
+  // Sent/total recipients agregado.
+  const [recipientCounts] = await db
+    .select({
+      sent: sql<number>`count(*) FILTER (WHERE status = 'sent')::int`,
+    })
+    .from(campaignRecipients);
+
+  // Replied: count distinct lead_id que tem inbound apos o sent_at do recipient.
+  const repliedRows = await db.execute(sql`
+    SELECT COUNT(DISTINCT cr.lead_id)::int AS replied
+    FROM campaign_recipients cr
+    WHERE cr.status = 'sent'
+      AND EXISTS (
+        SELECT 1 FROM conversations c
+        JOIN messages m ON m.conversation_id = c.id
+        WHERE c.lead_id = cr.lead_id
+          AND m.direction = 'in'
+          AND m.sent_at > cr.sent_at
+      )
+  `);
+  const replied = (repliedRows.rows[0] as { replied: number }).replied ?? 0;
+
+  // Deals agregados (so leads que vieram de alguma campanha).
+  const dealsAgg = await db.execute(sql`
+    SELECT
+      COUNT(*) FILTER (WHERE d.stage IN ('lead_no_comercial','proposta_enviada','em_negociacao'))::int AS in_deal,
+      COUNT(*) FILTER (WHERE d.stage = 'ganho')::int AS won,
+      COUNT(*) FILTER (WHERE d.stage = 'perdido')::int AS lost,
+      COALESCE(SUM(CASE WHEN d.stage = 'ganho' THEN d.proposal_value ELSE 0 END), 0) AS won_value
+    FROM deals d
+    WHERE EXISTS (
+      SELECT 1 FROM campaign_recipients cr WHERE cr.lead_id = d.lead_id
+    )
+  `);
+  const deal = dealsAgg.rows[0] as { in_deal: number; won: number; lost: number; won_value: string | number };
+  const inDeal = deal.in_deal ?? 0;
+  const won = deal.won ?? 0;
+  const lost = deal.lost ?? 0;
+  const wonValue = Number(deal.won_value ?? 0);
+
+  const sent = recipientCounts.sent ?? 0;
+  const replyRate = sent === 0 ? 0 : Math.round((replied / sent) * 1000) / 10;
+  const conversionRate = sent === 0 ? 0 : Math.round((won / sent) * 1000) / 10;
+
+  return {
+    totalCampaigns: campaignCounts[0].total ?? 0,
+    completedCampaigns: campaignCounts[0].completed ?? 0,
+    activeCampaigns: campaignCounts[0].active ?? 0,
+    totalSent: sent,
+    totalReplied: replied,
+    replyRate,
+    totalInDeal: inDeal,
+    totalWon: won,
+    totalLost: lost,
+    totalWonValue: wonValue,
+    conversionRate,
   };
 }
 

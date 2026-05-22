@@ -7,6 +7,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import { CampaignList } from '@/features/campaigns/CampaignList';
+import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
 import { CAMPAIGN_STATUSES } from '@shared/types';
 import type { CampaignStatus } from '@/features/campaigns/types';
 import { CAMPAIGN_STATUS_LABELS } from '@/features/campaigns/helpers';
@@ -46,6 +47,8 @@ export default function CampaignsPage() {
           </Button>
         </div>
       </div>
+
+      <CampaignsReportBar />
 
       <div className="flex gap-2 mb-4 flex-wrap">
         <Input

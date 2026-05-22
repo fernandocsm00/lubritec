@@ -12,6 +12,7 @@ import {
   deleteCampaign,
   listRecipients,
   getCampaignFunnel,
+  getCampaignsAggregateStats,
 } from '../services/campaignsService';
 import { dryRun } from '../services/campaignsAudience';
 
@@ -61,6 +62,12 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
   try {
     const params = listQuery.parse(req.query);
     res.json(await listCampaigns(params));
+  } catch (e) { next(e); }
+}
+
+export async function aggregateStatsHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await getCampaignsAggregateStats());
   } catch (e) { next(e); }
 }
 

@@ -5,6 +5,7 @@ export type {
   CampaignDryRunResponse,
   PublicCampaign,
   CampaignFunnel,
+  CampaignsAggregateStats,
   PublicCampaignRecipient,
   LeadStatus,
   LeadSource,

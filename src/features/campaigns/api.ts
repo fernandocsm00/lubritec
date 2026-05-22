@@ -8,6 +8,7 @@ import type {
   PublicCampaignRecipient,
   CampaignStatus,
   CampaignRecipientStatus,
+  CampaignsAggregateStats,
 } from './types';
 
 export interface ListResult {
@@ -30,6 +31,14 @@ function buildListQuery(f: ListFilters): string {
   if (f.page && f.page > 1) u.set('page', String(f.page));
   const s = u.toString();
   return s ? `?${s}` : '';
+}
+
+export function useCampaignsAggregateStats() {
+  return useQuery({
+    queryKey: ['campaigns', 'aggregate-stats'],
+    queryFn: () => api<CampaignsAggregateStats>('/campaigns/aggregate-stats'),
+    refetchInterval: 30_000,
+  });
 }
 
 export function useCampaigns(filters: ListFilters) {

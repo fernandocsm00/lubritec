@@ -399,6 +399,24 @@ export interface CampaignFunnel {
   totalWonValue: number;
 }
 
+/**
+ * Stats agregadas de todas as campanhas. Usado pra dashboard de relatorio
+ * na pagina /campanhas.
+ */
+export interface CampaignsAggregateStats {
+  totalCampaigns: number;
+  completedCampaigns: number;
+  activeCampaigns: number;
+  totalSent: number;
+  totalReplied: number;
+  replyRate: number;
+  totalInDeal: number;
+  totalWon: number;
+  totalLost: number;
+  totalWonValue: number;
+  conversionRate: number;
+}
+
 export interface PublicCampaignRecipient {
   id: string;
   leadId: string;
