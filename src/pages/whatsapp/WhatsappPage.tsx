@@ -104,8 +104,13 @@ export default function WhatsappPage() {
   }
 
   return (
-    <div className="grid h-[calc(100vh-4rem)]" style={{ gridTemplateColumns: '380px 1fr 340px' }}>
-      <aside className="flex flex-col border-r border-border bg-background">
+    // -m-6: cancela o p-6 do AppShell main pra ocupar a largura cheia sem padding,
+    // ja que esta tela tem visual de "app" (sidebars + chat) e nao de pagina normal.
+    // h-[calc(100vh-60px)]: viewport menos a Topbar (60px). Antes era 4rem(64px) +
+    // padding nao compensado, o que estourava 44px e fazia a pagina inteira virar
+    // scrollavel quando a conversa tinha muitas mensagens.
+    <div className="-m-6 grid h-[calc(100vh-60px)] overflow-hidden" style={{ gridTemplateColumns: '380px 1fr 340px' }}>
+      <aside className="flex flex-col border-r border-border bg-background overflow-hidden min-h-0">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">Inbox</h2>
           <NewConversationDialog onCreated={(id) => setSelectedConvId(id)} />
@@ -137,7 +142,7 @@ export default function WhatsappPage() {
         />
       </aside>
 
-      <main className="flex flex-col bg-muted/10">
+      <main className="flex flex-col bg-muted/10 overflow-hidden min-h-0">
         {selectedConv ? (
           <>
             <ChatHeader conv={selectedConv} currentUserId={currentUserId} />
