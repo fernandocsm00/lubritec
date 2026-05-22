@@ -7,6 +7,7 @@ import { metaCloudConfigSchema, type MetaCloudConfig } from './configSchema';
 import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebhookService';
 import { getMediaUrl } from './client';
 import type { MessageKind } from '@shared/types';
+import { updateTemplateStatus } from '../../hsmTemplateService';
 
 interface MetaInboundMessage {
   from: string;
@@ -155,7 +156,32 @@ export async function processMetaWebhook(
           }
         }
       }
-      // status updates + template status: v1 ignores (Plan C handles templates)
+      if (change.field === 'message_template_status_update') {
+        const v = change.value as unknown as {
+          event?: string;
+          message_template_id?: number | string;
+          message_template_name?: string;
+          message_template_language?: string;
+          reason?: string | null;
+        };
+        if (!v.event || !v.message_template_name || !v.message_template_language || v.message_template_id === undefined) {
+          console.warn('[meta-webhook] incomplete template status payload:', v);
+          continue;
+        }
+        try {
+          await updateTemplateStatus({
+            instanceId,
+            metaTemplateId: String(v.message_template_id),
+            name: v.message_template_name,
+            language: v.message_template_language,
+            status: v.event,
+            reason: v.reason ?? null,
+          });
+        } catch (err) {
+          console.error('[meta-webhook] template status update failed:', err);
+        }
+      }
+      // other status updates: ignored in v1
     }
   }
 }
