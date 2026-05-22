@@ -187,6 +187,32 @@ export async function getConversationCounts(): Promise<ConversationCounts> {
   return counts;
 }
 
+/**
+ * Resolve um leadId para a conversa MAIS RECENTE do lead, ignorando filtros
+ * de fila/status. Usado por deep-links (ex: "Abrir conversa" do inside sales)
+ * pra encontrar a conversa onde quer que ela esteja.
+ *
+ * Retorna {id, queue, status} -- payload minimo pra navegacao. O frontend
+ * usa pra ajustar URL (queue + statusChips) e auto-selecionar.
+ */
+export async function getConversationByLeadId(leadId: string): Promise<{
+  id: string;
+  queue: string;
+  status: string;
+} | null> {
+  const [row] = await db
+    .select({
+      id: conversations.id,
+      queue: conversations.queue,
+      status: conversations.status,
+    })
+    .from(conversations)
+    .where(eq(conversations.leadId, leadId))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getConversationById(
   id: string,
   currentUserId: string,

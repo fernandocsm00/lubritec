@@ -1,12 +1,13 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useState } from 'react';
-import { Plus, Zap } from 'lucide-react';
+import { Plus, Zap, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import { CampaignList } from '@/features/campaigns/CampaignList';
+import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
 import { CAMPAIGN_STATUSES } from '@shared/types';
 import type { CampaignStatus } from '@/features/campaigns/types';
 import { CAMPAIGN_STATUS_LABELS } from '@/features/campaigns/helpers';
@@ -39,6 +40,9 @@ export default function CampaignsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
+            <Link to="/campanhas/relatorio"><BarChart3 className="h-4 w-4 mr-1" /> Ver relatório</Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link to="/campanhas/automatico"><Zap className="h-4 w-4 mr-1" /> Disparo automático</Link>
           </Button>
           <Button asChild>
@@ -46,6 +50,8 @@ export default function CampaignsPage() {
           </Button>
         </div>
       </div>
+
+      <CampaignsReportBar />
 
       <div className="flex gap-2 mb-4 flex-wrap">
         <Input

@@ -8,7 +8,27 @@ import type {
   PublicCampaignRecipient,
   CampaignStatus,
   CampaignRecipientStatus,
+  CampaignsAggregateStats,
+  CampaignsTimeseries,
+  TopCampaignsResponse,
 } from './types';
+
+export type ReportPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
+export type CampaignKind = 'all' | 'one_shot' | 'continuous';
+
+export const REPORT_PERIOD_LABELS: Record<ReportPeriod, string> = {
+  today: 'Hoje',
+  '7d': 'Últimos 7 dias',
+  month: 'Mês corrente',
+  '30d': 'Últimos 30 dias',
+  quarter: 'Trimestre atual',
+};
+
+export const CAMPAIGN_KIND_LABELS: Record<CampaignKind, string> = {
+  all: 'Todas',
+  one_shot: 'Únicas',
+  continuous: 'Contínua',
+};
 
 export interface ListResult {
   items: PublicCampaign[];
@@ -30,6 +50,47 @@ function buildListQuery(f: ListFilters): string {
   if (f.page && f.page > 1) u.set('page', String(f.page));
   const s = u.toString();
   return s ? `?${s}` : '';
+}
+
+export function useCampaignsAggregateStats(opts?: {
+  period?: ReportPeriod;
+  kind?: CampaignKind;
+  compare?: boolean;
+}) {
+  const period = opts?.period ?? '30d';
+  const kind = opts?.kind ?? 'all';
+  const compare = opts?.compare ?? false;
+  const u = new URLSearchParams({ period, kind });
+  if (compare) u.set('compare', 'true');
+  const qs = u.toString();
+  return useQuery({
+    queryKey: ['campaigns', 'aggregate-stats', period, kind, compare],
+    queryFn: () => api<CampaignsAggregateStats>(`/campaigns/aggregate-stats?${qs}`),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useCampaignsTimeseries(opts?: { period?: ReportPeriod; kind?: CampaignKind }) {
+  const period = opts?.period ?? '30d';
+  const kind = opts?.kind ?? 'all';
+  const qs = new URLSearchParams({ period, kind }).toString();
+  return useQuery({
+    queryKey: ['campaigns', 'timeseries', period, kind],
+    queryFn: () => api<CampaignsTimeseries>(`/campaigns/timeseries?${qs}`),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useTopCampaigns(opts?: { period?: ReportPeriod; kind?: CampaignKind; limit?: number }) {
+  const period = opts?.period ?? '30d';
+  const kind = opts?.kind ?? 'all';
+  const limit = opts?.limit ?? 5;
+  const qs = new URLSearchParams({ period, kind, limit: String(limit) }).toString();
+  return useQuery({
+    queryKey: ['campaigns', 'top', period, kind, limit],
+    queryFn: () => api<TopCampaignsResponse>(`/campaigns/top?${qs}`),
+    refetchInterval: 60_000,
+  });
 }
 
 export function useCampaigns(filters: ListFilters) {

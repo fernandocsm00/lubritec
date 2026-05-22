@@ -53,6 +53,21 @@ export function useConversationCounts() {
   });
 }
 
+export interface ConversationByLeadResult {
+  id: string;
+  queue: 'ia' | 'recepcao' | 'comercial';
+  status: 'aguardando_atendimento' | 'em_atendimento' | 'encerrada';
+}
+
+/**
+ * Resolve leadId -> conversa mais recente (qualquer fila/status). Usado por
+ * deep-links ("Abrir conversa" do inside sales) pra encontrar a conversa
+ * onde quer que esteja. Lance promise direta pra usar em useEffect.
+ */
+export function fetchConversationByLead(leadId: string) {
+  return api<ConversationByLeadResult>(`/conversations/by-lead/${leadId}`);
+}
+
 export interface MessagesResult { items: PublicMessage[]; hasMore: boolean }
 
 export function useMessages(conversationId: string | null) {

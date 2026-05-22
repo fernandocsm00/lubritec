@@ -81,7 +81,12 @@ export default function AiTab() {
       const r = await testAiPrompt(testMsg);
       setTestResult(r);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao testar prompt');
+      // ApiError carrega body com {error, detail, hint} — mostra os tres em toast.
+      const body = (e as { body?: { error?: string; detail?: string; hint?: string } } | undefined)?.body;
+      const msg = body?.detail
+        ? `${body.error ?? 'Erro'} — ${body.detail}${body.hint ? `\n${body.hint}` : ''}`
+        : e instanceof Error ? e.message : 'Erro ao testar prompt';
+      toast.error(msg, { duration: 10_000 });
     } finally {
       setTesting(false);
     }

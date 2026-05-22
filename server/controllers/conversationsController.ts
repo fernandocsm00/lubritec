@@ -10,6 +10,7 @@ import {
   listConversations,
   getConversationCounts,
   getConversationById,
+  getConversationByLeadId,
   listMessages,
   claimConversation,
   changeQueue,
@@ -61,6 +62,19 @@ export async function getHandler(req: Request, res: Response, next: NextFunction
   try {
     const { id } = idParams.parse(req.params);
     res.json(await getConversationById(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+const leadIdParams = z.object({ leadId: z.string().uuid() });
+
+export async function byLeadHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { leadId } = leadIdParams.parse(req.params);
+    const conv = await getConversationByLeadId(leadId);
+    if (!conv) {
+      return res.status(404).json({ error: 'No conversation for this lead' });
+    }
+    res.json(conv);
   } catch (e) { next(e); }
 }
 

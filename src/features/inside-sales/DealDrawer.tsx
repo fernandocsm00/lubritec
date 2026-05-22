@@ -177,11 +177,12 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-2 p-4 border-t border-border">
-            {/* Abrir conversa: deep-link com queue=comercial (típico pra deals) +
-                statusChips ampliado pra incluir encerradas — maximiza chance da
-                conv aparecer no filtro inicial. WhatsappPage faz auto-select. */}
+            {/* Abrir conversa: deep-link minimo com ?lead= apenas. WhatsappPage
+                resolve via /conversations/by-lead/:leadId e navega pra fila certa
+                (qualquer queue/status) -- antes forcavamos queue=comercial e
+                falhava quando o lead estava em outra fila. */}
             <Button asChild variant="outline" size="sm">
-              <Link to={`/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento,encerradas&assignment=all&origin=organic,campaign&lead=${deal.lead.id}`}>
+              <Link to={`/whatsapp?lead=${deal.lead.id}`}>
                 Abrir conversa
               </Link>
             </Button>

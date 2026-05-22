@@ -56,13 +56,45 @@ export async function testPromptHandler(req: Request, res: Response, next: NextF
     if (!settings) {
       return res.status(404).json({ error: 'org_settings not found' });
     }
-    const systemInstruction = buildSystemPrompt(settings, 'João Teste', '5511999999999');
+    let systemInstruction: string;
+    try {
+      systemInstruction = buildSystemPrompt(settings, 'João Teste', '5511999999999');
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error('[test-ai-prompt] buildSystemPrompt failed:', err);
+      return res.status(500).json({
+        error: 'Falha ao montar system prompt',
+        detail: reason,
+        hint: 'Provavelmente algum campo de org_settings esta null/invalido. Veja o log.',
+      });
+    }
     const t0 = Date.now();
-    const result = await generateReplyDetailed({
-      systemInstruction,
-      history: [],
-      userMessage: message,
-    });
+    let result;
+    try {
+      result = await generateReplyDetailed({
+        systemInstruction,
+        history: [],
+        userMessage: message,
+      });
+    } catch (geminiErr) {
+      // Endpoint de debug: retorna mensagem real do erro pro usuario
+      // (em vez de cair no errorHandler como "Internal server error" generico).
+      const reason = geminiErr instanceof Error ? geminiErr.message : String(geminiErr);
+      console.error('[test-ai-prompt] gemini failed:', geminiErr);
+      const lower = reason.toLowerCase();
+      const hint = lower.includes('gemini_api_key')
+        ? 'Configure GEMINI_API_KEY no .env do servidor.'
+        : lower.includes('api key') || lower.includes('permission') || lower.includes('unauthorized')
+          ? 'GEMINI_API_KEY parece invalida ou sem permissao.'
+          : lower.includes('quota') || lower.includes('rate')
+            ? 'Quota/rate limit do Gemini atingido.'
+            : 'Veja o log do servidor pro stack trace completo.';
+      return res.status(502).json({
+        error: 'Falha ao chamar Gemini',
+        detail: reason,
+        hint,
+      });
+    }
     const parsed = parseQualificationTag(result.text);
     res.json({
       cleanReply: parsed.cleanReply,
@@ -75,5 +107,8 @@ export async function testPromptHandler(req: Request, res: Response, next: NextF
       outputTokens: result.outputTokens,
       elapsedMs: Date.now() - t0,
     });
-  } catch (e) { next(e); }
+  } catch (e) {
+    console.error('[test-ai-prompt] unexpected error:', e);
+    next(e);
+  }
 }
