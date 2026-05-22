@@ -86,6 +86,13 @@ export class MetaCloudProvider implements WhatsAppProvider {
   }
 
   async sendMedia(opts: SendMediaOpts): Promise<SendResult> {
+    // Meta Cloud Graph API only supports concrete media kinds. 'unknown' is a
+    // catch-all from the internal schema (e.g. for inbound types we don't yet
+    // map) and has no Graph equivalent — reject early with a clear message.
+    if (opts.kind === 'unknown') {
+      throw new ProviderError(400, 'meta_cloud',
+        'Cannot send media of kind "unknown" — specify image, video, audio or document');
+    }
     try {
       const res = await graphSendMedia({
         phoneNumberId: this.cfg.phoneNumberId,
