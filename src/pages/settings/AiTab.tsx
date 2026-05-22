@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Bot } from 'lucide-react';
+import { Bot, FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { getOrgSettings, updateOrgSettings } from './api';
+import { getOrgSettings, updateOrgSettings, testAiPrompt, type TestPromptResult } from './api';
 import type { PublicOrgSettings, UpdateOrgSettingsInput } from '@shared/types';
 
 type FormState = Pick<PublicOrgSettings,
   | 'aiEnabled' | 'aiAgentName' | 'aiBusinessName' | 'aiBusinessDesc' | 'aiProducts'
   | 'aiTargetAudience' | 'aiTone' | 'aiObjective' | 'aiDontTalk' | 'aiAlwaysAsk'
-  | 'aiQualifyWhen' | 'aiBusinessHours' | 'aiAfterHoursMsg'>;
+  | 'aiQualifyWhen' | 'aiBusinessHours' | 'aiAfterHoursMsg'
+  | 'aiBusinessHoursStart' | 'aiBusinessHoursEnd' | 'aiBusinessHoursDays' | 'ai24x7'>;
 
 const EMPTY: FormState = {
   aiEnabled: false,
@@ -27,12 +28,20 @@ const EMPTY: FormState = {
   aiQualifyWhen: '',
   aiBusinessHours: '',
   aiAfterHoursMsg: '',
+  aiBusinessHoursStart: 8,
+  aiBusinessHoursEnd: 18,
+  aiBusinessHoursDays: '1,2,3,4,5',
+  ai24x7: false,
 };
 
 export default function AiTab() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [testMsg, setTestMsg] = useState('');
+  const [testResult, setTestResult] = useState<TestPromptResult | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     getOrgSettings()
@@ -51,11 +60,32 @@ export default function AiTab() {
           aiQualifyWhen: s.aiQualifyWhen,
           aiBusinessHours: s.aiBusinessHours,
           aiAfterHoursMsg: s.aiAfterHoursMsg,
+          aiBusinessHoursStart: s.aiBusinessHoursStart,
+          aiBusinessHoursEnd: s.aiBusinessHoursEnd,
+          aiBusinessHoursDays: s.aiBusinessHoursDays,
+          ai24x7: s.ai24x7,
         });
         setLoaded(true);
       })
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Erro ao carregar'));
   }, []);
+
+  async function onTest() {
+    if (!testMsg.trim()) {
+      toast.error('Digite uma mensagem de teste.');
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await testAiPrompt(testMsg);
+      setTestResult(r);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao testar prompt');
+    } finally {
+      setTesting(false);
+    }
+  }
 
   function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -186,10 +216,93 @@ export default function AiTab() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div className="text-sm font-semibold border-b pb-2 flex items-center justify-between">
+          <span>Horário comercial da IA</span>
+          <label className="flex items-center gap-2 text-xs font-normal cursor-pointer">
+            <input type="checkbox" checked={form.ai24x7}
+              onChange={(e) => patch('ai24x7', e.target.checked)} className="h-3.5 w-3.5" />
+            IA roda 24/7 (ignora horário)
+          </label>
+        </div>
+        {!form.ai24x7 && (
+          <>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="ai-bh-start">Início</Label>
+                <Input id="ai-bh-start" type="number" min={0} max={23}
+                  value={form.aiBusinessHoursStart}
+                  onChange={(e) => patch('aiBusinessHoursStart', Number(e.target.value))} />
+              </div>
+              <div>
+                <Label htmlFor="ai-bh-end">Fim</Label>
+                <Input id="ai-bh-end" type="number" min={1} max={24}
+                  value={form.aiBusinessHoursEnd}
+                  onChange={(e) => patch('aiBusinessHoursEnd', Number(e.target.value))} />
+              </div>
+              <div>
+                <Label htmlFor="ai-bh-days">Dias (ISO)</Label>
+                <Input id="ai-bh-days" value={form.aiBusinessHoursDays}
+                  onChange={(e) => patch('aiBusinessHoursDays', e.target.value)}
+                  placeholder="1,2,3,4,5" />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Dias = ISO weekdays (1=seg, ..., 7=dom). Default <code>1,2,3,4,5</code> (seg-sex).
+              Fora do horário a IA não responde — envia <em>mensagem fora do horário</em> (se configurada)
+              e reprocessa no próximo dia útil.
+            </p>
+          </>
+        )}
+      </div>
+
       <div className="flex items-center justify-end gap-3">
         <Button type="submit" disabled={saving}>
           {saving ? 'Salvando…' : 'Salvar configuração'}
         </Button>
+      </div>
+
+      <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-6 space-y-4">
+        <div className="text-sm font-semibold border-b border-primary/20 pb-2 flex items-center gap-2">
+          <FlaskConical className="h-4 w-4" /> Testar prompt
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Envia uma mensagem fictícia com a config salva acima. Não afeta conversas reais e os custos
+          contam pro billing Gemini normal.
+        </p>
+        <div>
+          <Label htmlFor="ai-test-msg">Mensagem do cliente (teste)</Label>
+          <Textarea id="ai-test-msg" rows={3} value={testMsg}
+            onChange={(e) => setTestMsg(e.target.value)}
+            placeholder="Ex: Oi, quero saber sobre óleo pra frota de 8 caminhões" />
+        </div>
+        <Button type="button" variant="outline" onClick={onTest} disabled={testing || !testMsg.trim()}>
+          {testing ? 'Enviando ao Gemini…' : 'Testar com essa mensagem'}
+        </Button>
+        {testResult && (
+          <div className="space-y-3 mt-2 rounded-md border border-border bg-background p-4 text-xs">
+            <div>
+              <div className="font-semibold text-muted-foreground mb-1">Resposta da IA (limpa):</div>
+              <div className="whitespace-pre-line">{testResult.cleanReply}</div>
+            </div>
+            <div className="flex flex-wrap gap-3 text-[11px]">
+              <span><strong>Decisão:</strong> {testResult.qualification ?? '(continua conversa)'}</span>
+              <span><strong>Modelo:</strong> {testResult.model}</span>
+              <span><strong>Latência:</strong> {testResult.latencyMs}ms</span>
+              <span><strong>Tokens:</strong> {testResult.inputTokens} in / {testResult.outputTokens} out</span>
+            </div>
+            {testResult.summary && (
+              <div>
+                <div className="font-semibold text-muted-foreground mb-1">Resumo gerado pra handoff:</div>
+                <div className="whitespace-pre-line bg-primary/5 p-2 rounded">{testResult.summary}</div>
+              </div>
+            )}
+            <details className="text-[11px]">
+              <summary className="cursor-pointer text-muted-foreground">Ver resposta crua (com tags)</summary>
+              <pre className="whitespace-pre-wrap mt-2 bg-muted/50 p-2 rounded">{testResult.rawReply}</pre>
+            </details>
+          </div>
+        )}
       </div>
     </form>
   );

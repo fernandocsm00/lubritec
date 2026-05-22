@@ -34,6 +34,7 @@ import { ROLES, type AdminUser } from '@shared/types';
 const schema = z.object({
   name: z.string().min(2, 'Nome muito curto'),
   role: z.enum(ROLES),
+  phone: z.string().max(40).optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -52,17 +53,22 @@ export function EditUserDialog({
   const update = useUpdateUser();
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { name: user.name, role: user.role },
+    defaultValues: { name: user.name, role: user.role, phone: user.phone ?? '' },
   });
 
   useEffect(() => {
-    if (open) form.reset({ name: user.name, role: user.role });
-  }, [open, user.name, user.role, form]);
+    if (open) form.reset({ name: user.name, role: user.role, phone: user.phone ?? '' });
+  }, [open, user.name, user.role, user.phone, form]);
 
   async function onSubmit(values: FormData) {
-    const diff: { name?: string; role?: typeof user.role } = {};
+    const diff: { name?: string; role?: typeof user.role; phone?: string | null } = {};
     if (values.name !== user.name) diff.name = values.name;
     if (!isSelf && values.role !== user.role) diff.role = values.role;
+    const newPhone = (values.phone ?? '').trim();
+    const currentPhone = user.phone ?? '';
+    if (newPhone !== currentPhone) {
+      diff.phone = newPhone === '' ? null : newPhone;
+    }
     if (Object.keys(diff).length === 0) {
       onOpenChange(false);
       return;
@@ -98,6 +104,30 @@ export function EditUserDialog({
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>WhatsApp pessoal</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Ex: 5554999998888 (com DDI+DDD, só dígitos)"
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Usado pra receber notificação de leads qualificados pela IA.
+                    Deixe em branco pra desativar.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

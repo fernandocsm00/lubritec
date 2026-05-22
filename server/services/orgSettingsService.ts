@@ -20,6 +20,10 @@ function toPublic(row: OrgSettings): PublicOrgSettings {
     aiQualifyWhen: row.aiQualifyWhen,
     aiBusinessHours: row.aiBusinessHours,
     aiAfterHoursMsg: row.aiAfterHoursMsg,
+    aiBusinessHoursStart: row.aiBusinessHoursStart,
+    aiBusinessHoursEnd: row.aiBusinessHoursEnd,
+    aiBusinessHoursDays: row.aiBusinessHoursDays,
+    ai24x7: row.ai24x7,
     dispatchStartHour: row.dispatchStartHour,
     dispatchEndHour: row.dispatchEndHour,
     dispatchSkipWeekends: row.dispatchSkipWeekends,
@@ -82,6 +86,10 @@ export async function updateOrgSettings(
   }
   if (input.dispatchSkipWeekends !== undefined) patch.dispatchSkipWeekends = input.dispatchSkipWeekends;
   if (input.dispatchTimezone !== undefined) patch.dispatchTimezone = input.dispatchTimezone;
+  if (input.aiBusinessHoursStart !== undefined) patch.aiBusinessHoursStart = input.aiBusinessHoursStart;
+  if (input.aiBusinessHoursEnd !== undefined) patch.aiBusinessHoursEnd = input.aiBusinessHoursEnd;
+  if (input.aiBusinessHoursDays !== undefined) patch.aiBusinessHoursDays = input.aiBusinessHoursDays;
+  if (input.ai24x7 !== undefined) patch.ai24x7 = input.ai24x7;
 
   const [row] = await db
     .update(orgSettings)

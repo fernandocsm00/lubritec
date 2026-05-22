@@ -30,6 +30,7 @@ export function useUpdateUser() {
       name?: string;
       role?: Role;
       is_active?: boolean;
+      phone?: string | null;
     }) => {
       const { id, ...body } = input;
       return api<AdminUser>(`/users/${id}`, {

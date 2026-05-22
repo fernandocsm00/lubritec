@@ -1,6 +1,6 @@
 ﻿import { db } from '../db/client';
 import { conversations, messages, leads, users, whatsappInstance } from '../db/schema';
-import { eq, and, or, ilike, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, asc, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicConversation,
@@ -70,6 +70,12 @@ export async function listConversations(input: ListInput): Promise<{
     conds.push(isNull(conversations.lastInboundAt));
     conds.push(sql`${conversations.lastMessageAt} < now() - interval '${sql.raw(String(NO_RESPONSE_DAYS))} days'`);
   }
+  if (input.onlyWithInbound) {
+    // Mostra apenas conversas que receberam ao menos 1 inbound do lead — esconde
+    // disparos de campanha sem resposta (que ainda aparecem no relatorio da campanha).
+    // Conversas nao-campanha (organic, manual) continuam visiveis mesmo sem inbound.
+    conds.push(sql`(${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')`);
+  }
   if (input.origin?.length) conds.push(inArray(conversations.originKind, input.origin));
   if (input.campaignId) conds.push(eq(conversations.originCampaignId, input.campaignId));
   if (input.assignment === 'mine') conds.push(eq(conversations.assignedTo, input.currentUserId));
@@ -115,7 +121,14 @@ export async function listConversations(input: ListInput): Promise<{
     .leftJoin(leads, eq(conversations.leadId, leads.id))
     .leftJoin(users, eq(conversations.assignedTo, users.id))
     .where(where)
-    .orderBy(desc(conversations.lastMessageAt))
+    // Na fila Comercial: FIFO por tempo de espera (entered_queue_at ASC).
+    // Conversas sem enteredQueueAt (historico antigo) caem no fim via NULLS LAST.
+    // Demais filas: ordem cronologica reversa por ultima mensagem.
+    .orderBy(
+      input.queue === 'comercial'
+        ? sql`${conversations.enteredQueueAt} ASC NULLS LAST`
+        : desc(conversations.lastMessageAt),
+    )
     .limit(PAGE_SIZE)
     .offset((page - 1) * PAGE_SIZE);
 
@@ -144,6 +157,9 @@ export async function listConversations(input: ListInput): Promise<{
       lastInboundAt: r.conv.lastInboundAt?.toISOString() ?? null,
       unreadCount: r.conv.unreadCount,
       isExpired24h: isExpired24h(r.conv.lastInboundAt, r.conv.status),
+      enteredQueueAt: r.conv.enteredQueueAt?.toISOString() ?? null,
+      hasAiHandoff: r.conv.handoffSummary != null && r.conv.handoffSummary.trim().length > 0,
+      handoffSummary: r.conv.handoffSummary ?? null,
       createdAt: r.conv.createdAt.toISOString(),
       updatedAt: r.conv.updatedAt.toISOString(),
     };

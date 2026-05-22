@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { createApp } from './app';
 import { startDispatcher } from './services/campaignsDispatcher';
 import { startEnrichmentWorker } from './services/enrichmentWorker';
+import { startAiPendingWorker } from './services/aiPendingWorker';
+import { startSlaWatchdog } from './services/slaWatchdog';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -40,6 +42,12 @@ async function start() {
 
   startEnrichmentWorker();
   console.log('[enrichment] worker started (tick every 21s — BrasilAPI rate limit)');
+
+  startAiPendingWorker();
+  console.log('[ai-pending] worker started (tick every 60s — reprocessa mensagens fora do horario)');
+
+  startSlaWatchdog();
+  console.log('[sla] watchdog started (tick every 60s — escalonamento fila Comercial)');
 }
 
 start().catch((err) => {

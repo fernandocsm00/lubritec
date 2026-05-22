@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, Inbox, ShieldCheck, Search, Send, Wifi, Clock } from 'lucide-react';
+import { Bell, CheckCheck, Inbox, ShieldCheck, Search, Send, Wifi, Clock, AlarmClock } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +22,7 @@ const KIND_ICON: Record<NotificationKind, typeof Bell> = {
   dispatch_failed:         Send,
   whatsapp_disconnected:   Wifi,
   campaign_cooldown_high:  Clock,
+  sla_escalation:          AlarmClock,
   system:                  Bell,
 };
 
@@ -32,6 +33,7 @@ const KIND_TONE: Record<NotificationKind, string> = {
   dispatch_failed:         'text-destructive',
   whatsapp_disconnected:   'text-amber-600 dark:text-amber-400',
   campaign_cooldown_high:  'text-amber-600 dark:text-amber-400',
+  sla_escalation:          'text-destructive',
   system:                  'text-slate-500',
 };
 

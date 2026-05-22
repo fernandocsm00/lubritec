@@ -1,6 +1,12 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Image as ImageIcon } from 'lucide-react';
-import { formatRelativeTime, avatarInitials } from './helpers';
+import { Image as ImageIcon, Bot, Clock } from 'lucide-react';
+import {
+  formatRelativeTime,
+  avatarInitials,
+  waitingMinutes,
+  waitingToneClasses,
+  formatWaitingLabel,
+} from './helpers';
 import type { PublicConversation } from './types';
 
 interface Props {
@@ -23,6 +29,13 @@ export function ConversationRow({ conv, active, currentUserId, onClick }: Props)
     ? 'text-primary'
     : 'text-muted-foreground';
 
+  // Tempo esperando na fila Comercial sem dono — destaque visual pra modelo pull.
+  const isWaitingInComercial =
+    conv.queue === 'comercial' &&
+    conv.status === 'aguardando_atendimento' &&
+    !conv.assignedTo;
+  const waitMin = isWaitingInComercial ? waitingMinutes(conv.enteredQueueAt) : null;
+
   return (
     <button
       onClick={onClick}
@@ -37,7 +50,17 @@ export function ConversationRow({ conv, active, currentUserId, onClick }: Props)
       </Avatar>
       <div className="min-w-0">
         <div className="flex items-baseline justify-between">
-          <span className="font-medium text-sm truncate">{conv.lead.name}</span>
+          <span className="font-medium text-sm truncate flex items-center gap-1.5">
+            {conv.lead.name}
+            {conv.hasAiHandoff && (
+              <span
+                title="Qualificado pela IA"
+                className="inline-flex items-center gap-0.5 rounded bg-primary/10 text-primary text-[9px] uppercase tracking-wide px-1 py-0.5"
+              >
+                <Bot className="h-2.5 w-2.5" /> IA
+              </span>
+            )}
+          </span>
           <span className={`text-xs flex-shrink-0 ml-2 ${conv.unreadCount > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
             {formatRelativeTime(conv.lastMessageAt)}
           </span>
@@ -54,7 +77,14 @@ export function ConversationRow({ conv, active, currentUserId, onClick }: Props)
             </span>
           )}
         </div>
-        <div className={`text-[10px] mt-1 ${ownerColor}`}>{ownerLabel}</div>
+        <div className="flex items-center justify-between gap-2 mt-1">
+          <div className={`text-[10px] ${ownerColor}`}>{ownerLabel}</div>
+          {waitMin != null && (
+            <div className={`text-[10px] flex items-center gap-0.5 ${waitingToneClasses(waitMin)}`}>
+              <Clock className="h-2.5 w-2.5" /> {formatWaitingLabel(waitMin)}
+            </div>
+          )}
+        </div>
       </div>
     </button>
   );

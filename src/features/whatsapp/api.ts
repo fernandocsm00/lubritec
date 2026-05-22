@@ -23,6 +23,9 @@ function buildQuery(filters: ConversationFilters): string {
   if (filters.status?.length) u.set('status', filters.status.join(','));
   if (filters.expired24h) u.set('expired24h', 'true');
   if (filters.noResponse) u.set('noResponse', 'true');
+  // Default true: Inbox esconde disparos sem resposta. Setado explicitamente
+  // pra deixar comportamento claro no query string.
+  u.set('onlyWithInbound', filters.onlyWithInbound === false ? 'false' : 'true');
   if (filters.origin?.length) u.set('origin', filters.origin.join(','));
   if (filters.campaignId) u.set('campaignId', filters.campaignId);
   if (filters.assignment && filters.assignment !== 'all') u.set('assignment', filters.assignment);
@@ -168,6 +171,16 @@ export function useCreateTemplate() {
         body: JSON.stringify(input),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['message-templates'] }),
+  });
+}
+
+export function useUploadConversationMedia() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<{ mediaUrl: string; mediaMime: string }> => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api('/conversations/upload-media', { method: 'POST', body: fd });
+    },
   });
 }
 

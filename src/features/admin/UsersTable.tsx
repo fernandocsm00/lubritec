@@ -68,6 +68,7 @@ export function UsersTable({
         <TableRow>
           <TableHead>Nome</TableHead>
           <TableHead>Role</TableHead>
+          <TableHead>WhatsApp</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Último login</TableHead>
           <TableHead className="w-12" />
@@ -97,6 +98,15 @@ export function UsersTable({
               </TableCell>
               <TableCell>
                 <Badge variant={ROLE_VARIANT[u.role]}>{ROLE_LABEL[u.role]}</Badge>
+              </TableCell>
+              <TableCell className="text-xs">
+                {u.phone ? (
+                  <span className="font-mono">{u.phone}</span>
+                ) : (u.role === 'admin' || u.role === 'comercial') ? (
+                  <span className="text-destructive/70 italic">não cadastrado</span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </TableCell>
               <TableCell>
                 <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${status.className}`}>
