@@ -8,6 +8,7 @@ const Login = lazy(() => import('@/pages/login/Login'));
 const SetupPassword = lazy(() => import('@/pages/auth-setup/SetupPassword'));
 const ResetPassword = lazy(() => import('@/pages/auth-reset/ResetPassword'));
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
+const DashboardDetailsPage = lazy(() => import('@/pages/dashboard/DashboardDetailsPage'));
 const WhatsappPage = lazy(() => import('@/pages/whatsapp/WhatsappPage'));
 const InsideSalesPage = lazy(() => import('@/pages/inside-sales/InsideSalesPage'));
 const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage'));
@@ -36,6 +37,7 @@ export const routes: RouteObject[] = [
         element: <AppShell />,
         children: [
           { path: '/dashboard', element: wrap(<DashboardPage />) },
+          { path: '/dashboard/detalhes', element: wrap(<DashboardDetailsPage />) },
           { path: '/whatsapp', element: wrap(<WhatsappPage />) },
           { path: '/inside-sales', element: wrap(<InsideSalesPage />) },
           { path: '/campanhas', element: wrap(<CampaignsPage />) },

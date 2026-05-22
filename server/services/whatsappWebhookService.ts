@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { conversations, messages, leads, orgSettings, whatsappInstance } from '../db/schema';
+import { conversations, messages, leads, orgSettings, whatsappInstance, campaignRecipients } from '../db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import type { InboundMessage } from '../lib/uazapiSchema';
 import type { ConversationQueue, LeadFlowStage, MessageKind, ProviderKind } from '@shared/types';
@@ -38,13 +38,29 @@ async function getDefaultInstanceId(): Promise<string> {
 }
 
 /**
- * Decide a fila inicial pra uma conversa nova:
- *   - se ai_enabled na org_settings → 'ia' (IA atende primeiro)
- *   - senão → 'recepcao' (humano atende)
+ * Decide a fila inicial pra uma conversa NOVA, baseado em:
+ *   - ai_enabled em org_settings
+ *   - existencia de campaign_recipient ('sent') pra este lead
+ *
+ * Politica de produto (decidida em 2026-05-22): SOMENTE leads vindos de
+ * campanha vao pra IA. Leads organicos (cliente chegou sozinho, sem disparo
+ * previo) vao direto pra recepcao humana — evita IA respondendo contato
+ * antigo VIP, indicacao, suporte tecnico, etc.
+ *
+ * Override manual continua possivel via "Mover" no ChatHeader.
  */
-async function defaultInboundQueue(): Promise<ConversationQueue> {
+async function defaultInboundQueueFor(leadId: string): Promise<ConversationQueue> {
   const [s] = await db.select({ aiEnabled: orgSettings.aiEnabled }).from(orgSettings).limit(1);
-  return s?.aiEnabled ? 'ia' : 'recepcao';
+  if (!s?.aiEnabled) return 'recepcao';
+  const [hasCampaign] = await db
+    .select({ id: campaignRecipients.id })
+    .from(campaignRecipients)
+    .where(and(
+      eq(campaignRecipients.leadId, leadId),
+      eq(campaignRecipients.status, 'sent'),
+    ))
+    .limit(1);
+  return hasCampaign ? 'ia' : 'recepcao';
 }
 
 /**
@@ -73,7 +89,6 @@ export async function ingestInboundMessage(
   if (phone.length < 8) return { status: 'ignored' };
 
   const sentAt = input.sentAt;
-  const initialQueue = await defaultInboundQueue();
 
   // Stages "anteriores" a engaged — recebimento de inbound deve promover daqui pra engaged.
   // Stages mais avançados (qualified, handed_off, lost) são preservados.
@@ -150,6 +165,13 @@ export async function ingestInboundMessage(
 
     let conversationId: string;
     if (existingConv.length === 0) {
+      // Resolvemos a fila inicial AGORA que ja temos o leadId — eh esperado
+      // que isso faca uma query extra so quando ai_enabled=true (early return
+      // quando IA esta desligada).
+      const initialQueue = await defaultInboundQueueFor(leadId);
+      // Origin coerente com a fila: se foi pra IA, o cliente esta respondendo
+      // a algum disparo passado — marca origin='campaign' tambem.
+      const initialOrigin = initialQueue === 'ia' ? 'campaign' : 'organic';
       const [created] = await tx
         .insert(conversations)
         .values({
@@ -158,7 +180,7 @@ export async function ingestInboundMessage(
           leadId,
           queue: initialQueue,
           status: 'aguardando_atendimento',
-          originKind: 'organic',
+          originKind: initialOrigin,
           lastMessageAt: sentAt,
           lastInboundAt: sentAt,
           unreadCount: 1,

@@ -693,6 +693,7 @@ export const NOTIFICATION_KINDS = [
   'whatsapp_disconnected',  // instância UazAPI caiu
   'campaign_cooldown_high',
   'sla_escalation',         // lead aguardando atendimento na fila Comercial além do SLA
+  'ai_fallback',            // IA falhou repetidamente — conversa movida pra recepção
   'system',                 // generic
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
