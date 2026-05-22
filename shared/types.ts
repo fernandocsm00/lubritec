@@ -305,6 +305,12 @@ export interface CreateInstanceRequest {
   };
 }
 
+export interface WebhookInfoResponse {
+  callbackUrl: string;
+  verifyToken: string;
+  subscribed: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Mass Campaigns (sub-projeto 7)
 // ---------------------------------------------------------------------------

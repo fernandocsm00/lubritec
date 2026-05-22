@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { eq, and, ne, count } from 'drizzle-orm';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import { db } from '../db/client';
 import { whatsappInstance, conversations } from '../db/schema';
 import { HttpError } from '../middleware/errorHandler';
@@ -89,7 +90,62 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
     const input: CreateInstanceRequest = createBodySchema.parse(req.body);
 
     if (input.provider === 'meta_cloud') {
-      throw new HttpError(501, 'Meta Cloud provider not yet supported');
+      if (!input.metaCloud) {
+        throw new HttpError(422, 'metaCloud config required for meta_cloud provider');
+      }
+      const { wabaId, phoneNumberId, accessToken, appSecret } = input.metaCloud;
+
+      // Validate credentials by calling Meta Graph BEFORE inserting any row
+      const { getPhoneNumberInfo, MetaGraphError } = await import(
+        '../services/whatsapp/metaCloud/client'
+      );
+      let phoneInfo: { display_phone_number: string; verified_name: string; id: string };
+      try {
+        phoneInfo = await getPhoneNumberInfo({ phoneNumberId, accessToken });
+      } catch (err) {
+        if (err instanceof MetaGraphError) {
+          throw new HttpError(422,
+            `Meta credentials validation failed (HTTP ${err.status}). Check WABA ID, ` +
+            `Phone Number ID, and that the access token has whatsapp_business_messaging permission.`,
+          );
+        }
+        throw err;
+      }
+
+      const verifyToken = crypto.randomBytes(32).toString('hex');
+      const cfg = {
+        wabaId,
+        phoneNumberId,
+        accessToken: encryptSecret(accessToken),
+        appSecret: encryptSecret(appSecret),
+        webhookVerifyToken: verifyToken,
+        webhookSubscribed: false,
+      };
+
+      const [{ value: existingCount }] = await db
+        .select({ value: count() }).from(whatsappInstance);
+      const shouldBeDefault = (existingCount === 0) || input.isDefault === true;
+
+      let createdRow: typeof whatsappInstance.$inferSelect | undefined;
+      await db.transaction(async (tx) => {
+        if (shouldBeDefault) {
+          await tx.update(whatsappInstance)
+            .set({ isDefault: false, updatedAt: new Date() })
+            .where(eq(whatsappInstance.isDefault, true));
+        }
+        const [row] = await tx.insert(whatsappInstance).values({
+          provider: 'meta_cloud',
+          displayName: input.displayName,
+          isDefault: shouldBeDefault,
+          phoneNumber: phoneInfo.display_phone_number,
+          profileName: phoneInfo.verified_name,
+          providerConfig: cfg,
+        }).returning();
+        createdRow = row;
+      });
+
+      if (!createdRow) throw new HttpError(500, 'Insert returned no row');
+      return res.status(201).json(toListItem(createdRow));
     }
 
     // UazAPI
@@ -198,5 +254,26 @@ export async function connectInstanceHandler(req: Request, res: Response, next: 
     const result = await connect({});
     invalidateProvider(id);
     res.json(result);
+  } catch (e) { next(e); }
+}
+
+export async function webhookInfoHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id;
+    const [row] = await db.select().from(whatsappInstance)
+      .where(eq(whatsappInstance.id, id)).limit(1);
+    if (!row) throw new HttpError(404, 'Instance not found');
+    if (row.provider !== 'meta_cloud') {
+      throw new HttpError(400, 'webhook-info is only available for meta_cloud provider');
+    }
+    const { metaCloudConfigSchema } = await import('../services/whatsapp/metaCloud/configSchema');
+    const cfg = metaCloudConfigSchema.parse(row.providerConfig);
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+    const body = {
+      callbackUrl: `${appUrl.replace(/\/$/, '')}/api/whatsapp/webhook/meta/${id}`,
+      verifyToken: cfg.webhookVerifyToken,
+      subscribed: cfg.webhookSubscribed,
+    };
+    res.json(body);
   } catch (e) { next(e); }
 }

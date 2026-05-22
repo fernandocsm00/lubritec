@@ -88,16 +88,15 @@ describe('POST /api/whatsapp/instances', () => {
     expect(res.body.isDefault).toBe(true);
   });
 
-  it('rejects 501 for meta_cloud (not implemented in Plan A)', async () => {
+  it('rejects 422 for meta_cloud when metaCloud config block is missing', async () => {
     const token = await loginAs('admin');
     const res = await request(app).post('/api/whatsapp/instances')
       .set('Authorization', `Bearer ${token}`)
       .send({
         provider: 'meta_cloud',
         displayName: 'Oficial',
-        metaCloud: { wabaId: 'x', phoneNumberId: 'y', accessToken: 'z', appSecret: 'w' },
       });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(422);
   });
 
   it('blocks non-admin', async () => {
