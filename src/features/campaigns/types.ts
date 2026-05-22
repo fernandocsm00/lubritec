@@ -8,6 +8,8 @@ export type {
   CampaignsAggregateStats,
   CampaignsTimeseries,
   CampaignsTimeseriesBucket,
+  TopCampaign,
+  TopCampaignsResponse,
   PublicCampaignRecipient,
   LeadStatus,
   LeadSource,

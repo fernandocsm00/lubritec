@@ -17,6 +17,7 @@ import {
   uploadMediaHandler,
   aggregateStatsHandler,
   timeseriesHandler,
+  topCampaignsHandler,
 } from '../controllers/campaignsController';
 import {
   getHandler as continuousGetHandler,
@@ -31,6 +32,7 @@ router.get('/continuous', ...guard, continuousGetHandler);
 router.put('/continuous', ...adminOnly, continuousUpsertHandler);
 router.get('/aggregate-stats', ...guard, aggregateStatsHandler);
 router.get('/timeseries', ...guard, timeseriesHandler);
+router.get('/top', ...guard, topCampaignsHandler);
 
 router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);

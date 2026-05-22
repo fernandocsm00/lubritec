@@ -10,6 +10,7 @@ import type {
   CampaignRecipientStatus,
   CampaignsAggregateStats,
   CampaignsTimeseries,
+  TopCampaignsResponse,
 } from './types';
 
 export type ReportPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
@@ -76,6 +77,18 @@ export function useCampaignsTimeseries(opts?: { period?: ReportPeriod; kind?: Ca
   return useQuery({
     queryKey: ['campaigns', 'timeseries', period, kind],
     queryFn: () => api<CampaignsTimeseries>(`/campaigns/timeseries?${qs}`),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useTopCampaigns(opts?: { period?: ReportPeriod; kind?: CampaignKind; limit?: number }) {
+  const period = opts?.period ?? '30d';
+  const kind = opts?.kind ?? 'all';
+  const limit = opts?.limit ?? 5;
+  const qs = new URLSearchParams({ period, kind, limit: String(limit) }).toString();
+  return useQuery({
+    queryKey: ['campaigns', 'top', period, kind, limit],
+    queryFn: () => api<TopCampaignsResponse>(`/campaigns/top?${qs}`),
     refetchInterval: 60_000,
   });
 }

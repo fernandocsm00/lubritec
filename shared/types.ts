@@ -408,6 +408,8 @@ export interface CampaignFunnel {
  *
  * Se compareWith for retornado, eh stats do periodo imediatamente anterior
  * (mesma duracao) — frontend usa pra mostrar Δ%.
+ *
+ * lostByReason: contagem agregada de deals perdidos por motivo no periodo.
  */
 export interface CampaignsAggregateStats {
   totalCampaigns: number;
@@ -421,9 +423,30 @@ export interface CampaignsAggregateStats {
   totalLost: number;
   totalWonValue: number;
   conversionRate: number;
+  lostByReason: Record<LossReason, number>;
   period: { start: string; end: string; key: string; label: string };
   kind: 'all' | 'one_shot' | 'continuous';
   compareWith?: Omit<CampaignsAggregateStats, 'compareWith'>;
+}
+
+/**
+ * Top campanhas do periodo, ranqueadas. Default rank: por sent DESC.
+ */
+export interface TopCampaign {
+  id: string;
+  name: string;
+  status: CampaignStatus;
+  isContinuous: boolean;
+  sent: number;
+  replied: number;
+  replyRate: number;
+  won: number;
+  wonValue: number;
+}
+
+export interface TopCampaignsResponse {
+  items: TopCampaign[];
+  period: { start: string; end: string; key: string; label: string };
 }
 
 /**

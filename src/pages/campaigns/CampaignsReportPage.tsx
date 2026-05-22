@@ -7,6 +7,8 @@ import {
 } from '@/components/ui/select';
 import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
 import { CampaignsTimeseriesChart } from '@/features/campaigns/CampaignsTimeseriesChart';
+import { TopCampaignsTable } from '@/features/campaigns/TopCampaignsTable';
+import { LossReasonsCard } from '@/features/campaigns/LossReasonsCard';
 import {
   REPORT_PERIOD_LABELS,
   CAMPAIGN_KIND_LABELS,
@@ -58,7 +60,18 @@ export default function CampaignsReportPage() {
 
       <CampaignsReportBar period={period} kind={kind} compare />
 
-      <CampaignsTimeseriesChart period={period} kind={kind} />
+      <div className="space-y-4">
+        <CampaignsTimeseriesChart period={period} kind={kind} />
+
+        <div className="grid lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2">
+            <TopCampaignsTable period={period} kind={kind} limit={5} />
+          </div>
+          <div className="lg:col-span-1">
+            <LossReasonsCard period={period} kind={kind} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

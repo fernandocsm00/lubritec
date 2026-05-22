@@ -8,6 +8,7 @@ import type {
   CampaignsAggregateStats,
   CampaignsTimeseries,
   CampaignsTimeseriesBucket,
+  TopCampaign,
   CampaignStatus,
   AudienceFilters,
   PublicCampaignRecipient,
@@ -447,6 +448,34 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
   const lost = deal.lost ?? 0;
   const wonValue = Number(deal.won_value ?? 0);
 
+  // Motivos de perda agregados (so deals perdidos vindos de campanha no periodo).
+  const lostReasonsRows = await db.execute(sql`
+    SELECT d.loss_reason AS reason, COUNT(*)::int AS n
+    FROM deals d
+    WHERE d.stage = 'perdido'
+      AND COALESCE(d.closed_at, d.created_at) >= ${start}
+      AND COALESCE(d.closed_at, d.created_at) < ${end}
+      AND d.loss_reason IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM campaign_recipients cr
+        JOIN campaigns c ON c.id = cr.campaign_id
+        WHERE cr.lead_id = d.lead_id
+          ${kindCampaignFilter}
+      )
+    GROUP BY 1
+  `);
+  const lostByReason: Record<LossReason, number> = {
+    condicoes_comerciais: 0,
+    preco: 0,
+    sem_retorno: 0,
+    fora_do_perfil: 0,
+  };
+  for (const r of lostReasonsRows.rows as { reason: string; n: number }[]) {
+    if (LOSS_REASONS.includes(r.reason as LossReason)) {
+      lostByReason[r.reason as LossReason] = r.n;
+    }
+  }
+
   const replyRate = sent === 0 ? 0 : Math.round((replied / sent) * 1000) / 10;
   const conversionRate = sent === 0 ? 0 : Math.round((won / sent) * 1000) / 10;
 
@@ -462,7 +491,93 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
     totalLost: lost,
     totalWonValue: wonValue,
     conversionRate,
+    lostByReason,
   };
+}
+
+/**
+ * Top N campanhas no periodo, ranqueadas por mensagens enviadas (sent DESC).
+ * Inclui sent/replied/replyRate/won/wonValue por campanha pra exibir tabela.
+ */
+export async function getTopCampaigns(input: {
+  start: Date;
+  end: Date;
+  kind?: 'all' | 'one_shot' | 'continuous';
+  limit?: number;
+}): Promise<TopCampaign[]> {
+  const { start, end } = input;
+  const kind = input.kind ?? 'all';
+  const limit = Math.min(50, Math.max(1, input.limit ?? 5));
+
+  const kindFilter = kind === 'all'
+    ? sql``
+    : kind === 'continuous'
+      ? sql`AND c.is_continuous = true`
+      : sql`AND c.is_continuous = false`;
+
+  // Agrega sent/replied/won/wonValue por campaign_id. Replied via subquery EXISTS.
+  const rows = await db.execute(sql`
+    SELECT
+      c.id,
+      c.name,
+      c.status,
+      c.is_continuous,
+      COUNT(cr.id) FILTER (WHERE cr.status = 'sent')::int AS sent,
+      COUNT(DISTINCT cr.lead_id) FILTER (
+        WHERE cr.status = 'sent'
+          AND EXISTS (
+            SELECT 1 FROM conversations c2
+            JOIN messages m ON m.conversation_id = c2.id
+            WHERE c2.lead_id = cr.lead_id
+              AND m.direction = 'in'
+              AND m.sent_at > cr.sent_at
+          )
+      )::int AS replied,
+      COUNT(DISTINCT d.id) FILTER (
+        WHERE d.stage = 'ganho'
+          AND COALESCE(d.closed_at, d.created_at) >= ${start}
+          AND COALESCE(d.closed_at, d.created_at) < ${end}
+      )::int AS won,
+      COALESCE(SUM(CASE
+        WHEN d.stage = 'ganho'
+          AND COALESCE(d.closed_at, d.created_at) >= ${start}
+          AND COALESCE(d.closed_at, d.created_at) < ${end}
+        THEN d.proposal_value ELSE 0 END), 0) AS won_value
+    FROM campaigns c
+    JOIN campaign_recipients cr ON cr.campaign_id = c.id
+    LEFT JOIN deals d ON d.lead_id = cr.lead_id
+    WHERE cr.sent_at >= ${start} AND cr.sent_at < ${end}
+      ${kindFilter}
+    GROUP BY c.id, c.name, c.status, c.is_continuous
+    HAVING COUNT(cr.id) FILTER (WHERE cr.status = 'sent') > 0
+    ORDER BY sent DESC
+    LIMIT ${limit}
+  `);
+
+  return (rows.rows as Array<{
+    id: string;
+    name: string;
+    status: string;
+    is_continuous: boolean;
+    sent: number;
+    replied: number;
+    won: number;
+    won_value: string | number;
+  }>).map((r) => {
+    const sent = r.sent ?? 0;
+    const replied = r.replied ?? 0;
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.status as CampaignStatus,
+      isContinuous: r.is_continuous ?? false,
+      sent,
+      replied,
+      replyRate: sent === 0 ? 0 : Math.round((replied / sent) * 1000) / 10,
+      won: r.won ?? 0,
+      wonValue: Number(r.won_value ?? 0),
+    };
+  });
 }
 
 /**
