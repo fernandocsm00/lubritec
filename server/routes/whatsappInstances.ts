@@ -8,6 +8,7 @@ import {
   patchHandler,
   deleteHandler,
   connectInstanceHandler,
+  webhookInfoHandler,
 } from '../controllers/whatsappInstancesController';
 
 const router = Router();
@@ -19,5 +20,6 @@ router.get('/:id', ...adminOnly, detailHandler);
 router.patch('/:id', ...adminOnly, patchHandler);
 router.delete('/:id', ...adminOnly, deleteHandler);
 router.post('/:id/connect', ...adminOnly, connectInstanceHandler);
+router.get('/:id/webhook-info', ...adminOnly, webhookInfoHandler);
 
 export default router;

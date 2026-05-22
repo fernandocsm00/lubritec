@@ -1,10 +1,29 @@
 import { db } from '../db/client';
 import { conversations, messages, leads, orgSettings, whatsappInstance } from '../db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import type { InboundMessage } from '../lib/uazapiSchema';
-import type { ConversationQueue, LeadFlowStage } from '@shared/types';
+import type { ConversationQueue, LeadFlowStage, MessageKind, ProviderKind } from '@shared/types';
 import { recordTransition } from './stageTransitions';
 import { HttpError } from '../middleware/errorHandler';
+
+// ---------------------------------------------------------------------------
+// NormalizedInbound — provider-agnostic inbound message shape.
+// Both UazAPI and Meta Cloud webhook handlers normalize to this before calling
+// ingestInboundMessage().
+// ---------------------------------------------------------------------------
+export interface NormalizedInbound {
+  instanceId: string;
+  provider: ProviderKind;
+  leadPhone: string;      // already-normalized digits-only
+  leadName?: string;      // optional contact pushName
+  kind: MessageKind;
+  text?: string;
+  mediaUrl?: string;
+  mediaMime?: string;
+  providerMsgId: string;
+  sentAt: Date;
+  rawPayload: unknown;
+}
 
 function normalizePhone(raw: string): string {
   // Remove tudo que não é dígito. Funciona pra "+55 11 9...", "5511...@s.whatsapp.net", "5511...@c.us", etc.
@@ -28,22 +47,32 @@ async function defaultInboundQueue(): Promise<ConversationQueue> {
   return s?.aiEnabled ? 'ia' : 'recepcao';
 }
 
-export async function ingestInbound(
-  m: InboundMessage,
-  rawPayload: unknown,
+/**
+ * Provider-agnostic inbound message pipeline. Both UazAPI and Meta Cloud
+ * webhook handlers normalize their payload and call this function.
+ *
+ * Behavior:
+ *   - Idempotent on provider_msg_id — duplicates return early.
+ *   - Upserts lead by phone (creates if not found; promotes flow_stage to engaged).
+ *   - Upserts conversation by (instance_id, phone).
+ *   - Inserts message with provider tagged.
+ *   - Returns conversationId + leadId for downstream IA dispatch.
+ */
+export async function ingestInboundMessage(
+  input: NormalizedInbound,
 ): Promise<{ status: 'inserted' | 'duplicate' | 'ignored'; conversationId?: string; leadId?: string }> {
-  // Idempotência por provider_msg_id
+  // Idempotência por providerMsgId
   const existing = await db
     .select({ id: messages.id })
     .from(messages)
-    .where(eq(messages.providerMsgId, m.id))
+    .where(eq(messages.providerMsgId, input.providerMsgId))
     .limit(1);
   if (existing.length) return { status: 'duplicate' };
 
-  const phone = normalizePhone(m.from);
+  const phone = input.leadPhone;
   if (phone.length < 8) return { status: 'ignored' };
 
-  const sentAt = m.timestamp;
+  const sentAt = input.sentAt;
   const initialQueue = await defaultInboundQueue();
 
   // Stages "anteriores" a engaged — recebimento de inbound deve promover daqui pra engaged.
@@ -67,8 +96,8 @@ export async function ingestInbound(
       leadId = found[0].id;
       const updates: Partial<typeof leads.$inferInsert> = {};
       // Promove nome auto-gerado pro pushName real (não sobrescreve customizado).
-      if (m.contactName && found[0].name === phone) {
-        updates.name = m.contactName;
+      if (input.leadName && found[0].name === phone) {
+        updates.name = input.leadName;
       }
       // Promove stage pra 'engaged' se ainda estiver em estágio anterior.
       if (PROMOTABLE_TO_ENGAGED.has(found[0].flowStage)) {
@@ -84,7 +113,7 @@ export async function ingestInbound(
         const [created] = await tx
           .insert(leads)
           .values({
-            name: m.contactName ?? phone,
+            name: input.leadName ?? phone,
             phone,
             source: 'whatsapp',
             status: 'frio',
@@ -106,21 +135,26 @@ export async function ingestInbound(
       }
     }
 
-    // 2. Upsert conversation
+    // 2. Upsert conversation by (instance_id, phone) — fixed from previous bug
+    // that matched by phone only, ignoring instance boundaries.
     const existingConv = await tx
       .select()
       .from(conversations)
-      .where(eq(conversations.phone, phone))
+      .where(
+        and(
+          eq(conversations.instanceId, input.instanceId),
+          eq(conversations.phone, phone),
+        ),
+      )
       .limit(1);
 
     let conversationId: string;
     if (existingConv.length === 0) {
-      const instanceId = await getDefaultInstanceId();
       const [created] = await tx
         .insert(conversations)
         .values({
           phone,
-          instanceId,
+          instanceId: input.instanceId,
           leadId,
           queue: initialQueue,
           status: 'aguardando_atendimento',
@@ -148,17 +182,17 @@ export async function ingestInbound(
         .where(eq(conversations.id, c.id));
     }
 
-    // 3. Insert message
+    // 3. Insert message with provider from input (not hardcoded)
     await tx.insert(messages).values({
       conversationId,
       direction: 'in',
-      kind: m.kind,
-      body: m.kind === 'text' ? m.text : null,
-      mediaUrl: m.mediaUrl,
-      mediaMime: m.mediaMime,
-      providerMsgId: m.id,
-      provider: 'uazapi',
-      rawPayload: rawPayload as object,
+      kind: input.kind,
+      body: input.kind === 'text' ? input.text : null,
+      mediaUrl: input.mediaUrl,
+      mediaMime: input.mediaMime,
+      providerMsgId: input.providerMsgId,
+      provider: input.provider,
+      rawPayload: input.rawPayload as object,
       sentAt,
     });
 
@@ -174,9 +208,34 @@ export async function ingestInbound(
       fromStage: st.from,
       toStage: st.to,
       source: st.from === null ? 'create' : 'webhook_inbound',
-      metadata: { conversationId: outConversationId, messageId: m.id },
+      metadata: { conversationId: outConversationId, messageId: input.providerMsgId },
     });
   }
 
   return { status: 'inserted', conversationId: outConversationId, leadId: outLeadId };
+}
+
+/**
+ * UazAPI wrapper — preserves the existing controller contract. Builds a
+ * NormalizedInbound from the UazAPI-typed InboundMessage and delegates to
+ * ingestInboundMessage().
+ */
+export async function ingestInbound(
+  m: InboundMessage,
+  rawPayload: unknown,
+): Promise<{ status: 'inserted' | 'duplicate' | 'ignored'; conversationId?: string; leadId?: string }> {
+  const instanceId = await getDefaultInstanceId();
+  return ingestInboundMessage({
+    instanceId,
+    provider: 'uazapi',
+    leadPhone: normalizePhone(m.from),
+    leadName: m.contactName ?? undefined,
+    kind: m.kind,
+    text: m.kind === 'text' ? (m.text ?? undefined) : undefined,
+    mediaUrl: m.mediaUrl ?? undefined,
+    mediaMime: m.mediaMime ?? undefined,
+    providerMsgId: m.id,
+    sentAt: m.timestamp,
+    rawPayload,
+  });
 }

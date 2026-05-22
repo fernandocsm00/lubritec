@@ -12,6 +12,7 @@ import messageTemplateRoutes from './routes/messageTemplates';
 import dealRoutes from './routes/deals';
 import whatsappInstanceRoutes from './routes/whatsappInstance';
 import whatsappInstancesRouter from './routes/whatsappInstances';
+import metaWebhookRouter from './routes/whatsappMetaWebhook';
 import orgSettingsRoutes from './routes/orgSettings';
 import campaignRoutes from './routes/campaigns';
 import dashboardRoutes from './routes/dashboard';
@@ -34,6 +35,20 @@ export function createApp() {
     throw new Error('APP_URL must be set in production');
   }
   app.use(cors({ origin: corsOrigin, credentials: true }));
+
+  // META WEBHOOK — must come BEFORE the global express.json() so the raw body
+  // is captured via the verify callback (needed for HMAC signature check).
+  // Path-scoped JSON parser only applies to /api/whatsapp/webhook/meta/*.
+  app.use(
+    '/api/whatsapp/webhook/meta',
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+    metaWebhookRouter,
+  );
+
   app.use(express.json());
   app.use(cookieParser());
 

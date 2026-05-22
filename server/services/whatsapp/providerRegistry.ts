@@ -5,7 +5,8 @@ import { HttpError } from '../../middleware/errorHandler';
 import type { WhatsAppProvider } from './provider';
 import { UazapiProvider } from './uazapi/provider';
 import { uazapiConfigSchema } from './uazapi/configSchema';
-// MetaCloudProvider import will be added in Plan B
+import { MetaCloudProvider } from './metaCloud/provider';
+import { metaCloudConfigSchema } from './metaCloud/configSchema';
 
 const TTL_MS = 5 * 60 * 1000;
 
@@ -53,8 +54,10 @@ function buildProvider(row: typeof whatsappInstance.$inferSelect): WhatsAppProvi
       const cfg = uazapiConfigSchema.parse(row.providerConfig);
       return new UazapiProvider(row.id, cfg);
     }
-    case 'meta_cloud':
-      throw new HttpError(501, 'Meta Cloud provider not yet implemented');
+    case 'meta_cloud': {
+      const cfg = metaCloudConfigSchema.parse(row.providerConfig);
+      return new MetaCloudProvider(row.id, cfg);
+    }
     default:
       throw new HttpError(500, `Unsupported provider kind: ${(row as any).provider}`);
   }

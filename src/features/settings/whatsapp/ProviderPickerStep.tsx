@@ -24,18 +24,17 @@ export function ProviderPickerStep({ onSelect }: Props) {
       </button>
       <button
         onClick={() => onSelect('meta_cloud')}
-        disabled
-        className="border border-zinc-200 rounded-lg p-5 text-left opacity-60 cursor-not-allowed"
+        className="border border-zinc-200 rounded-lg p-5 text-left hover:border-lc-navy hover:shadow-sm transition"
       >
         <h3 className="font-semibold text-lg mb-2">WhatsApp Cloud API (Meta)</h3>
         <ul className="text-sm text-zinc-600 space-y-1 mb-4">
           <li>• Configuração via Meta Business Manager</li>
-          <li>• Templates aprovados</li>
-          <li>• Zero risco de ban</li>
-          <li>• Custo por conversa</li>
+          <li>• Zero risco de banimento</li>
+          <li>• Custo por conversa (~R$0,03–0,08)</li>
+          <li>• Texto livre só dentro da janela de 24h (depois exige templates aprovados, no Plano C)</li>
         </ul>
-        <span className="inline-block px-3 py-1.5 bg-zinc-300 text-zinc-600 text-sm rounded">
-          Em breve (Plano B)
+        <span className="inline-block px-3 py-1.5 bg-lc-navy text-white text-sm rounded">
+          Selecionar
         </span>
       </button>
     </div>

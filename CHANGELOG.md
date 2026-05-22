@@ -1,5 +1,42 @@
 # Changelog
 
+## [Unreleased] — 2026-05-21 — Plano B (Meta Cloud Provider básico)
+
+### Added
+- **MetaCloudProvider** (`server/services/whatsapp/metaCloud/`) — implementa `WhatsAppProvider` interface. Suporta envio de texto + mídia (image, video, audio, document) via Meta Graph API v20.0.
+- **Webhook Meta** (`POST /api/whatsapp/webhook/meta/:instanceId`) — valida HMAC SHA256 via `X-Hub-Signature-256`, normaliza payload Meta, delega ao `ingestInboundMessage` (pipeline comum aos providers).
+- **Verification GET endpoint** — `GET /api/whatsapp/webhook/meta/:instanceId` ecoa `hub.challenge` quando o `verify_token` bate; usado pela Meta na subscrição inicial.
+- **Setup endpoint** — `POST /api/whatsapp/instances` agora aceita `provider: 'meta_cloud'`, valida credenciais via `GET /{phone_number_id}` na Graph API, gera `webhookVerifyToken` (32 bytes hex), armazena credenciais criptografadas (AES-256-GCM).
+- **Webhook info endpoint** — `GET /api/whatsapp/instances/:id/webhook-info` retorna `callbackUrl` + `verifyToken` + `subscribed` pra UI exibir após criação.
+- **UI: MetaCloudSetupStep** — formulário com 5 campos (display name + 4 credenciais). Validação acontece via backend (Meta Graph) com mensagens amigáveis.
+- **UI: WebhookInfoStep** — exibe instruções passo-a-passo pro admin colar callback URL + verify token no Meta App, com polling do status de subscrição.
+
+### Changed
+- `whatsappWebhookService.ts` — extraído `ingestInboundMessage(normalized)` como pipeline pública, reusada pelos handlers de ambos providers (UazAPI e Meta).
+- `ProviderPickerStep` — card Meta Cloud agora ativo (selecionável).
+- **Bug fix**: lookup de conversation no `ingestInbound` agora usa `(instance_id, phone)` composite (antes era só `phone` — bug latente que poderia causar cross-instance leakage).
+
+### Internal
+- Novos arquivos de tests: `meta-cloud-provider.test.ts` (11 tests), `meta-cloud-webhook.test.ts` (7 tests), `whatsapp-instances-meta-create.test.ts` (5 tests).
+- Fixtures Meta webhook em `server/tests/fixtures/meta-webhook-*.json`.
+- `.gitignore` — adiciona `backup-*.sql` (artefatos sensíveis).
+- `MetaCloudProvider.sendMedia` rejeita `kind: 'unknown'` (catch-all do schema interno que a Graph API não aceita).
+
+### Env vars adicionadas
+- `META_GRAPH_API_VERSION` (opcional) — default `v20.0`. Sobrescrever só pra rollback de API version.
+
+### Out of scope (vai no Plano C)
+- Templates HSM (sendTemplate, listTemplates, createTemplate continuam stubs)
+- Editor de templates HSM
+- Campanhas multi-instância com HSM
+- Status updates (delivery/read receipts) — v1 ignora `statuses` no webhook
+- `message_template_status_update` — Plano C
+
+### Migrations
+Nenhuma. Apenas usa colunas adicionadas no Plano A.
+
+---
+
 ## [Unreleased] — 2026-05-21 — Plano A (Fundação Multi-Provider WhatsApp)
 
 ### Added
