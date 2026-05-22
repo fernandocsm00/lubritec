@@ -64,8 +64,11 @@ export function useDryRun() {
 interface CreateInput {
   name: string;
   description?: string;
+  instanceId: string;
   templateId?: string | null;
-  messageBody: string;
+  hsmTemplateId?: string | null;
+  hsmVariables?: Array<{ index: number; source: 'static' | 'lead_field'; value: string }>;
+  messageBody?: string;
   mediaUrl?: string | null;
   mediaMime?: string | null;
   audienceFilter: AudienceFilters;

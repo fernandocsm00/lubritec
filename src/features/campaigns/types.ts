@@ -9,6 +9,7 @@ export type {
   LeadStatus,
   LeadSource,
   LossReason,
+  CampaignHsmVariable,
 } from '@shared/types';
 
 import type { PublicCampaign, CampaignFunnel } from '@shared/types';

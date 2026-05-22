@@ -9,45 +9,98 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { NameStep } from '@/features/campaigns/NameStep';
+import { InstancePickerStep } from '@/features/campaigns/InstancePickerStep';
 import { AudienceStep } from '@/features/campaigns/AudienceStep';
 import { MessageStep } from '@/features/campaigns/MessageStep';
 import { ReviewStep } from '@/features/campaigns/ReviewStep';
 import { useCreateCampaign, useDispatchCampaign } from '@/features/campaigns/api';
-import type { AudienceFilters } from '@/features/campaigns/types';
+import type { AudienceFilters, CampaignHsmVariable } from '@/features/campaigns/types';
+import type { InstanceListItem, HsmTemplateRecord } from '@shared/types';
+
+const STEP_LABELS: Record<number, string> = {
+  1: 'Nome',
+  2: 'Linha',
+  3: 'Audiência',
+  4: 'Mensagem',
+  5: 'Revisar',
+};
+
+const TOTAL_STEPS = 5;
 
 export default function CampaignNewPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
 
-  // Estado do wizard
+  // ── Wizard state ──────────────────────────────────────────────────────────
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+
+  // Step 2 — Instance
+  const [selectedInstance, setSelectedInstance] = useState<InstanceListItem | null>(null);
+
+  // Step 3 — Audience
   const [filters, setFilters] = useState<AudienceFilters>({});
   const [audienceTotal, setAudienceTotal] = useState(0);
+
+  // Step 4 — Message (UazAPI free-form)
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [messageBody, setMessageBody] = useState('');
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaMime, setMediaMime] = useState<string | null>(null);
+
+  // Step 4 — Message (Meta HSM)
+  const [hsmTemplateId, setHsmTemplateId] = useState<string | null>(null);
+  const [hsmVariables, setHsmVariables] = useState<CampaignHsmVariable[]>([]);
+  // Keep HsmTemplateRecord for ReviewStep display (not sent to API directly)
+  const [hsmTemplateRecord, setHsmTemplateRecord] = useState<HsmTemplateRecord | null>(null);
+
+  // Step 5 — Review
   const [scheduledAt, setScheduledAt] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const create = useCreateCampaign();
   const dispatch = useDispatchCampaign();
 
+  const isMeta = selectedInstance?.provider === 'meta_cloud';
+
+  // ── Per-step validation ───────────────────────────────────────────────────
   const canNext = (() => {
     if (step === 1) return name.trim().length > 0;
-    if (step === 2) return audienceTotal > 0;
-    if (step === 3) return messageBody.trim().length > 0;
+    if (step === 2) return selectedInstance !== null;
+    if (step === 3) return audienceTotal > 0;
+    if (step === 4) {
+      if (isMeta) {
+        if (!hsmTemplateId) return false;
+        if (!hsmTemplateRecord) return false;
+        // All variable indices covered and no static-empty values
+        const bodyComp = hsmTemplateRecord.components.find((c) => c.type === 'BODY');
+        if (bodyComp && 'text' in bodyComp) {
+          const matches = bodyComp.text.match(/\{\{(\d+)\}\}/g) ?? [];
+          const indices = Array.from(new Set(matches)).map((m) => parseInt(m.slice(2, -2), 10));
+          for (const idx of indices) {
+            const v = hsmVariables.find((x) => x.index === idx);
+            if (!v) return false;
+            if (v.source === 'static' && v.value.trim() === '') return false;
+          }
+        }
+        return true;
+      }
+      return messageBody.trim().length > 0;
+    }
     return true;
   })();
 
+  // ── Submit ────────────────────────────────────────────────────────────────
   async function submit() {
     try {
       const created = await create.mutateAsync({
         name,
         description: description || undefined,
-        templateId,
-        messageBody,
+        instanceId: selectedInstance!.id,
+        templateId: isMeta ? null : templateId,
+        hsmTemplateId: isMeta ? hsmTemplateId : null,
+        hsmVariables: isMeta ? hsmVariables : undefined,
+        messageBody: isMeta ? undefined : messageBody,
         mediaUrl,
         mediaMime,
         audienceFilter: filters,
@@ -56,7 +109,7 @@ export default function CampaignNewPage() {
       await dispatch.mutateAsync(created.id);
       toast.success(scheduledAt ? 'Campanha agendada.' : 'Campanha disparada — acompanhe abaixo.');
       navigate(`/campanhas/${created.id}`);
-    } catch (err: unknown) {
+    } catch {
       toast.error('Falha ao criar campanha.');
     }
   }
@@ -69,12 +122,22 @@ export default function CampaignNewPage() {
     }
   }
 
+  // ── Handle instance selection (reset HSM state on change) ─────────────────
+  function handleSelectInstance(inst: InstanceListItem) {
+    if (inst.id !== selectedInstance?.id) {
+      setHsmTemplateId(null);
+      setHsmVariables([]);
+      setHsmTemplateRecord(null);
+    }
+    setSelectedInstance(inst);
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] p-6 overflow-hidden">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Nova campanha</h1>
         <div className="flex gap-2 mt-3 text-xs">
-          {[1, 2, 3, 4].map((n) => (
+          {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((n) => (
             <div
               key={n}
               className={`flex-1 py-1 text-center border-b-2 ${
@@ -83,7 +146,7 @@ export default function CampaignNewPage() {
                 : 'border-border text-muted-foreground'
               }`}
             >
-              {n}. {n === 1 && 'Nome'}{n === 2 && 'Audiência'}{n === 3 && 'Mensagem'}{n === 4 && 'Revisar'}
+              {n}. {STEP_LABELS[n]}
             </div>
           ))}
         </div>
@@ -97,27 +160,43 @@ export default function CampaignNewPage() {
           />
         )}
         {step === 2 && (
+          <InstancePickerStep
+            selectedInstanceId={selectedInstance?.id ?? null}
+            onSelect={handleSelectInstance}
+          />
+        )}
+        {step === 3 && (
           <AudienceStep
             filters={filters} onFiltersChange={setFilters}
             total={audienceTotal} onTotalChange={setAudienceTotal}
           />
         )}
-        {step === 3 && (
+        {step === 4 && (
           <MessageStep
             templateId={templateId} onTemplateIdChange={setTemplateId}
             messageBody={messageBody} onMessageBodyChange={setMessageBody}
             mediaUrl={mediaUrl} mediaMime={mediaMime}
             onMediaChange={(u, m) => { setMediaUrl(u); setMediaMime(m); }}
             audienceFilter={filters}
+            instanceProvider={selectedInstance?.provider}
+            instanceId={selectedInstance?.id}
+            hsmTemplateId={hsmTemplateId}
+            setHsmTemplateId={setHsmTemplateId}
+            hsmVariables={hsmVariables}
+            setHsmVariables={setHsmVariables}
+            onHsmTemplateSelect={setHsmTemplateRecord}
           />
         )}
-        {step === 4 && (
+        {step === 5 && (
           <ReviewStep
             scheduledAt={scheduledAt} onScheduledAtChange={setScheduledAt}
             audienceTotal={audienceTotal}
             name={name}
             messageBody={messageBody}
             mediaUrl={mediaUrl}
+            selectedInstance={selectedInstance}
+            hsmTemplate={hsmTemplateRecord}
+            hsmVariables={hsmVariables}
           />
         )}
       </div>
@@ -126,7 +205,7 @@ export default function CampaignNewPage() {
         <Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)}>
           <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
         </Button>
-        {step < 4 ? (
+        {step < TOTAL_STEPS ? (
           <Button disabled={!canNext} onClick={() => setStep((s) => s + 1)}>
             Próximo <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
