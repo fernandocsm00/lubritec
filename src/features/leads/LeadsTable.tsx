@@ -116,7 +116,7 @@ export function LeadsTable(props: Props) {
               <TableHead>
                 <SortHeader label="Nome" myKey="name" sort={sort} order={order} onClick={() => onSortChange('name')} />
               </TableHead>
-              <TableHead>CNPJ</TableHead>
+              <TableHead>CPF/CNPJ</TableHead>
               <TableHead>Telefone</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Status</TableHead>

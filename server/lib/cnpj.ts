@@ -1,10 +1,28 @@
 /**
- * CNPJ utilities — format normalization and check-digit validation.
- * Public API: only digits, no formatting. UI may format for display.
+ * Tax ID utilities — normalization, check-digit validation, formatting for
+ * both CPF (11 dig) and CNPJ (14 dig). API armazena so digitos; UI formata
+ * pra display.
  */
 
+export type TaxIdType = 'cpf' | 'cnpj';
+
 export function normalizeCnpj(raw: string): string {
+  // Mantemos o nome historico — usado em toda a base. Agora normaliza
+  // qualquer tax id (so remove nao-digitos).
   return raw.replace(/\D/g, '');
+}
+
+export const normalizeTaxId = normalizeCnpj;
+
+/**
+ * Detecta o tipo pelo tamanho (sem validar digito verificador). Pra
+ * verificar se eh valido use isValidTaxId.
+ */
+export function detectTaxIdType(raw: string): TaxIdType | null {
+  const d = normalizeTaxId(raw);
+  if (d.length === 11) return 'cpf';
+  if (d.length === 14) return 'cnpj';
+  return null;
 }
 
 export function isValidCnpjFormat(cnpj: string): boolean {
@@ -29,8 +47,50 @@ export function isValidCnpjFormat(cnpj: string): boolean {
   return d1 === Number(digits[12]) && d2 === Number(digits[13]);
 }
 
+export function isValidCpfFormat(cpf: string): boolean {
+  const digits = normalizeTaxId(cpf);
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false; // all same digit
+
+  const calc = (slice: string, startWeight: number) => {
+    const sum = slice
+      .split('')
+      .reduce((acc, d, i) => acc + Number(d) * (startWeight - i), 0);
+    const r = (sum * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+
+  const d1 = calc(digits.slice(0, 9), 10);
+  const d2 = calc(digits.slice(0, 10), 11);
+
+  return d1 === Number(digits[9]) && d2 === Number(digits[10]);
+}
+
+/** Aceita CPF (11 dig) ou CNPJ (14 dig) com digito verificador valido. */
+export function isValidTaxId(raw: string): boolean {
+  const type = detectTaxIdType(raw);
+  if (type === 'cpf') return isValidCpfFormat(raw);
+  if (type === 'cnpj') return isValidCnpjFormat(raw);
+  return false;
+}
+
 export function formatCnpj(cnpj: string): string {
   const d = normalizeCnpj(cnpj);
   if (d.length !== 14) return cnpj;
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+export function formatCpf(cpf: string): string {
+  const d = normalizeTaxId(cpf);
+  if (d.length !== 11) return cpf;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+/** Formata como CPF ou CNPJ dependendo do tamanho. */
+export function formatTaxId(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const type = detectTaxIdType(raw);
+  if (type === 'cpf') return formatCpf(raw);
+  if (type === 'cnpj') return formatCnpj(raw);
+  return raw;
 }

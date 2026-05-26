@@ -50,7 +50,7 @@ export function CampaignUnqualifiedTab({ campaignId }: Props) {
         <thead>
           <tr className="text-left">
             <th className="pb-2">Lead</th>
-            <th className="pb-2">CNPJ</th>
+            <th className="pb-2">CPF/CNPJ</th>
             <th className="pb-2">Motivo IA</th>
             <th className="pb-2">Idade</th>
             <th className="pb-2">Tentativas</th>

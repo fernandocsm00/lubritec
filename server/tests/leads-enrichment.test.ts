@@ -80,7 +80,9 @@ describe('POST /api/leads/:id/enrich', () => {
     expect(res.body.phoneFound).toBe('555499456069'); // 55 + DDD + número
 
     const [updated] = await db.select().from(leads).where(eq(leads.id, lead.id));
-    expect(updated.phone).toBe('555499456069');
+    // updateLead normaliza pra canonico BR (com 9), enquanto phoneFound
+    // reflete o que BrasilAPI retornou (sem 9, raw + DDI).
+    expect(updated.phone).toBe('5554999456069');
     expect(updated.flowStage).toBe('complete');
   });
 

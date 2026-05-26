@@ -95,10 +95,17 @@ export async function startBulkEnrichment(userId: string): Promise<PublicEnrichm
     throw new HttpError(409, 'Já existe um job de enriquecimento em andamento');
   }
 
+  // Filtra leads CNPJ-only (14 digitos). CPFs (11 dig) nao podem ser
+  // enriquecidos via BrasilAPI, entao nem entram na fila pra economizar
+  // calls e nao gerar status "phone_not_in_brasilapi" falso.
   const candidates = await db
     .select({ id: leads.id })
     .from(leads)
-    .where(and(eq(leads.flowStage, 'incomplete'), sql`${leads.cnpj} IS NOT NULL`));
+    .where(and(
+      eq(leads.flowStage, 'incomplete'),
+      sql`${leads.cnpj} IS NOT NULL`,
+      sql`length(${leads.cnpj}) = 14`,
+    ));
 
   if (candidates.length === 0) {
     throw new HttpError(400, 'Nenhum lead incompleto com CNPJ pra enriquecer');

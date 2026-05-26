@@ -109,7 +109,7 @@ export function ImportCsvDialog({
             <p className="text-xs text-muted-foreground">
               Formatos aceitos: <strong>.csv</strong> ou <strong>.xlsx</strong> (Excel). Tamanho máx: 5MB.
               <br />
-              Colunas reconhecidas: <strong>nome, cnpj</strong> (obrigatórios), telefone, telefone 2, endereço, cidade, IMBP, segmento, email, observações.
+              Colunas reconhecidas: <strong>nome, cpf/cnpj</strong> (obrigatórios), telefone, telefone 2, endereço, cidade, IMBP, segmento, email, observações.
               <br />
               A validação de CNPJ na Receita Federal acontece em background após o import (não bloqueia mais a importação).
               Leads com CNPJ inativo ou inexistente aparecem com badge em <Link to="/cadastros" className="underline text-primary">Cadastros</Link>.

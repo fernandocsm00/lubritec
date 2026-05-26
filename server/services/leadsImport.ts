@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { ImportReport, Imbp, Segment } from '@shared/types';
 import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT } from '@shared/types';
-import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
+import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -40,8 +40,12 @@ const HEADER_ALIASES: Record<string, string> = {
   telefone2: 'phone2',
   celular2: 'phone2',
   celular_2: 'phone2',
-  // CNPJ
+  // CNPJ / CPF / Documento (campo aceita ambos — service valida o tipo)
   cnpj: 'cnpj',
+  cpf: 'cnpj',
+  documento: 'cnpj',
+  cpf_cnpj: 'cnpj',
+  'cpf/cnpj': 'cnpj',
   // Email
   email: 'email',
   // Observacoes
@@ -285,12 +289,12 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       rejected.push({ line, reason: 'CNPJ vazio' });
       continue;
     }
-    if (!isValidCnpjFormat(cnpj)) {
-      rejected.push({ line, reason: 'CNPJ inválido (dígitos verificadores)' });
+    if (!isValidTaxId(cnpj)) {
+      rejected.push({ line, reason: 'CPF/CNPJ inválido (dígitos verificadores)' });
       continue;
     }
     if (cnpjsSeen.has(cnpj)) {
-      rejected.push({ line, reason: 'CNPJ duplicado no arquivo' });
+      rejected.push({ line, reason: 'CPF/CNPJ duplicado no arquivo' });
       continue;
     }
     cnpjsSeen.add(cnpj);

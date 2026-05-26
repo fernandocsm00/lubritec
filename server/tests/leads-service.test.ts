@@ -39,6 +39,21 @@ describe('createLead', () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it('aceita CPF valido no campo cnpj (lead pessoa fisica)', async () => {
+    const lead = await createLead({
+      name: 'Joao da Silva',
+      phone: '11999990500',
+      cnpj: '529.982.247-25', // CPF valido
+    });
+    expect(lead.cnpj).toBe('52998224725');
+  });
+
+  it('rejeita CPF com digito verificador errado', async () => {
+    await expect(
+      createLead({ name: 'X', phone: '11999990501', cnpj: '11111111111' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it('rejeita CNPJ duplicado com 409', async () => {
     await createLead({ name: 'A', phone: '11999996001', cnpj: VALID_CNPJ_3 });
     await expect(

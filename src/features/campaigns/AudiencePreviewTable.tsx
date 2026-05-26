@@ -193,7 +193,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
                 <TableRow>
                   <TableHead className="w-12">Incluir</TableHead>
                   <TableHead>Nome</TableHead>
-                  <TableHead>CNPJ</TableHead>
+                  <TableHead>CPF/CNPJ</TableHead>
                   <TableHead>Telefone</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>

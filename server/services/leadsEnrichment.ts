@@ -5,6 +5,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead } from '@shared/types';
 import { lookupCnpj } from './cnpjLookup';
 import { updateLead } from './leadsService';
+import { detectTaxIdType } from '../lib/cnpj';
 
 /**
  * Enriquecimento single-lead via BrasilAPI.
@@ -56,6 +57,15 @@ export async function enrichLead(leadId: string): Promise<EnrichmentResult> {
   }
   if (row.phone) {
     throw new HttpError(400, 'Lead já tem telefone cadastrado');
+  }
+  // BrasilAPI só suporta CNPJ; CPF nao pode ser enriquecido. Retorna um
+  // status "soft" sem erro pra fila de bulk enrichment pular silenciosamente.
+  if (detectTaxIdType(row.cnpj) === 'cpf') {
+    return {
+      status: 'phone_not_in_brasilapi',
+      source: 'brasilapi',
+      errorMessage: 'CPF nao eh enriquecivel via BrasilAPI',
+    };
   }
 
   const result = await lookupCnpj(row.cnpj);

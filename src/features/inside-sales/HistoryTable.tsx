@@ -108,7 +108,7 @@ export function HistoryTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Cliente</TableHead>
-              <TableHead>CNPJ</TableHead>
+              <TableHead>CPF/CNPJ</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Motivo</TableHead>

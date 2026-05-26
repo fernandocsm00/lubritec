@@ -42,7 +42,7 @@ export function LeadFilters({
       <Input
         value={q}
         onChange={(e) => onQChange(e.target.value)}
-        placeholder="Buscar por nome, telefone ou CNPJ..."
+        placeholder="Buscar por nome, telefone, CPF ou CNPJ..."
         className="max-w-sm"
       />
       <Select value={flowStage} onValueChange={(v) => onFlowStageChange(v as LeadFlowStage | 'all')}>

@@ -60,7 +60,13 @@ const baseSchema = z.object({
   phone2: phoneOptional,
   cnpj: z
     .string()
-    .refine((v) => cnpjDigits(v).length === 14, 'CNPJ deve ter 14 dígitos'),
+    .refine(
+      (v) => {
+        const len = cnpjDigits(v).length;
+        return len === 11 || len === 14;
+      },
+      'Documento deve ter 11 dígitos (CPF) ou 14 dígitos (CNPJ)',
+    ),
   email: z.string().email('Email inválido').or(z.literal('')).optional(),
   notes: z.string().max(2000).optional(),
   status: z.enum(LEAD_STATUSES).optional(),
@@ -326,16 +332,16 @@ export function LeadDialog({
                 name="cnpj"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>CNPJ *</FormLabel>
-                    <FormControl><Input {...field} disabled={!cnpjEditable} placeholder="00.000.000/0000-00" /></FormControl>
+                    <FormLabel>CPF / CNPJ *</FormLabel>
+                    <FormControl><Input {...field} disabled={!cnpjEditable} placeholder="CPF ou CNPJ" /></FormControl>
                     {!cnpjEditable && (
                       <p className="text-xs text-muted-foreground">
-                        CNPJ não pode ser alterado depois de salvo.
+                        CPF/CNPJ não pode ser alterado depois de salvo.
                       </p>
                     )}
                     {isEdit && cnpjEditable && (
                       <p className="text-xs text-muted-foreground">
-                        Lead criado via WhatsApp — informe o CNPJ para concluir o cadastro.
+                        Lead criado via WhatsApp — informe o CPF ou CNPJ para concluir o cadastro.
                       </p>
                     )}
                     <FormMessage />
@@ -456,8 +462,8 @@ export function LeadDialog({
                   name="cnpj"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>CNPJ *</FormLabel>
-                      <FormControl><Input {...field} placeholder="00.000.000/0000-00" /></FormControl>
+                      <FormLabel>CPF / CNPJ *</FormLabel>
+                      <FormControl><Input {...field} placeholder="CPF ou CNPJ" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

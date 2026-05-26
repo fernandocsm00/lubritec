@@ -4,7 +4,7 @@ import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm'
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
 import { IMBP_TO_SEGMENT } from '@shared/types';
-import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
+import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -112,7 +112,7 @@ export async function createLead(input: {
   }
 
   const cnpj = normalizeCnpj(input.cnpj);
-  if (!isValidCnpjFormat(cnpj)) throw new HttpError(400, 'CNPJ inválido');
+  if (!isValidTaxId(cnpj)) throw new HttpError(400, 'CPF ou CNPJ inválido');
 
   const [existing] = await db.select().from(leads).where(eq(leads.cnpj, cnpj)).limit(1);
   if (existing) throw new HttpError(409, 'CNPJ já cadastrado');
@@ -236,7 +236,7 @@ export async function updateLead(input: {
       throw new HttpError(400, 'CNPJ cannot be edited');
     }
     const cnpj = normalizeCnpj(rest.cnpj);
-    if (!isValidCnpjFormat(cnpj)) throw new HttpError(400, 'CNPJ inválido');
+    if (!isValidTaxId(cnpj)) throw new HttpError(400, 'CPF ou CNPJ inválido');
     const [dup] = await db.select({ id: leads.id }).from(leads).where(eq(leads.cnpj, cnpj)).limit(1);
     if (dup && dup.id !== id) throw new HttpError(409, 'CNPJ já cadastrado');
     patch.cnpj = cnpj;

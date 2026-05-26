@@ -18,10 +18,16 @@ const phoneInput = z
   .transform((v) => v.replace(/\D/g, ''))
   .pipe(z.string().min(8, 'Phone must have at least 8 digits'));
 
+// Aceita CPF (11 dig) ou CNPJ (14 dig). Check digit eh validado no service.
 const cnpjInput = z
   .string()
   .transform((v) => v.replace(/\D/g, ''))
-  .pipe(z.string().length(14, 'CNPJ deve ter 14 dígitos'));
+  .pipe(
+    z.string().refine(
+      (v) => v.length === 11 || v.length === 14,
+      'Documento deve ter 11 dígitos (CPF) ou 14 dígitos (CNPJ)',
+    ),
+  );
 
 // Telefone secundario: vazio/null aceito; quando enviado precisa ter 8+ digitos.
 const phone2Input = z

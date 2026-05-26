@@ -5,12 +5,27 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCnpj(cnpj: string | null | undefined): string {
-  if (!cnpj) return '—';
-  const d = cnpj.replace(/\D/g, '');
-  if (d.length !== 14) return cnpj;
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+/**
+ * Formata documento (CPF 11 dig ou CNPJ 14 dig) pra display. Mantemos o nome
+ * historico `formatCnpj` porque eh usado em ~10 lugares — agora detecta o
+ * tipo pelo tamanho e formata adequadamente.
+ *   CPF:  000.000.000-00
+ *   CNPJ: 00.000.000/0000-00
+ */
+export function formatCnpj(taxId: string | null | undefined): string {
+  if (!taxId) return '—';
+  const d = taxId.replace(/\D/g, '');
+  if (d.length === 11) {
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  }
+  if (d.length === 14) {
+    return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  }
+  return taxId;
 }
+
+/** Alias semantico — use em codigo novo. `formatCnpj` mantido por compat. */
+export const formatTaxId = formatCnpj;
 
 export function formatCurrency(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
