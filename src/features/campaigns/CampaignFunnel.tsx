@@ -11,7 +11,9 @@ export function CampaignFunnel({ funnel, campaignId }: Props) {
   const lostByReasonEntries = Object.entries(funnel.lostByReason).filter(([, n]) => n > 0);
 
   const { data: cal } = useQuery({
-    queryKey: ['calibration', campaignId],
+    // Namespace ['campaigns', id, ...] alinhado com convencao do projeto.
+    // Permite invalidacao em cascata via qc.invalidateQueries(['campaigns']).
+    queryKey: ['campaigns', campaignId, 'calibration'],
     queryFn: () => fetchCalibrationMetrics(campaignId!),
     enabled: !!campaignId,
   });

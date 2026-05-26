@@ -794,46 +794,49 @@ export async function listUnqualifiedLeads(campaignId: string): Promise<Array<{
 }
 
 export async function getCalibrationMetrics(campaignId: string): Promise<CampaignCalibrationMetrics> {
-  // Decisoes da IA nesta campanha. Filtra stubs de reanalise (model = 'reanalysis-stub')
-  // pra nao contabilizar reanalisees como decisoes reais.
-  const decisionResult = await db.execute(sql`
-    SELECT qualified, COUNT(*)::int as count
-    FROM ai_call_logs
-    WHERE campaign_id = ${campaignId}
-      AND human_intent = false
-      AND model <> 'reanalysis-stub'
-    GROUP BY qualified
-  `);
+  // 3 queries independentes — paralelizadas pra cortar latencia (~3x RTT -> 1x).
+  // Filtra stubs de reanalise (model = 'reanalysis-stub') pra nao contabilizar
+  // reanalises como decisoes reais.
   type DecisionRow = { qualified: boolean; count: number };
+  type FeedbackRow = { feedback: string | null; count: number };
+  type AuditRow = { outcome: string | null; status: string; count: number };
+
+  const [decisionResult, feedbackResult, auditResult] = await Promise.all([
+    db.execute(sql`
+      SELECT qualified, COUNT(*)::int as count
+      FROM ai_call_logs
+      WHERE campaign_id = ${campaignId}
+        AND human_intent = false
+        AND model <> 'reanalysis-stub'
+      GROUP BY qualified
+    `),
+    db.execute(sql`
+      SELECT d.lead_quality_feedback as feedback, COUNT(*)::int as count
+      FROM deals d
+      INNER JOIN ai_call_logs acl ON acl.lead_id = d.lead_id
+      WHERE acl.campaign_id = ${campaignId}
+        AND acl.qualified = true
+        AND acl.model <> 'reanalysis-stub'
+      GROUP BY d.lead_quality_feedback
+    `),
+    db.execute(sql`
+      SELECT outcome, status, COUNT(*)::int as count
+      FROM audit_sample_assignments
+      WHERE campaign_id = ${campaignId}
+      GROUP BY outcome, status
+    `),
+  ]);
+
   const decisionRows = decisionResult.rows as DecisionRow[];
   const totalQualifiedByAi = decisionRows.find((r) => r.qualified === true)?.count ?? 0;
   const totalNotQualifiedByAi = decisionRows.find((r) => r.qualified === false)?.count ?? 0;
 
-  // Feedback dos qualificados que viraram deal
-  const feedbackResult = await db.execute(sql`
-    SELECT d.lead_quality_feedback as feedback, COUNT(*)::int as count
-    FROM deals d
-    INNER JOIN ai_call_logs acl ON acl.lead_id = d.lead_id
-    WHERE acl.campaign_id = ${campaignId}
-      AND acl.qualified = true
-      AND acl.model <> 'reanalysis-stub'
-    GROUP BY d.lead_quality_feedback
-  `);
-  type FeedbackRow = { feedback: string | null; count: number };
   const feedbackRows = feedbackResult.rows as FeedbackRow[];
   const feedbackGoodCount = feedbackRows.find((r) => r.feedback === 'good')?.count ?? 0;
   const feedbackBadCount = feedbackRows.find((r) => r.feedback === 'bad')?.count ?? 0;
   const feedbackGivenCount = feedbackGoodCount + feedbackBadCount;
   const precision = feedbackGivenCount > 0 ? feedbackGoodCount / feedbackGivenCount : null;
 
-  // Audit (recall estimado via fila cega)
-  const auditResult = await db.execute(sql`
-    SELECT outcome, status, COUNT(*)::int as count
-    FROM audit_sample_assignments
-    WHERE campaign_id = ${campaignId}
-    GROUP BY outcome, status
-  `);
-  type AuditRow = { outcome: string | null; status: string; count: number };
   const auditRows = auditResult.rows as AuditRow[];
   const auditTotal = auditRows.reduce((a, r) => a + r.count, 0);
   const auditContacted = auditRows.filter((r) => r.status === 'contacted').reduce((a, r) => a + r.count, 0);
