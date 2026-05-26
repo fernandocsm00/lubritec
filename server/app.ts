@@ -19,6 +19,7 @@ import campaignRoutes from './routes/campaigns';
 import dashboardRoutes from './routes/dashboard';
 import notificationsRoutes from './routes/notifications';
 import projectFeedbackRoutes from './routes/projectFeedback';
+import { auditRouter } from './routes/audit';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -106,6 +107,7 @@ export function createApp() {
   app.use('/api/campaigns', campaignRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/project-feedback', projectFeedbackRoutes);
+  app.use('/api/audit', auditRouter);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
