@@ -1002,9 +1002,8 @@ export interface PublicAuditSample {
   // Esses campos só aparecem em endpoints internos de relatório.
 }
 
-export interface AuditSampleAssignInput {
-  // claim (toma pra si): vazio
-}
+/** Payload do POST /audit/samples/claim — sem corpo (claim do próximo da fila). */
+export type AuditSampleAssignInput = Record<string, never>;
 
 export interface AuditSampleOutcomeInput {
   outcome: LeadQualityFeedback;

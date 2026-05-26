@@ -377,7 +377,13 @@ export const aiCallLogs = pgTable('ai_call_logs', {
   promptVersion: text('prompt_version'),
   campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  // Espelham os índices da migration 029 pra evitar drift de schema.
+  leadQualifiedIdx: index('idx_ai_call_logs_lead_qualified').on(t.leadId, t.qualified),
+  campaignIdx: index('idx_ai_call_logs_campaign')
+    .on(t.campaignId)
+    .where(sql`${t.campaignId} IS NOT NULL`),
+}));
 
 export type AiCallLog = typeof aiCallLogs.$inferSelect;
 export type NewAiCallLog = typeof aiCallLogs.$inferInsert;
@@ -435,7 +441,7 @@ export type NewProjectFeedback = typeof projectFeedback.$inferInsert;
 // entram aqui pra contato controlado e medição de falso negativo.
 export const auditSampleAssignments = pgTable('audit_sample_assignments', {
   id: uuid('id').primaryKey().defaultRandom(),
-  leadId: uuid('lead_id').notNull().unique().references(() => leads.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
   aiCallLogId: uuid('ai_call_log_id').references(() => aiCallLogs.id, { onDelete: 'set null' }),
   campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
   sampledAt: timestamp('sampled_at', { withTimezone: true }).notNull().defaultNow(),
@@ -447,8 +453,15 @@ export const auditSampleAssignments = pgTable('audit_sample_assignments', {
   outcomeNotes: text('outcome_notes'),
   status: text('status', { enum: ['pending', 'assigned', 'contacted', 'skipped'] }).notNull().default('pending'),
 }, (t) => ({
+  // Unique index nomeado pra casar com a migration 029 (idx_audit_sample_lead_unique).
+  // Não usar .unique() inline no leadId — gera constraint sem nome e drift no Drizzle.
+  leadUniq: uniqueIndex('idx_audit_sample_lead_unique').on(t.leadId),
   statusCampaignIdx: index('idx_audit_sample_status_campaign').on(t.status, t.campaignId),
-  assignedToIdx: index('idx_audit_sample_assigned_to').on(t.assignedTo),
+  // Partial index: a migration cria com WHERE assigned_to IS NOT NULL. Drizzle suporta
+  // via .where(sql`...`). Mantém schema fiel ao DB pra evitar drift.
+  assignedToIdx: index('idx_audit_sample_assigned_to')
+    .on(t.assignedTo)
+    .where(sql`${t.assignedTo} IS NOT NULL`),
 }));
 
 export type AuditSampleAssignment = typeof auditSampleAssignments.$inferSelect;
