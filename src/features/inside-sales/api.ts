@@ -7,6 +7,7 @@ import type {
   DealStage,
   LossReason,
 } from './types';
+import type { LeadQualityFeedback } from '@shared/types';
 
 // ---------------------------------------------------------------------------
 // Board
@@ -127,7 +128,7 @@ export function usePatchDeal() {
 export function useChangeStage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; stage: DealStage; lossReason?: LossReason }) => {
+    mutationFn: (input: { id: string; stage: DealStage; lossReason?: LossReason; leadQualityFeedback?: LeadQualityFeedback }) => {
       const { id, ...body } = input;
       return api<PublicDeal>(`/deals/${id}/stage`, { method: 'POST', body: JSON.stringify(body) });
     },
