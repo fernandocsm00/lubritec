@@ -156,6 +156,10 @@ export function parseQualificationTag(reply: string): {
  * Extrai pares pergunta->resposta do historico recente.
  * Procura por mensagens out (IA) que terminam em '?' seguidas de uma in (lead).
  * Limita a 5 pares (mais que isso e ruido).
+ *
+ * Implementacao: anexa o inboundText atual ao final da lista e roda um unico
+ * loop de pareamento. Evita o bug de adicionar a ultima pergunta duas vezes
+ * (uma via loop com a in anterior, outra via tratamento especial do "lastOut").
  */
 function extractQuestionsAnswers(
   history: Array<{ direction: 'in' | 'out'; body: string | null }>,
@@ -163,19 +167,20 @@ function extractQuestionsAnswers(
 ): Array<{ question: string; answer: string; consideredAt: string }> {
   const pairs: Array<{ question: string; answer: string; consideredAt: string }> = [];
   const now = new Date().toISOString();
-  // Reverso pra cronologia
-  const msgs = history.filter((m) => m.body);
+  const msgs = [
+    ...history.filter((m) => m.body),
+    { direction: 'in' as const, body: currentInbound },
+  ];
   for (let i = 0; i < msgs.length - 1; i++) {
     const cur = msgs[i];
     const next = msgs[i + 1];
     if (cur.direction === 'out' && cur.body && cur.body.includes('?') && next.direction === 'in' && next.body) {
-      pairs.push({ question: cur.body.trim().slice(0, 500), answer: next.body.trim().slice(0, 500), consideredAt: now });
+      pairs.push({
+        question: cur.body.trim().slice(0, 500),
+        answer: next.body.trim().slice(0, 500),
+        consideredAt: now,
+      });
     }
-  }
-  // Adiciona a resposta atual a ultima pergunta da IA, se houver
-  const lastOut = [...msgs].reverse().find((m) => m.direction === 'out' && m.body?.includes('?'));
-  if (lastOut?.body) {
-    pairs.push({ question: lastOut.body.trim().slice(0, 500), answer: currentInbound.slice(0, 500), consideredAt: now });
   }
   return pairs.slice(-5);
 }
@@ -442,6 +447,10 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     await tx.update(conversations).set(convPatch).where(eq(conversations.id, input.conversationId));
 
     if (qualification === 'qualified') {
+      // NOTE (Sprint Calibracao IA — B4): flowStage='qualified' eh ESTADO TRANSITORIO.
+      // O createDeal logo abaixo desta transacao promove imediatamente pra 'handed_off'.
+      // Se voce ve um lead parado em 'qualified' por mais que segundos, o createDeal
+      // falhou — investigar via logs. NAO confundir com bug de filtro de dashboard.
       await tx
         .update(leads)
         .set({ flowStage: 'qualified', updatedAt: new Date() })
