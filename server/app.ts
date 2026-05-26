@@ -20,6 +20,7 @@ import dashboardRoutes from './routes/dashboard';
 import notificationsRoutes from './routes/notifications';
 import projectFeedbackRoutes from './routes/projectFeedback';
 import { auditRouter } from './routes/audit';
+import { caseSheetRouter } from './routes/caseSheet';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -108,6 +109,7 @@ export function createApp() {
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/project-feedback', projectFeedbackRoutes);
   app.use('/api/audit', auditRouter);
+  app.use('/api/leads', caseSheetRouter);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
