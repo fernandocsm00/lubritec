@@ -41,11 +41,17 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
+  // Filtros para o preview: NUNCA enviar excludeLeadIds, senão os leads
+  // desmarcados somem da tabela e o usuário não consegue remarcá-los.
+  // A exclusão é aplicada apenas no envio final / contagem do AudienceStep.
+  const previewFilters: AudienceFilters = { ...filters, excludeLeadIds: undefined };
+  const previewFiltersKey = JSON.stringify(previewFilters);
+
   // Resetar pagina quando abrir ou filtros mudarem
   useEffect(() => {
     if (open) setPage(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, JSON.stringify(filters)]);
+  }, [open, previewFiltersKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +59,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
     setLoading(true);
     setError(null);
     dryRun.mutate(
-      { filters, page, pageSize: PAGE_SIZE },
+      { filters: previewFilters, page, pageSize: PAGE_SIZE },
       {
         onSuccess: (r) => { if (!cancelled) { setData(r); setLoading(false); } },
         onError: (e) => {
@@ -66,7 +72,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
     );
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, JSON.stringify(filters), page]);
+  }, [open, previewFiltersKey, page]);
 
   function toggle(id: string) {
     onExcludedChange(
