@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
-import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
+import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage, LeadQualityFeedback } from '@shared/types';
 
 export interface ListParams {
   q?: string;
@@ -190,6 +190,18 @@ export function useMarkLeadLost() {
       api<PublicLead>(`/leads/${id}/lost`, {
         method: 'POST',
         body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+  });
+}
+
+export function useCloseLeadNoDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadId, reason, quality }: { leadId: string; reason: string; quality: LeadQualityFeedback }) =>
+      api<void>(`/leads/${leadId}/close-no-deal`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, quality }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   });

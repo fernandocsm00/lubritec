@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MoreHorizontal, Search, Ban } from 'lucide-react';
+import { MoreHorizontal, Search, Ban, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
@@ -20,10 +20,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { LeadDialog } from './LeadDialog';
-import { useDeleteLead, useEnrichLead, useMarkLeadLost, type EnrichmentStatus } from './api';
+import { useDeleteLead, useEnrichLead, useMarkLeadLost, useCloseLeadNoDeal, type EnrichmentStatus } from './api';
+import { CloseNoDealDialog } from './CloseNoDealDialog';
 import { Textarea } from '@/components/ui/textarea';
 import { translateError } from './translateError';
-import type { PublicLead } from '@shared/types';
+import type { PublicLead, LeadQualityFeedback } from '@shared/types';
 
 const ENRICH_MESSAGES: Record<EnrichmentStatus, { type: 'success' | 'info' | 'error'; msg: (phone?: string, err?: string) => string }> = {
   phone_found: {
@@ -53,13 +54,17 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [lostReason, setLostReason] = useState('');
+  const [closeNoDealOpen, setCloseNoDealOpen] = useState(false);
   const del = useDeleteLead();
   const enrich = useEnrichLead();
   const markLost = useMarkLeadLost();
+  const closeNoDeal = useCloseLeadNoDeal();
   // Disponibilizamos enriquecimento só pra leads sem phone E com cnpj.
   const canEnrich = !lead.phone && !!lead.cnpj;
   // Marcar como perdido: só permite se ainda não está em handed_off OR lost.
   const canMarkLost = lead.flowStage !== 'lost' && lead.flowStage !== 'handed_off';
+  // Encerrar sem deal: só se o lead ainda não tem deal e não está encerrado.
+  const canCloseNoDeal = !lead.hasDeal && lead.flowStage !== 'lost';
 
   async function onDelete() {
     try {
@@ -79,6 +84,16 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
       setLostReason('');
     } catch (e) {
       toast.error(e instanceof Error ? translateError(e.message) : 'Erro ao marcar como perdido.');
+    }
+  }
+
+  async function onCloseNoDeal(reason: string, quality: LeadQualityFeedback) {
+    try {
+      await closeNoDeal.mutateAsync({ leadId: lead.id, reason, quality });
+      toast.success('Lead encerrado sem deal.');
+      setCloseNoDealOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? translateError(e.message) : 'Erro ao encerrar lead.');
     }
   }
 
@@ -121,6 +136,15 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
               <DropdownMenuItem onSelect={() => setLostOpen(true)}>
                 <Ban className="mr-2 h-4 w-4" />
                 Marcar como perdido
+              </DropdownMenuItem>
+            </>
+          )}
+          {canCloseNoDeal && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setCloseNoDealOpen(true)}>
+                <XCircle className="mr-2 h-4 w-4" />
+                Encerrar sem deal
               </DropdownMenuItem>
             </>
           )}
@@ -182,6 +206,12 @@ export function LeadActions({ lead }: { lead: PublicLead }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CloseNoDealDialog
+        open={closeNoDealOpen}
+        onConfirm={onCloseNoDeal}
+        onCancel={() => setCloseNoDealOpen(false)}
+      />
     </>
   );
 }
