@@ -203,7 +203,12 @@ export function useCloseLeadNoDeal() {
         method: 'POST',
         body: JSON.stringify({ reason, quality }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+    onSuccess: (_, { leadId }) => {
+      qc.invalidateQueries({ queryKey: ['leads'] });
+      // Detalhe individual e suas transições também ficam stale.
+      qc.invalidateQueries({ queryKey: ['lead', leadId] });
+      qc.invalidateQueries({ queryKey: ['lead', leadId, 'transitions'] });
+    },
   });
 }
 

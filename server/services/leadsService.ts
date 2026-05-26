@@ -383,6 +383,17 @@ export async function closeLeadNoDeal(input: {
     throw new HttpError(400, 'Lead already has a deal — use deal stage change instead');
   }
 
+  // Captura flowStage atual pra audit trail (passar null perde rastreabilidade).
+  const [lead] = await db
+    .select({ flowStage: leads.flowStage })
+    .from(leads)
+    .where(eq(leads.id, input.leadId))
+    .limit(1);
+  if (!lead) throw new HttpError(404, 'Lead not found');
+
+  // Idempotência: se já está lost, atualiza campos mas não duplica audit.
+  const wasAlreadyLost = lead.flowStage === 'lost';
+
   await db.update(leads).set({
     flowStage: 'lost',
     closedNoDealAt: new Date(),
@@ -392,12 +403,14 @@ export async function closeLeadNoDeal(input: {
     updatedAt: new Date(),
   }).where(eq(leads.id, input.leadId));
 
-  // Audit trail
-  await recordTransition({
-    leadId: input.leadId,
-    fromStage: null,
-    toStage: 'lost',
-    source: 'manual_lost',
-    metadata: { reason: input.reason, quality: input.quality, by: input.actorUserId },
-  });
+  // Audit trail — só registra transição se houve mudança de stage.
+  if (!wasAlreadyLost) {
+    await recordTransition({
+      leadId: input.leadId,
+      fromStage: lead.flowStage,
+      toStage: 'lost',
+      source: 'manual_lost',
+      metadata: { reason: input.reason, quality: input.quality, by: input.actorUserId },
+    });
+  }
 }
