@@ -4,6 +4,7 @@ import { ChevronLeft, Pause, Play, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -16,6 +17,8 @@ import {
 import { useAuthStore } from '@/features/auth/store';
 import { StatusBadge } from '@/features/campaigns/StatusBadge';
 import { CampaignFunnel } from '@/features/campaigns/CampaignFunnel';
+import { CampaignAuditQueueTab } from '@/features/campaigns/CampaignAuditQueueTab';
+import { CampaignUnqualifiedTab } from '@/features/campaigns/CampaignUnqualifiedTab';
 import { DispatchProgress } from '@/features/campaigns/DispatchProgress';
 import { RecipientsTable } from '@/features/campaigns/RecipientsTable';
 import { formatDateTime } from '@/features/campaigns/helpers';
@@ -105,20 +108,42 @@ export default function CampaignDetailPage() {
         </div>
       )}
 
-      <div className="rounded-lg border border-border bg-card p-4 mb-4">
-        <h3 className="text-sm font-semibold mb-3">Funil ROI</h3>
-        <CampaignFunnel funnel={data.funnel} />
-      </div>
+      <Tabs defaultValue="funnel" className="mb-4">
+        <TabsList>
+          <TabsTrigger value="funnel">Funil</TabsTrigger>
+          <TabsTrigger value="audit">Fila cega (auditoria IA)</TabsTrigger>
+          <TabsTrigger value="unqualified">Não qualificados</TabsTrigger>
+        </TabsList>
 
-      <div className="rounded-lg border border-border bg-card p-4 mb-4">
-        <h3 className="text-sm font-semibold mb-2">Mensagem disparada</h3>
-        <pre className="text-xs bg-muted/30 p-2 rounded whitespace-pre-wrap">{data.messageBody}</pre>
-        {data.mediaUrl && (
-          <img src={data.mediaUrl} alt="" className="mt-2 max-w-xs max-h-40 rounded" />
-        )}
-      </div>
+        <TabsContent value="funnel">
+          <div className="rounded-lg border border-border bg-card p-4 mb-4">
+            <h3 className="text-sm font-semibold mb-3">Funil ROI</h3>
+            <CampaignFunnel funnel={data.funnel} />
+          </div>
 
-      <RecipientsTable campaignId={id} campaignStatus={data.status} />
+          <div className="rounded-lg border border-border bg-card p-4 mb-4">
+            <h3 className="text-sm font-semibold mb-2">Mensagem disparada</h3>
+            <pre className="text-xs bg-muted/30 p-2 rounded whitespace-pre-wrap">{data.messageBody}</pre>
+            {data.mediaUrl && (
+              <img src={data.mediaUrl} alt="" className="mt-2 max-w-xs max-h-40 rounded" />
+            )}
+          </div>
+
+          <RecipientsTable campaignId={id} campaignStatus={data.status} />
+        </TabsContent>
+
+        <TabsContent value="audit">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <CampaignAuditQueueTab campaignId={id} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="unqualified">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <CampaignUnqualifiedTab campaignId={id} />
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <AlertDialogContent>
