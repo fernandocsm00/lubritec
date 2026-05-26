@@ -12,6 +12,7 @@ import type {
   DealStage,
   DealStageTotal,
   LossReason,
+  LeadQualityFeedback,
   PublicLead,
 } from '@shared/types';
 import { DEAL_STAGES } from '@shared/types';
@@ -425,6 +426,7 @@ export async function changeStage(input: {
   actorUserId: string;
   stage: DealStage;
   lossReason?: LossReason;
+  leadQualityFeedback?: LeadQualityFeedback;
 }): Promise<PublicDeal> {
   const [current] = await db.select().from(deals).where(eq(deals.id, input.id)).limit(1);
   if (!current) throw new HttpError(404, 'Deal not found');
@@ -434,6 +436,10 @@ export async function changeStage(input: {
   }
   if (input.stage === 'ganho' && current.proposalValue == null) {
     throw new HttpError(400, 'proposalValue is required before marking as ganho');
+  }
+  // NOVO: feedback obrigatório ao mover pra ganho/perdido
+  if ((input.stage === 'ganho' || input.stage === 'perdido') && !input.leadQualityFeedback) {
+    throw new HttpError(400, 'leadQualityFeedback is required when moving to ganho/perdido');
   }
   if (input.stage === current.stage) {
     return getDealById(input.id);
@@ -459,6 +465,13 @@ export async function changeStage(input: {
     }
     // loss_reason: set when going to perdido, clear otherwise
     patch.lossReason = input.stage === 'perdido' ? input.lossReason : null;
+
+    // NOVO: gravar feedback
+    if (input.leadQualityFeedback) {
+      patch.leadQualityFeedback = input.leadQualityFeedback;
+      patch.leadQualityFeedbackAt = new Date();
+      patch.leadQualityFeedbackBy = input.actorUserId;
+    }
 
     await tx.update(deals).set(patch).where(eq(deals.id, input.id));
 
@@ -492,6 +505,16 @@ export async function changeStage(input: {
         kind: 'lost',
         actorUserId: input.actorUserId,
         metadata: { reason: input.lossReason },
+      });
+    }
+
+    // NOVO: activity de quality_feedback
+    if (input.leadQualityFeedback) {
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'quality_feedback',
+        actorUserId: input.actorUserId,
+        metadata: { feedback: input.leadQualityFeedback },
       });
     }
   });
