@@ -23,17 +23,17 @@ export function CsvUpload({ onPhones, current }: Props) {
       // Strip UTF-8 BOM (Excel exports CSVs with one by default on Windows)
       const text = String(reader.result ?? '').replace(/^\uFEFF/, '');
       const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-      // Aceita: 1 telefone por linha, OU coluna `phone` em CSV
+      // Aceita: 1 telefone por linha, OU CSV com coluna telefone/phone/celular/whatsapp
       const phones: string[] = [];
-      const header = lines[0]?.toLowerCase();
-      const isHeaderCsv = header && header.includes('phone');
+      const PHONE_ALIASES = ['telefone', 'phone', 'celular', 'whatsapp', 'fone', 'tel'];
+      const firstCols = lines[0]?.split(',').map((h) => h.trim().toLowerCase()) ?? [];
+      const headerIdx = firstCols.findIndex((h) => PHONE_ALIASES.includes(h));
+      const isHeaderCsv = headerIdx >= 0;
       const startIdx = isHeaderCsv ? 1 : 0;
-      const phoneCol = isHeaderCsv
-        ? header.split(',').findIndex((h) => h.trim() === 'phone')
-        : 0;
+      const phoneCol = isHeaderCsv ? headerIdx : 0;
       for (let i = startIdx; i < lines.length; i++) {
         const cols = lines[i].split(',');
-        const raw = cols[phoneCol] ?? cols[0];
+        const raw = cols[phoneCol] ?? cols[0] ?? '';
         const digits = raw.replace(/\D/g, '');
         if (digits.length >= 8) phones.push(digits);
       }
@@ -56,12 +56,16 @@ export function CsvUpload({ onPhones, current }: Props) {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) handleFile(f);
+          e.target.value = '';
         }}
       />
       <Button
         type="button"
         variant="outline"
-        onClick={() => document.getElementById('csv-upload')?.click()}
+        onClick={() => {
+          const el = document.getElementById('csv-upload') as HTMLInputElement | null;
+          if (el) { el.value = ''; el.click(); }
+        }}
       >
         <Upload className="h-4 w-4 mr-2" /> Carregar CSV de telefones
       </Button>
