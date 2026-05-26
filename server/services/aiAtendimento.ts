@@ -3,6 +3,7 @@ import { conversations, messages, leads } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
 import { recordAiCall, countRecentErrorsForConversation } from './aiMetrics';
+export { recordAiCall } from './aiMetrics';
 import { uazapiClient } from './whatsapp/uazapi/client';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';

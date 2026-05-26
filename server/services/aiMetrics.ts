@@ -28,6 +28,12 @@ export interface RecordAiCallInput {
   qualified: boolean;
   humanIntent?: boolean;
   error?: string;
+  // Audit fields (Sprint Calibracao IA)
+  decisionReason?: string | null;
+  qualificationPath?: 'campaign_direct' | 'conversation' | null;
+  questionsAnswers?: Array<{ question: string; answer: string; consideredAt: string }>;
+  promptVersion?: string | null;
+  campaignId?: string | null;
 }
 
 /**
@@ -47,6 +53,11 @@ export async function recordAiCall(input: RecordAiCallInput): Promise<void> {
       qualified: input.qualified,
       humanIntent: input.humanIntent ?? false,
       error: input.error ?? null,
+      decisionReason: input.decisionReason ?? null,
+      qualificationPath: input.qualificationPath ?? null,
+      questionsAnswers: input.questionsAnswers ?? [],
+      promptVersion: input.promptVersion ?? null,
+      campaignId: input.campaignId ?? null,
     });
   } catch (err) {
     console.warn('[ai-metrics] recordAiCall failed:', err instanceof Error ? err.message : err);

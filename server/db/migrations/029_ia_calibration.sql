@@ -1,16 +1,16 @@
--- 029_ia_calibration.sql — MVP de calibração da IA
+-- 029_ia_calibration.sql -- MVP de calibracao da IA
 -- Adiciona dados de auditoria em ai_call_logs, feedback de qualidade em deals,
--- pergunta de qualificação em campaigns, e tabela de amostragem cega.
+-- pergunta de qualificacao em campaigns, e tabela de amostragem cega.
 
 BEGIN;
 
--- ── ai_call_logs: dados de auditoria ────────────────────────────────────
--- decision_reason: trecho/justificativa que a IA deu pra decisão (preenchido
+-- ai_call_logs: dados de auditoria
+-- decision_reason: trecho/justificativa que a IA deu pra decisao (preenchido
 -- a partir do RESUMO ou de campo dedicado no prompt).
--- qualification_path: 'campaign_direct' (qualificada já no 1º turno via
--- pergunta da campanha) | 'conversation' (após N turnos) | null (pré-existente).
--- questions_answers: pares pergunta→resposta que foram considerados.
--- prompt_version: hash/identificador da versão do system prompt no momento.
+-- qualification_path: 'campaign_direct' (qualificada ja no 1o turno via
+-- pergunta da campanha) | 'conversation' (apos N turnos) | null (pre-existente).
+-- questions_answers: pares pergunta->resposta que foram considerados.
+-- prompt_version: hash/identificador da versao do system prompt no momento.
 
 ALTER TABLE ai_call_logs
   ADD COLUMN IF NOT EXISTS decision_reason text,
@@ -24,16 +24,16 @@ CREATE INDEX IF NOT EXISTS idx_ai_call_logs_lead_qualified
 CREATE INDEX IF NOT EXISTS idx_ai_call_logs_campaign
   ON ai_call_logs(campaign_id) WHERE campaign_id IS NOT NULL;
 
--- ── campaigns: pergunta de qualificação ─────────────────────────────────
+-- campaigns: pergunta de qualificacao
 -- Texto da pergunta que a campanha faz no template/HSM. Quando o lead responde
--- afirmativamente a essa pergunta no 1º turno, a IA pode qualificar direto.
+-- afirmativamente a essa pergunta no 1o turno, a IA pode qualificar direto.
 -- Optional: se NULL, fluxo segue conversacional puro.
 
 ALTER TABLE campaigns
   ADD COLUMN IF NOT EXISTS qualification_question text;
 
--- ── deals: feedback binário de qualidade do lead ────────────────────────
--- lead_quality_feedback: 'good' | 'bad' | null (não dado ainda)
+-- deals: feedback binario de qualidade do lead
+-- lead_quality_feedback: 'good' | 'bad' | null (nao dado ainda)
 -- lead_quality_feedback_at: quando foi dado
 -- lead_quality_feedback_by: quem deu (usually owner do deal)
 
@@ -49,10 +49,10 @@ ALTER TABLE deals
 CREATE INDEX IF NOT EXISTS idx_deals_lead_quality_feedback
   ON deals(lead_quality_feedback) WHERE lead_quality_feedback IS NOT NULL;
 
--- ── leads: encerramento explícito sem deal ──────────────────────────────
--- Quando vendedor pega um lead na fila comercial e conclui que não vai
--- virar deal, marca encerrado. Adicionamos campos análogos ao deal pra
--- capturar o feedback de calibração.
+-- leads: encerramento explicito sem deal
+-- Quando vendedor pega um lead na fila comercial e conclui que nao vai
+-- virar deal, marca encerrado. Adicionamos campos analogos ao deal pra
+-- capturar o feedback de calibracao.
 
 ALTER TABLE leads
   ADD COLUMN IF NOT EXISTS closed_no_deal_at timestamptz,
@@ -64,8 +64,8 @@ ALTER TABLE leads
   ADD CONSTRAINT leads_closed_no_deal_quality_chk
   CHECK (closed_no_deal_quality IS NULL OR closed_no_deal_quality IN ('good', 'bad'));
 
--- ── audit_sample_assignments: fila cega de auditoria ────────────────────
--- Cada linha = um lead rejeitado pela IA que foi amostrado pra revisão cega.
+-- audit_sample_assignments: fila cega de auditoria
+-- Cada linha = um lead rejeitado pela IA que foi amostrado pra revisao cega.
 -- status: 'pending' | 'assigned' | 'contacted' | 'skipped'
 -- outcome: 'good' | 'bad' | null (preenchido ao contactar)
 -- IMPORTANTE: outcome='good' aqui significa FALSO NEGATIVO da IA.
