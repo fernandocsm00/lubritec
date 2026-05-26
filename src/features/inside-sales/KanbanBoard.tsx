@@ -25,6 +25,7 @@ import { GanhoValueDialog } from './GanhoValueDialog';
 import { DealDrawer } from './DealDrawer';
 import { DEAL_STAGES } from '@shared/types';
 import type { DealStage, PublicDeal, LossReason } from './types';
+import type { LeadQualityFeedback } from '@shared/types';
 
 interface PendingMove {
   dealId: string;
@@ -85,7 +86,7 @@ export function KanbanBoard() {
     void doMove({ dealId, toStage, fromStage });
   }
 
-  async function doMove(opts: { dealId: string; toStage: DealStage; fromStage: DealStage; lossReason?: LossReason; ganhoValue?: number }) {
+  async function doMove(opts: { dealId: string; toStage: DealStage; fromStage: DealStage; lossReason?: LossReason; ganhoValue?: number; leadQualityFeedback?: LeadQualityFeedback }) {
     try {
       // Se Ganho com valor novo, primeiro atualiza valor (PATCH) e depois muda stage.
       // Aqui simplificamos: o backend já valida que ganho exige value preenchido,
@@ -102,6 +103,7 @@ export function KanbanBoard() {
         id: opts.dealId,
         stage: opts.toStage,
         lossReason: opts.lossReason,
+        leadQualityFeedback: opts.leadQualityFeedback,
       });
       toast.success('Movido.');
     } catch (err) {
@@ -186,9 +188,9 @@ export function KanbanBoard() {
       <LossReasonDialog
         open={pendingMove?.toStage === 'perdido'}
         onCancel={() => setPendingMove(null)}
-        onConfirm={(reason) => {
+        onConfirm={(reason, feedback) => {
           if (pendingMove) {
-            void doMove({ ...pendingMove, lossReason: reason });
+            void doMove({ ...pendingMove, lossReason: reason, leadQualityFeedback: feedback });
             setPendingMove(null);
           }
         }}
@@ -196,9 +198,9 @@ export function KanbanBoard() {
       <GanhoValueDialog
         open={pendingMove?.toStage === 'ganho'}
         onCancel={() => setPendingMove(null)}
-        onConfirm={(value) => {
+        onConfirm={(value, feedback) => {
           if (pendingMove) {
-            void doMove({ ...pendingMove, ganhoValue: value });
+            void doMove({ ...pendingMove, ganhoValue: value, leadQualityFeedback: feedback });
             setPendingMove(null);
           }
         }}

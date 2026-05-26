@@ -162,7 +162,6 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
     const [lead] = await db.select().from(leads).where(eq(leads.id, r.leadId)).limit(1);
     if (!lead) throw new Error('Lead not found');
 
-    const conv = await getOrCreateConversationForCampaign(r.phone, lead.id, c.id, c.instanceId);
     const provider = await resolveProvider(c.instanceId);
 
     let sentResult: { providerMsgId: string; rawPayload: unknown };
@@ -171,9 +170,15 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
     let msgMediaUrl: string | null = null;
     let msgMediaMime: string | null = null;
     let providerKind: 'uazapi' | 'meta_cloud' = 'uazapi';
+    let usedPhone = r.phone;
 
+    // Tentativa de envio. Se falhar e o lead tiver phone2, tenta de novo no
+    // numero secundario. Conversation eh criada/buscada com o numero
+    // efetivamente utilizado pra nao misturar threads.
+    type SendFn = (to: string) => Promise<{ providerMsgId: string; rawPayload: unknown }>;
+    let sendFn: SendFn;
+    let interpolated = '';
     if (c.hsmTemplateId) {
-      // ── HSM (Meta Cloud) path ─────────────────────────────────────────────
       const tpl = await getTemplateById(c.hsmTemplateId);
       if (!tpl || tpl.status !== 'APPROVED') {
         throw new Error(`HSM template not approved (status: ${tpl?.status ?? 'not found'})`);
@@ -182,37 +187,54 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
         (c.hsmVariables as CampaignHsmVariable[] | null) ?? [],
         { lead },
       );
-      sentResult = await provider.sendTemplate({
-        to: r.phone,
+      sendFn = (to) => provider.sendTemplate({
+        to,
         templateName: tpl.name,
         language: tpl.language,
         variables,
       });
-      msgBody = tpl.name;   // store template name as body for message record
+      msgBody = tpl.name;
       providerKind = 'meta_cloud';
     } else {
-      // ── Free-form (UazAPI) path ────────────────────────────────────────────
-      // Continuous: escolhe variant random (A/B). One-shot: usa messageBody.
       const variant = c.isContinuous ? pickVariant(c) : { body: c.messageBody, mediaUrl: c.mediaUrl, mediaMime: c.mediaMime };
-      const interpolated = interpolatePlaceholders(variant.body, lead);
+      interpolated = interpolatePlaceholders(variant.body, lead);
       msgBody = interpolated;
-
       if (variant.mediaUrl) {
         msgKind = 'image';
         msgMediaUrl = variant.mediaUrl;
         msgMediaMime = variant.mediaMime ?? null;
-        sentResult = await provider.sendMedia({
-          to: r.phone,
+        sendFn = (to) => provider.sendMedia({
+          to,
           kind: 'image',
-          mediaUrl: absoluteUrl(variant.mediaUrl),
+          mediaUrl: absoluteUrl(variant.mediaUrl!),
           mediaMime: variant.mediaMime ?? undefined,
           caption: interpolated,
         });
       } else {
-        sentResult = await provider.sendText({ to: r.phone, text: interpolated });
+        sendFn = (to) => provider.sendText({ to, text: interpolated });
       }
       providerKind = provider.kind as 'uazapi' | 'meta_cloud';
     }
+
+    try {
+      sentResult = await sendFn(r.phone);
+    } catch (primaryErr) {
+      // Fallback Telefone 2: tenta se houver phone2 cadastrado e diferente do
+      // phone1. Se T2 tambem falhar, propaga o erro original do T1 (mais
+      // informativo do que o do T2).
+      if (lead.phone2 && lead.phone2 !== r.phone) {
+        try {
+          sentResult = await sendFn(lead.phone2);
+          usedPhone = lead.phone2;
+        } catch {
+          throw primaryErr;
+        }
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const conv = await getOrCreateConversationForCampaign(usedPhone, lead.id, c.id, c.instanceId);
 
     const sentAt = new Date();
     const [msg] = await db.insert(messages).values({

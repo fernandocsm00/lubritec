@@ -12,6 +12,7 @@ import type {
   CampaignsTimeseries,
   TopCampaignsResponse,
 } from './types';
+import type { PublicAuditSample, LeadQualityFeedback, CampaignCalibrationMetrics } from '@shared/types';
 
 export type ReportPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
 export type CampaignKind = 'all' | 'one_shot' | 'continuous';
@@ -243,4 +244,61 @@ export function useUploadMedia() {
       return api('/campaigns/upload-media', { method: 'POST', body: fd });
     },
   });
+}
+
+// ── Audit queue APIs ──────────────────────────────────────────────────────────
+
+export async function listAuditSamples(
+  campaignId: string,
+  opts: { mineOnly?: boolean } = {},
+): Promise<PublicAuditSample[]> {
+  const params = new URLSearchParams({ campaignId });
+  if (opts.mineOnly) params.set('mineOnly', 'true');
+  const res = await fetch(`/api/audit/samples?${params.toString()}`, { credentials: 'include' });
+  const data = await res.json();
+  return data.items;
+}
+
+export async function claimAuditSample(campaignId: string): Promise<PublicAuditSample | null> {
+  const res = await fetch('/api/audit/samples/claim', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ campaignId }),
+  });
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+export async function recordAuditOutcome(input: {
+  id: string; outcome: LeadQualityFeedback; notes?: string;
+}): Promise<PublicAuditSample> {
+  const res = await fetch(`/api/audit/samples/${input.id}/outcome`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ outcome: input.outcome, notes: input.notes }),
+  });
+  return res.json();
+}
+
+// ── Calibration metrics API ───────────────────────────────────────────────────
+
+export async function fetchCalibrationMetrics(campaignId: string): Promise<CampaignCalibrationMetrics> {
+  return api<CampaignCalibrationMetrics>(`/campaigns/${campaignId}/calibration-metrics`);
+}
+
+// ── Unqualified leads API ─────────────────────────────────────────────────────
+
+export interface UnqualifiedLead {
+  leadId: string; leadName: string;
+  leadPhone: string | null; leadCnpj: string | null;
+  decidedAt: string; decisionReason: string | null;
+  ageInDays: number; reattemptCount: number;
+}
+
+export async function listUnqualifiedLeads(campaignId: string): Promise<UnqualifiedLead[]> {
+  const res = await fetch(`/api/campaigns/${campaignId}/unqualified-leads`, { credentials: 'include' });
+  const data = await res.json();
+  return data.items;
 }

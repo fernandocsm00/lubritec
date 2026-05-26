@@ -3,7 +3,8 @@ import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { ImportReport } from '@shared/types';
+import type { ImportReport, Imbp, Segment } from '@shared/types';
+import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -16,20 +17,63 @@ import { recordTransition } from './stageTransitions';
 // Limite removido — qualquer tamanho de CSV agora roda em ~1s.
 
 const HEADER_ALIASES: Record<string, string> = {
+  // Nome / Nome da Conta
   name: 'name',
   nome: 'name',
+  nome_da_conta: 'name',
+  'nome_da_conta_': 'name',
   empresa: 'name',
   razao_social: 'name',
   'razão_social': 'name',
+  // Telefone principal
   phone: 'phone',
   telefone: 'phone',
+  telefone_1: 'phone',
+  telefone1: 'phone',
   celular: 'phone',
   contato: 'phone',
+  // Telefone secundario
+  phone2: 'phone2',
+  telefone_2: 'phone2',
+  telefone2: 'phone2',
+  celular2: 'phone2',
+  celular_2: 'phone2',
+  // CNPJ
   cnpj: 'cnpj',
+  // Email
   email: 'email',
+  // Observacoes
   notes: 'notes',
   observacoes: 'notes',
   'observações': 'notes',
+  obs: 'notes',
+  // Endereco
+  endereco: 'address1',
+  'endereço': 'address1',
+  endereco_1: 'address1',
+  'endereço_1': 'address1',
+  endereco1: 'address1',
+  'endereço1': 'address1',
+  endereco_2: 'address2',
+  'endereço_2': 'address2',
+  endereco2: 'address2',
+  'endereço2': 'address2',
+  complemento: 'address2',
+  // Cidade
+  cidade: 'city',
+  city: 'city',
+  municipio: 'city',
+  'município': 'city',
+  // IMBP / Linha de Negocio
+  imbp: 'imbp',
+  linha_de_negocio: 'imbp',
+  'linha_de_negócio': 'imbp',
+  linha_de_negocio_do_cliente: 'imbp',
+  'linha_de_negócio_do_cliente': 'imbp',
+  // Segmento
+  segmento: 'segment',
+  segment: 'segment',
+  segmento_do_cliente: 'segment',
 };
 
 // Phone NÃO é mais obrigatório: leads CNPJ-only são aceitos como 'incomplete'
@@ -40,9 +84,49 @@ export interface CsvRow {
   line: number;
   name: string;
   phone: string | null;
+  phone2: string | null;
   cnpj: string;
   email: string | null;
   notes: string | null;
+  address1: string | null;
+  address2: string | null;
+  city: string | null;
+  imbp: Imbp | null;
+  segment: Segment | null;
+}
+
+/**
+ * Tenta casar o valor do CSV com um IMBP_VALUES. Aceita:
+ *   - o codigo exato (ex: "000011-PVL-REVENDA")
+ *   - apenas o prefixo numerico (ex: "000011")
+ *   - variacoes com/sem hifen ou espaco (ex: "000011 PVL REVENDA")
+ * Retorna null se nao casar.
+ */
+function parseImbpValue(raw: string): Imbp | null {
+  const cleaned = raw.trim();
+  if (!cleaned) return null;
+  // Match exato (case-insensitive) primeiro
+  const upper = cleaned.toUpperCase();
+  const exact = IMBP_VALUES.find((v) => v.toUpperCase() === upper);
+  if (exact) return exact;
+  // Match por prefixo numerico
+  const prefix = cleaned.match(/^(\d{6})/)?.[1];
+  if (prefix) {
+    const byPrefix = IMBP_VALUES.find((v) => v.startsWith(prefix));
+    if (byPrefix) return byPrefix;
+  }
+  // Match normalizando separadores (espaco/hifen viram tudo um)
+  const norm = upper.replace(/[\s_-]+/g, '-');
+  const byNorm = IMBP_VALUES.find((v) => v.toUpperCase() === norm);
+  return byNorm ?? null;
+}
+
+function parseSegmentValue(raw: string): Segment | null {
+  const cleaned = raw.trim().toUpperCase();
+  if (!cleaned) return null;
+  // Pega o prefixo de 3 letras (ex: "PVL - Veiculos" → "PVL")
+  const code = cleaned.split(/[\s-]/)[0] as Segment;
+  return (SEGMENT_VALUES as readonly string[]).includes(code) ? code : null;
 }
 
 function detectDelimiter(buf: Buffer): ',' | ';' {
@@ -108,6 +192,15 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       phone = cleaned;
     }
 
+    // Telefone 2: opcional. Se vier mas invalido, ignora silenciosamente (nao
+    // rejeita a linha inteira por isso — Telefone 2 eh apenas fallback).
+    const phone2Raw = (obj.phone2 ?? '').trim();
+    let phone2: string | null = null;
+    if (phone2Raw) {
+      const cleaned2 = normalizePhone(phone2Raw);
+      if (cleaned2.length >= 8) phone2 = cleaned2;
+    }
+
     const cnpj = normalizeCnpj((obj.cnpj ?? '').trim());
     if (!cnpj) {
       rejected.push({ line, reason: 'CNPJ vazio' });
@@ -129,13 +222,26 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       continue;
     }
 
+    // Taxonomia: IMBP define segmento. Se vier so segmento, usa. Valores
+    // invalidos sao silenciosamente ignorados (nao queremos rejeitar a linha
+    // inteira por um IMBP digitado errado).
+    const imbp = parseImbpValue(obj.imbp ?? '');
+    const segmentInput = parseSegmentValue(obj.segment ?? '');
+    const segment: Segment | null = imbp ? IMBP_TO_SEGMENT[imbp] : segmentInput;
+
     rows.push({
       line,
       name,
       phone,
+      phone2,
       cnpj,
       email,
       notes: (obj.notes ?? '').trim() || null,
+      address1: (obj.address1 ?? '').trim() || null,
+      address2: (obj.address2 ?? '').trim() || null,
+      city: (obj.city ?? '').trim() || null,
+      imbp,
+      segment,
     });
   }
 
@@ -181,9 +287,15 @@ export async function importLeadsFromCsv(
         const [created] = await tx.insert(leads).values({
           name: row.name,
           phone: row.phone,
+          phone2: row.phone2,
           cnpj: row.cnpj,
           email: row.email,
           notes: row.notes,
+          address1: row.address1,
+          address2: row.address2,
+          city: row.city,
+          imbp: row.imbp,
+          segment: row.segment,
           source: 'csv',
           status: 'frio',
           flowStage: stage,
@@ -212,6 +324,17 @@ export async function importLeadsFromCsv(
           toEnroll.push(existing.id);
           promoted.push(existing.id);
         }
+      }
+      // Backfill dos novos campos: so sobrescreve se atualmente vazio.
+      if (row.phone2 && !existing.phone2) patch.phone2 = row.phone2;
+      if (row.address1 && !existing.address1) patch.address1 = row.address1;
+      if (row.address2 && !existing.address2) patch.address2 = row.address2;
+      if (row.city && !existing.city) patch.city = row.city;
+      if (row.imbp && !existing.imbp) {
+        patch.imbp = row.imbp;
+        patch.segment = row.segment; // ja derivado no parser
+      } else if (row.segment && !existing.segment) {
+        patch.segment = row.segment;
       }
 
       if (Object.keys(patch).length > 0) {

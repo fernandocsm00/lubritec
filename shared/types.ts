@@ -34,6 +34,61 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const LEAD_SOURCES = ['manual', 'csv', 'whatsapp'] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
+// ── Taxonomia comercial Lubritec ─────────────────────────────────────────────
+// IMBP = "Linha de Negocio do Cliente" (codigo interno).
+// Segment = agrupamento de IMBPs. Cada IMBP pertence a exatamente 1 segmento.
+
+export const IMBP_VALUES = [
+  '000011-PVL-REVENDA',
+  '000012-MCO-REVENDA',
+  '000013-CVL-REVENDA',
+  '000014-ATACADISTA',
+  '000015-CVL-AGRI-REVENDA',
+  '000025-CVL-CONSUMO',
+  '000026-INDUSTRIA',
+  '000028-CVL-AGRI',
+] as const;
+export type Imbp = (typeof IMBP_VALUES)[number];
+
+export const IMBP_LABELS: Record<Imbp, string> = {
+  '000011-PVL-REVENDA':      '000011-PVL-REVENDA — Carros, autopecas, oficinas, postos',
+  '000012-MCO-REVENDA':      '000012-MCO-REVENDA — Motos, moto-pecas, oficinas de motos',
+  '000013-CVL-REVENDA':      '000013-CVL-REVENDA — Caminhoes, oficinas, concessionarias',
+  '000014-ATACADISTA':       '000014-ATACADISTA — Distribuidores, varejo',
+  '000015-CVL-AGRI-REVENDA': '000015-CVL-AGRI-REVENDA — Tratores, pesados, cooperativas (revenda)',
+  '000025-CVL-CONSUMO':      '000025-CVL-CONSUMO — Frotas, onibus, vans, mineradoras, construtoras',
+  '000026-INDUSTRIA':        '000026-INDUSTRIA — Maquinas industriais',
+  '000028-CVL-AGRI':         '000028-CVL-AGRI — Maquinarios agricolas (consumidor final)',
+};
+
+export const SEGMENT_VALUES = ['PVL', 'CVL', 'MCO', 'IND', 'ATA'] as const;
+export type Segment = (typeof SEGMENT_VALUES)[number];
+
+export const SEGMENT_LABELS: Record<Segment, string> = {
+  PVL: 'PVL — Veiculos Automotores',
+  CVL: 'CVL — Caminhoes e Linha Pesada',
+  MCO: 'MCO — Motocicletas',
+  IND: 'IND — Industrias',
+  ATA: 'ATA — Atacadistas',
+};
+
+/** Mapeamento IMBP → Segmento. Conforme taxonomia comercial. */
+export const IMBP_TO_SEGMENT: Record<Imbp, Segment> = {
+  '000011-PVL-REVENDA':      'PVL',
+  '000012-MCO-REVENDA':      'MCO',
+  '000013-CVL-REVENDA':      'CVL',
+  '000014-ATACADISTA':       'ATA',
+  '000015-CVL-AGRI-REVENDA': 'CVL',
+  '000025-CVL-CONSUMO':      'CVL',
+  '000026-INDUSTRIA':        'IND',
+  '000028-CVL-AGRI':         'CVL',
+};
+
+export function deriveSegmentFromImbp(imbp: Imbp | null | undefined): Segment | null {
+  if (!imbp) return null;
+  return IMBP_TO_SEGMENT[imbp] ?? null;
+}
+
 /**
  * Etapas do fluxo macro do lead (orthogonal ao `status` quente/morno/frio).
  *
@@ -71,9 +126,15 @@ export interface PublicLead {
   id: string;
   name: string;
   phone: string | null;
+  phone2: string | null;
   cnpj: string | null;
   email: string | null;
   notes: string | null;
+  address1: string | null;
+  address2: string | null;
+  city: string | null;
+  imbp: Imbp | null;
+  segment: Segment | null;
   status: LeadStatus;
   source: LeadSource;
   flowStage: LeadFlowStage;
@@ -219,6 +280,7 @@ export const DEAL_ACTIVITY_KINDS = [
   'lost',
   'reactivated',
   'owner_changed',
+  'quality_feedback',         // NOVO: vendedor deu feedback bom/ruim
 ] as const;
 export type DealActivityKind = (typeof DEAL_ACTIVITY_KINDS)[number];
 
@@ -237,6 +299,8 @@ export interface PublicDeal {
   notes: string | null;
   owner: { id: string; name: string } | null;
   closedAt: string | null;
+  leadQualityFeedback: LeadQualityFeedback | null;
+  leadQualityFeedbackAt: string | null;
   isStale: boolean;
   enteredCurrentStageAt: string;
   createdAt: string;
@@ -397,6 +461,7 @@ export interface PublicCampaign {
   status: CampaignStatus;
   templateId: string | null;
   messageBody: string;
+  qualificationQuestion: string | null;
   mediaUrl: string | null;
   mediaMime: string | null;
   audienceFilter: AudienceFilters;
@@ -920,4 +985,109 @@ export interface CampaignHsmVariable {
   index: number;
   source: 'static' | 'lead_field';
   value: string;
+}
+
+// ---------------------------------------------------------------------------
+// AI Calibration (Sprint Calibração IA — 2026-05-26)
+// ---------------------------------------------------------------------------
+
+export const LEAD_QUALITY_FEEDBACK = ['good', 'bad'] as const;
+export type LeadQualityFeedback = (typeof LEAD_QUALITY_FEEDBACK)[number];
+
+export const QUALIFICATION_PATHS = ['campaign_direct', 'conversation'] as const;
+export type QualificationPath = (typeof QUALIFICATION_PATHS)[number];
+
+export interface QuestionAnswer {
+  question: string;
+  answer: string;
+  consideredAt: string;        // ISO timestamp
+}
+
+/** Ficha do caso: composição read-only de tudo que importa pra calibrar IA. */
+export interface PublicCaseSheet {
+  leadId: string;
+  leadName: string;
+  // Decisão da IA
+  aiCallLogId: string | null;
+  qualified: boolean | null;
+  qualificationPath: QualificationPath | null;
+  decisionReason: string | null;
+  questionsAnswers: QuestionAnswer[];
+  promptVersion: string | null;
+  decidedAt: string | null;
+  model: string | null;
+  // Contexto da campanha (se origem campaign)
+  campaignId: string | null;
+  campaignName: string | null;
+  qualificationQuestion: string | null;     // pergunta da campanha
+  campaignMessageBody: string | null;       // primeira mensagem do disparo
+  firstInboundReply: string | null;         // primeira resposta do lead
+  // Trajetória do deal (se houver)
+  dealId: string | null;
+  dealStage: DealStage | null;
+  dealValue: number | null;
+  dealLossReason: LossReason | null;
+  leadQualityFeedback: LeadQualityFeedback | null;
+  leadQualityFeedbackAt: string | null;
+  // Encerramento sem deal (se houver)
+  closedNoDealAt: string | null;
+  closedNoDealReason: string | null;
+  closedNoDealQuality: LeadQualityFeedback | null;
+}
+
+export interface ReanalyzeCaseInput {
+  reason: string;     // por que admin pediu reanálise (livre)
+}
+
+// ── Audit sample queue ────────────────────────────────────────────
+export const AUDIT_SAMPLE_STATUSES = ['pending', 'assigned', 'contacted', 'skipped'] as const;
+export type AuditSampleStatus = (typeof AUDIT_SAMPLE_STATUSES)[number];
+
+export interface PublicAuditSample {
+  id: string;
+  leadId: string;
+  leadName: string;
+  leadPhone: string | null;
+  leadCnpj: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  sampledAt: string;
+  status: AuditSampleStatus;
+  assignedTo: { id: string; name: string } | null;
+  assignedAt: string | null;
+  contactedAt: string | null;
+  outcome: LeadQualityFeedback | null;
+  outcomeAt: string | null;
+  outcomeNotes: string | null;
+  // IMPORTANTE: a UI da fila cega NÃO mostra a decisão da IA nem o motivo.
+  // Esses campos só aparecem em endpoints internos de relatório.
+}
+
+/** Payload do POST /audit/samples/claim — sem corpo (claim do próximo da fila). */
+export type AuditSampleAssignInput = Record<string, never>;
+
+export interface AuditSampleOutcomeInput {
+  outcome: LeadQualityFeedback;
+  notes?: string;
+}
+
+export interface CampaignCalibrationMetrics {
+  campaignId: string;
+  totalQualifiedByAi: number;          // IA disse "qualificado"
+  totalNotQualifiedByAi: number;       // IA disse "não qualificado"
+  feedbackGivenCount: number;          // quantos qualificados receberam feedback bin
+  feedbackGoodCount: number;           // dos qualificados, vendedor marcou "bom"
+  feedbackBadCount: number;            // dos qualificados, vendedor marcou "ruim"
+  precision: number | null;            // good / (good + bad) — null se 0 feedback
+  // Recall via fila cega
+  auditTotal: number;
+  auditContacted: number;
+  auditGood: number;                   // falsos negativos confirmados
+  auditBad: number;                    // verdadeiros negativos
+  estimatedRecall: number | null;      // good_qualified / (good_qualified + extrapolated_audit_good)
+}
+
+export interface CloseLeadNoDealInput {
+  reason: string;
+  quality: LeadQualityFeedback;
 }

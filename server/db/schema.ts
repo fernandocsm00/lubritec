@@ -30,6 +30,8 @@ import {
   PROVIDER_KINDS,
   HSM_CATEGORIES,
   HSM_STATUSES,
+  IMBP_VALUES,
+  SEGMENT_VALUES,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -82,12 +84,22 @@ export const leads = pgTable('leads', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   phone: text('phone'),  // nullable: leads CNPJ-only aguardam enriquecimento
+  phone2: text('phone2'), // telefone secundario, usado como fallback no dispatcher
   cnpj: text('cnpj').unique(),
   email: text('email'),
   notes: text('notes'),
+  address1: text('address1'),
+  address2: text('address2'),
+  city: text('city'),
+  imbp: text('imbp', { enum: IMBP_VALUES }),
+  segment: text('segment', { enum: SEGMENT_VALUES }),
   status: text('status', { enum: LEAD_STATUSES }).notNull().default('frio'),
   source: text('source', { enum: LEAD_SOURCES }).notNull().default('manual'),
   flowStage: text('flow_stage', { enum: LEAD_FLOW_STAGES }).notNull().default('incomplete'),
+  closedNoDealAt: timestamp('closed_no_deal_at', { withTimezone: true }),
+  closedNoDealBy: uuid('closed_no_deal_by').references(() => users.id, { onDelete: 'set null' }),
+  closedNoDealReason: text('closed_no_deal_reason'),
+  closedNoDealQuality: text('closed_no_deal_quality', { enum: ['good', 'bad'] }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -152,6 +164,9 @@ export const deals = pgTable('deals', {
   notes: text('notes'),
   ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'restrict' }),
   closedAt: timestamp('closed_at', { withTimezone: true }),
+  leadQualityFeedback: text('lead_quality_feedback', { enum: ['good', 'bad'] }),
+  leadQualityFeedbackAt: timestamp('lead_quality_feedback_at', { withTimezone: true }),
+  leadQualityFeedbackBy: uuid('lead_quality_feedback_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -265,6 +280,7 @@ export const campaigns = pgTable('campaigns', {
   instanceId: uuid('instance_id').notNull().references(() => whatsappInstance.id, { onDelete: 'restrict' }),
   hsmTemplateId: uuid('hsm_template_id').references(() => whatsappHsmTemplates.id, { onDelete: 'restrict' }),
   hsmVariables: jsonb('hsm_variables').default([]),
+  qualificationQuestion: text('qualification_question'),
   createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   cooldownAlertSentAt: timestamp('cooldown_alert_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -363,8 +379,19 @@ export const aiCallLogs = pgTable('ai_call_logs', {
   qualified: boolean('qualified').notNull().default(false),
   humanIntent: boolean('human_intent').notNull().default(false),
   error: text('error'),
+  decisionReason: text('decision_reason'),
+  qualificationPath: text('qualification_path', { enum: ['campaign_direct', 'conversation'] }),
+  questionsAnswers: jsonb('questions_answers').notNull().default([]),
+  promptVersion: text('prompt_version'),
+  campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  // Espelham os índices da migration 029 pra evitar drift de schema.
+  leadQualifiedIdx: index('idx_ai_call_logs_lead_qualified').on(t.leadId, t.qualified),
+  campaignIdx: index('idx_ai_call_logs_campaign')
+    .on(t.campaignId)
+    .where(sql`${t.campaignId} IS NOT NULL`),
+}));
 
 export type AiCallLog = typeof aiCallLogs.$inferSelect;
 export type NewAiCallLog = typeof aiCallLogs.$inferInsert;
@@ -416,6 +443,37 @@ export const projectFeedback = pgTable(
 
 export type ProjectFeedback = typeof projectFeedback.$inferSelect;
 export type NewProjectFeedback = typeof projectFeedback.$inferInsert;
+
+// ── Audit sample assignments (Sprint Calibração IA) ──────────────
+// Amostragem cega: 10% dos leads marcados "não qualificados" pela IA
+// entram aqui pra contato controlado e medição de falso negativo.
+export const auditSampleAssignments = pgTable('audit_sample_assignments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  aiCallLogId: uuid('ai_call_log_id').references(() => aiCallLogs.id, { onDelete: 'set null' }),
+  campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
+  sampledAt: timestamp('sampled_at', { withTimezone: true }).notNull().defaultNow(),
+  assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+  assignedAt: timestamp('assigned_at', { withTimezone: true }),
+  contactedAt: timestamp('contacted_at', { withTimezone: true }),
+  outcome: text('outcome', { enum: ['good', 'bad'] }),
+  outcomeAt: timestamp('outcome_at', { withTimezone: true }),
+  outcomeNotes: text('outcome_notes'),
+  status: text('status', { enum: ['pending', 'assigned', 'contacted', 'skipped'] }).notNull().default('pending'),
+}, (t) => ({
+  // Unique index nomeado pra casar com a migration 029 (idx_audit_sample_lead_unique).
+  // Não usar .unique() inline no leadId — gera constraint sem nome e drift no Drizzle.
+  leadUniq: uniqueIndex('idx_audit_sample_lead_unique').on(t.leadId),
+  statusCampaignIdx: index('idx_audit_sample_status_campaign').on(t.status, t.campaignId),
+  // Partial index: a migration cria com WHERE assigned_to IS NOT NULL. Drizzle suporta
+  // via .where(sql`...`). Mantém schema fiel ao DB pra evitar drift.
+  assignedToIdx: index('idx_audit_sample_assigned_to')
+    .on(t.assignedTo)
+    .where(sql`${t.assignedTo} IS NOT NULL`),
+}));
+
+export type AuditSampleAssignment = typeof auditSampleAssignments.$inferSelect;
+export type NewAuditSampleAssignment = typeof auditSampleAssignments.$inferInsert;
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

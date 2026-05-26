@@ -21,6 +21,8 @@ import { avatarInitials, formatCurrency, STAGE_LABELS, STAGE_COLORS } from './he
 import { formatCnpj } from '@/lib/utils';
 import { useLead } from '@/features/leads/api';
 import { LeadDialog } from '@/features/leads/LeadDialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { CaseSheet } from '@/features/case-sheet/CaseSheet';
 
 interface Props {
   dealId: string | null;
@@ -32,6 +34,8 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
   const { data: deal, isLoading } = useDeal(dealId);
   const patch = usePatchDeal();
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
+  const userRole = useAuthStore((s) => s.user?.role);
+  const isAdmin = userRole === 'admin';
   const { data: assignableUsers } = useAssignableUsers();
   const [valueDraft, setValueDraft] = useState<number | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
@@ -159,22 +163,41 @@ export function DealDrawer({ dealId, onClose, readOnly = false }: Props) {
             </div>
           </div>
 
-          <div className="p-4 border-b border-border">
-            <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Notas</h4>
-            <Textarea
-              value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              onBlur={saveNotes}
-              placeholder="Anotações privadas sobre o deal…"
-              className="min-h-[80px] text-sm"
-              disabled={readOnly}
-            />
-          </div>
+          <Tabs defaultValue="deal" className="flex-1 flex flex-col overflow-hidden">
+            <div className="px-4 pt-2 border-b border-border">
+              <TabsList className="h-8">
+                <TabsTrigger value="deal" className="text-xs">Deal</TabsTrigger>
+                <TabsTrigger value="case-sheet" className="text-xs">Ficha do Caso</TabsTrigger>
+              </TabsList>
+            </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
-            <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Atividade</h4>
-            <ActivityLog activities={deal.activities} />
-          </div>
+            <TabsContent value="deal" className="flex-1 flex flex-col overflow-hidden m-0 p-0">
+              <div className="p-4 border-b border-border">
+                <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Notas</h4>
+                <Textarea
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  onBlur={saveNotes}
+                  placeholder="Anotações privadas sobre o deal…"
+                  className="min-h-[80px] text-sm"
+                  disabled={readOnly}
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Atividade</h4>
+                <ActivityLog activities={deal.activities} />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="case-sheet" className="flex-1 overflow-y-auto p-4 m-0">
+              <CaseSheet
+                leadId={deal.lead.id}
+                isAdmin={isAdmin}
+                onOpenDeal={() => { /* já estamos no deal */ }}
+              />
+            </TabsContent>
+          </Tabs>
 
           <div className="grid grid-cols-2 gap-2 p-4 border-t border-border">
             {/* Abrir conversa: deep-link minimo com ?lead= apenas. WhatsappPage

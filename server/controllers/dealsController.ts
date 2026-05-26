@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { DEAL_STAGES, LOSS_REASONS } from '../../shared/types';
+import { DEAL_STAGES, LOSS_REASONS, LEAD_QUALITY_FEEDBACK } from '../../shared/types';
 import {
   listBoard,
   listHistory,
@@ -91,6 +91,7 @@ const patchBody = z
 const stageBody = z.object({
   stage: z.enum(DEAL_STAGES),
   lossReason: z.enum(LOSS_REASONS).optional(),
+  leadQualityFeedback: z.enum(LEAD_QUALITY_FEEDBACK).optional(),
 });
 
 export async function createHandler(req: Request, res: Response, next: NextFunction) {
@@ -130,6 +131,7 @@ export async function stageHandler(req: Request, res: Response, next: NextFuncti
       actorUserId: req.user!.userId,
       stage: data.stage,
       lossReason: data.lossReason,
+      leadQualityFeedback: data.leadQualityFeedback,
     });
     res.json(deal);
   } catch (e) { next(e); }

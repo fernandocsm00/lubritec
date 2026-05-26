@@ -257,8 +257,9 @@ describe('processInboundWithAi', () => {
     const [updatedConv] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
     expect(updatedConv.queue).toBe('comercial');
 
+    // B4: createDeal chamado automaticamente apos qualificacao → flowStage vira 'handed_off'
     const [updatedLead] = await db.select().from(leads).where(eq(leads.id, lead.id));
-    expect(updatedLead.flowStage).toBe('qualified');
+    expect(updatedLead.flowStage).toBe('handed_off');
   });
 
   it('gemini_error não persiste mensagem nem altera fila', async () => {

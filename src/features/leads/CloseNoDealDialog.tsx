@@ -4,49 +4,54 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { ValueInput } from './ValueInput';
+import { Textarea } from '@/components/ui/textarea';
 import type { LeadQualityFeedback } from '@shared/types';
 
 interface Props {
   open: boolean;
-  onConfirm: (value: number, feedback: LeadQualityFeedback) => void;
+  onConfirm: (reason: string, quality: LeadQualityFeedback) => void;
   onCancel: () => void;
 }
 
-export function GanhoValueDialog({ open, onConfirm, onCancel }: Props) {
-  const [value, setValue] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState<LeadQualityFeedback | null>(null);
-
-  const canConfirm = value != null && value > 0 && feedback != null;
+export function CloseNoDealDialog({ open, onConfirm, onCancel }: Props) {
+  const [reason, setReason] = useState('');
+  const [quality, setQuality] = useState<LeadQualityFeedback | null>(null);
+  const canConfirm = reason.trim().length >= 3 && quality != null;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) { setValue(null); setFeedback(null); onCancel(); } }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { setReason(''); setQuality(null); onCancel(); } }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirmar fechamento</DialogTitle>
+          <DialogTitle>Encerrar lead sem virar deal</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Valor da venda</Label>
-            <ValueInput value={value} onChange={setValue} />
+            <Label>Motivo do encerramento</Label>
+            <Textarea
+              placeholder="Ex.: cliente respondeu mas sumiu, sem interesse real, número errado..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={500}
+              rows={3}
+            />
           </div>
           <div className="space-y-2">
             <Label>O lead estava qualificado?</Label>
             <p className="text-xs text-muted-foreground">
-              Calibra a IA: ajuda a entender se ela está acertando.
+              Calibra a IA. Importante mesmo quando não vira deal.
             </p>
             <div className="flex gap-2">
               <Button
-                variant={feedback === 'good' ? 'default' : 'outline'}
-                onClick={() => setFeedback('good')}
+                variant={quality === 'good' ? 'default' : 'outline'}
+                onClick={() => setQuality('good')}
                 type="button"
                 className="flex-1"
               >
                 Sim, estava bom
               </Button>
               <Button
-                variant={feedback === 'bad' ? 'destructive' : 'outline'}
-                onClick={() => setFeedback('bad')}
+                variant={quality === 'bad' ? 'destructive' : 'outline'}
+                onClick={() => setQuality('bad')}
                 type="button"
                 className="flex-1"
               >
@@ -59,9 +64,9 @@ export function GanhoValueDialog({ open, onConfirm, onCancel }: Props) {
           <Button variant="ghost" onClick={onCancel}>Cancelar</Button>
           <Button
             disabled={!canConfirm}
-            onClick={() => value != null && feedback != null && onConfirm(value, feedback)}
+            onClick={() => quality && onConfirm(reason.trim(), quality)}
           >
-            Marcar como ganho
+            Encerrar lead
           </Button>
         </DialogFooter>
       </DialogContent>

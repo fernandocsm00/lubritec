@@ -1,8 +1,9 @@
 ﻿import { db } from '../db/client';
-import { conversations, messages, leads } from '../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { conversations, messages, leads, aiCallLogs } from '../db/schema';
+import { and, eq, desc } from 'drizzle-orm';
 import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
 import { recordAiCall, countRecentErrorsForConversation } from './aiMetrics';
+export { recordAiCall } from './aiMetrics';
 import { uazapiClient } from './whatsapp/uazapi/client';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
@@ -10,6 +11,10 @@ import { emitNotification } from './notifications';
 import { notifyVendoresWhatsapp } from './whatsappNotify';
 import { isAiBusinessHours } from '../lib/businessHours';
 import type { OrgSettings } from '../db/schema';
+
+// Bump esta string a cada mudanca material no system prompt (buildSystemPrompt).
+// Permite filtrar metricas de calibracao por versao.
+export const PROMPT_VERSION = 'v1-2026-05-26';
 
 const MAX_HISTORY = 20;
 const QUALIFY_TAG = '[QUALIFICADO]';
@@ -147,6 +152,39 @@ export function parseQualificationTag(reply: string): {
   return { cleanReply: working, qualification, summary };
 }
 
+/**
+ * Extrai pares pergunta->resposta do historico recente.
+ * Procura por mensagens out (IA) que terminam em '?' seguidas de uma in (lead).
+ * Limita a 5 pares (mais que isso e ruido).
+ *
+ * Implementacao: anexa o inboundText atual ao final da lista e roda um unico
+ * loop de pareamento. Evita o bug de adicionar a ultima pergunta duas vezes
+ * (uma via loop com a in anterior, outra via tratamento especial do "lastOut").
+ */
+function extractQuestionsAnswers(
+  history: Array<{ direction: 'in' | 'out'; body: string | null }>,
+  currentInbound: string,
+): Array<{ question: string; answer: string; consideredAt: string }> {
+  const pairs: Array<{ question: string; answer: string; consideredAt: string }> = [];
+  const now = new Date().toISOString();
+  const msgs = [
+    ...history.filter((m) => m.body),
+    { direction: 'in' as const, body: currentInbound },
+  ];
+  for (let i = 0; i < msgs.length - 1; i++) {
+    const cur = msgs[i];
+    const next = msgs[i + 1];
+    if (cur.direction === 'out' && cur.body && cur.body.includes('?') && next.direction === 'in' && next.body) {
+      pairs.push({
+        question: cur.body.trim().slice(0, 500),
+        answer: next.body.trim().slice(0, 500),
+        consideredAt: now,
+      });
+    }
+  }
+  return pairs.slice(-5);
+}
+
 interface ProcessInput {
   conversationId: string;
   leadId: string;
@@ -280,6 +318,16 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       text: m.body!,
     }));
 
+  // Determinar qualification path: primeiro inbound de conversa originada de campanha = campaign_direct
+  const isFirstInbound = historyRows.filter((m) => m.direction === 'in').length <= 1;
+  const [convFull] = await db.select({ originKind: conversations.originKind, originCampaignId: conversations.originCampaignId })
+    .from(conversations)
+    .where(eq(conversations.id, input.conversationId))
+    .limit(1);
+  const qualificationPath: 'campaign_direct' | 'conversation' =
+    (isFirstInbound && convFull?.originKind === 'campaign') ? 'campaign_direct' : 'conversation';
+  const campaignIdForLog = convFull?.originCampaignId ?? null;
+
   // Carrega nome do lead pra contexto.
   const [leadRow] = await db
     .select({ name: leads.name, phone: leads.phone })
@@ -399,6 +447,10 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     await tx.update(conversations).set(convPatch).where(eq(conversations.id, input.conversationId));
 
     if (qualification === 'qualified') {
+      // NOTE (Sprint Calibracao IA — B4): flowStage='qualified' eh ESTADO TRANSITORIO.
+      // O createDeal logo abaixo desta transacao promove imediatamente pra 'handed_off'.
+      // Se voce ve um lead parado em 'qualified' por mais que segundos, o createDeal
+      // falhou — investigar via logs. NAO confundir com bug de filtro de dashboard.
       await tx
         .update(leads)
         .set({ flowStage: 'qualified', updatedAt: new Date() })
@@ -415,6 +467,16 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       source: 'ai_qualification',
       metadata: { conversationId: input.conversationId },
     });
+
+    // Qualificacao criou flowStage='qualified'. Agora cria deal sem owner (Pull model).
+    // Idempotente — se ja existir deal (re-qualificacao), no-op via createDeal interno.
+    const { createDeal } = await import('./dealsService');
+    await createDeal({
+      leadId: input.leadId,
+      ownerUserId: null,        // Pull: vendedor puxa do Kanban "Nao atribuido"
+      source: 'ai_qualified',
+    });
+
     // Notifica admins/comerciais que tem lead qualificado pra atender.
     const inboxUrl = `/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`;
     await emitNotification({
@@ -446,7 +508,30 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     outputTokens: geminiResult.outputTokens,
     latencyMs: geminiResult.latencyMs,
     qualified: qualification === 'qualified',
+    decisionReason: summary,
+    qualificationPath,
+    questionsAnswers: extractQuestionsAnswers(historyRows, input.inboundText),
+    promptVersion: PROMPT_VERSION,
+    campaignId: campaignIdForLog,
   });
+
+  // Se IA disse "não qualificado", amostra 10% pra auditoria cega.
+  if (qualification === 'not_qualified') {
+    const [logRow] = await db.select({ id: aiCallLogs.id })
+      .from(aiCallLogs)
+      .where(and(
+        eq(aiCallLogs.leadId, input.leadId),
+        eq(aiCallLogs.conversationId, input.conversationId),
+      ))
+      .orderBy(desc(aiCallLogs.createdAt))
+      .limit(1);
+    const { enrollIfSampled } = await import('./auditSampleService');
+    await enrollIfSampled({
+      leadId: input.leadId,
+      campaignId: campaignIdForLog,
+      aiCallLogId: logRow?.id ?? null,
+    });
+  }
 
   return {
     status: qualification === 'qualified' ? 'qualified_and_replied' : 'replied',

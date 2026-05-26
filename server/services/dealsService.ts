@@ -12,6 +12,7 @@ import type {
   DealStage,
   DealStageTotal,
   LossReason,
+  LeadQualityFeedback,
   PublicLead,
 } from '@shared/types';
 import { DEAL_STAGES } from '@shared/types';
@@ -49,6 +50,8 @@ function toPublic(row: RawDealRow): PublicDeal {
     notes: row.deal.notes,
     owner: row.owner ? { id: row.owner.id, name: row.owner.name } : null,
     closedAt: row.deal.closedAt?.toISOString() ?? null,
+    leadQualityFeedback: row.deal.leadQualityFeedback ?? null,
+    leadQualityFeedbackAt: row.deal.leadQualityFeedbackAt?.toISOString() ?? null,
     isStale: Boolean(row.isStale),
     enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
     createdAt: row.deal.createdAt.toISOString(),
@@ -301,8 +304,8 @@ async function logActivity(tx: any, opts: {
 export async function createDeal(input: {
   leadId: string;
   proposalValue?: number | null;
-  ownerUserId: string;
-  source: 'manual' | 'auto_image';
+  ownerUserId: string | null;       // aceita null (Pull model)
+  source: 'manual' | 'auto_image' | 'ai_qualified';
 }): Promise<PublicDeal> {
   // Idempotente: se já existe deal pra esse lead, retorna o existing.
   const [existing] = await db.select().from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
@@ -324,13 +327,14 @@ export async function createDeal(input: {
         leadId: input.leadId,
         stage: 'lead_no_comercial',
         proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
-        ownerUserId: input.ownerUserId,
+        ownerUserId: input.ownerUserId,       // pode ser null agora
       })
       .returning({ id: deals.id });
     await logActivity(tx, {
       dealId: created.id,
       kind: 'created',
-      actorUserId: input.source === 'auto_image' ? null : input.ownerUserId,
+      // Sem actor humano quando source e automatizada (ai_qualified, auto_image)
+      actorUserId: input.source === 'manual' ? input.ownerUserId : null,
       metadata: { source: input.source },
     });
     // Promove lead pra handed_off quando deal é criado (não regride 'lost').
@@ -422,6 +426,7 @@ export async function changeStage(input: {
   actorUserId: string;
   stage: DealStage;
   lossReason?: LossReason;
+  leadQualityFeedback?: LeadQualityFeedback;
 }): Promise<PublicDeal> {
   const [current] = await db.select().from(deals).where(eq(deals.id, input.id)).limit(1);
   if (!current) throw new HttpError(404, 'Deal not found');
@@ -431,6 +436,10 @@ export async function changeStage(input: {
   }
   if (input.stage === 'ganho' && current.proposalValue == null) {
     throw new HttpError(400, 'proposalValue is required before marking as ganho');
+  }
+  // NOVO: feedback obrigatório ao mover pra ganho/perdido
+  if ((input.stage === 'ganho' || input.stage === 'perdido') && !input.leadQualityFeedback) {
+    throw new HttpError(400, 'leadQualityFeedback is required when moving to ganho/perdido');
   }
   if (input.stage === current.stage) {
     return getDealById(input.id);
@@ -456,6 +465,13 @@ export async function changeStage(input: {
     }
     // loss_reason: set when going to perdido, clear otherwise
     patch.lossReason = input.stage === 'perdido' ? input.lossReason : null;
+
+    // NOVO: gravar feedback
+    if (input.leadQualityFeedback) {
+      patch.leadQualityFeedback = input.leadQualityFeedback;
+      patch.leadQualityFeedbackAt = new Date();
+      patch.leadQualityFeedbackBy = input.actorUserId;
+    }
 
     await tx.update(deals).set(patch).where(eq(deals.id, input.id));
 
@@ -489,6 +505,16 @@ export async function changeStage(input: {
         kind: 'lost',
         actorUserId: input.actorUserId,
         metadata: { reason: input.lossReason },
+      });
+    }
+
+    // NOVO: activity de quality_feedback
+    if (input.leadQualityFeedback) {
+      await logActivity(tx, {
+        dealId: input.id,
+        kind: 'quality_feedback',
+        actorUserId: input.actorUserId,
+        metadata: { feedback: input.leadQualityFeedback },
       });
     }
   });

@@ -19,6 +19,7 @@ import {
   timeseriesHandler,
   topCampaignsHandler,
 } from '../controllers/campaignsController';
+import { listUnqualifiedLeads, getCalibrationMetrics } from '../services/campaignsService';
 import {
   getHandler as continuousGetHandler,
   upsertHandler as continuousUpsertHandler,
@@ -59,5 +60,19 @@ router.post(
   uploadMediaHandler,
 );
 router.delete('/:id', ...adminOnly, deleteHandler);
+
+router.get('/:id/unqualified-leads', ...guard, async (req, res, next) => {
+  try {
+    const items = await listUnqualifiedLeads(req.params.id);
+    res.json({ items });
+  } catch (e) { next(e); }
+});
+
+router.get('/:id/calibration-metrics', ...guard, async (req, res, next) => {
+  try {
+    const metrics = await getCalibrationMetrics(req.params.id);
+    res.json(metrics);
+  } catch (e) { next(e); }
+});
 
 export default router;

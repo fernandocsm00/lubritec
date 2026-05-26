@@ -1,4 +1,5 @@
 import type { DealStage, LossReason, DealActivityKind } from './types';
+import type { LeadQualityFeedback } from '@shared/types';
 
 export function formatCurrency(value: number | null): string {
   if (value == null) return '—';
@@ -40,6 +41,11 @@ export const LOSS_REASON_LABELS: Record<LossReason, string> = {
   fora_do_perfil: 'Fora do perfil',
 };
 
+export const LEAD_QUALITY_FEEDBACK_LABELS: Record<LeadQualityFeedback, string> = {
+  good: 'Bom',
+  bad: 'Ruim',
+};
+
 export const ACTIVITY_ICONS: Record<DealActivityKind, string> = {
   created: '+',
   stage_changed: '↔',
@@ -49,6 +55,7 @@ export const ACTIVITY_ICONS: Record<DealActivityKind, string> = {
   lost: '❌',
   reactivated: '🔄',
   owner_changed: '👤',
+  quality_feedback: '⭐',
 };
 
 export function relativeTime(iso: string): string {

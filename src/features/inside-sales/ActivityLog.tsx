@@ -1,5 +1,6 @@
-import { ACTIVITY_ICONS, STAGE_LABELS, LOSS_REASON_LABELS, formatCurrency, relativeTime } from './helpers';
+import { ACTIVITY_ICONS, STAGE_LABELS, LOSS_REASON_LABELS, LEAD_QUALITY_FEEDBACK_LABELS, formatCurrency, relativeTime } from './helpers';
 import type { PublicDealActivity, DealStage, LossReason } from './types';
+import type { LeadQualityFeedback } from '@shared/types';
 
 interface Props {
   activities: PublicDealActivity[];
@@ -27,6 +28,11 @@ function describe(a: PublicDealActivity): string {
       return `${actor} reativou (estava em ${STAGE_LABELS[md.from as DealStage]})`;
     case 'owner_changed':
       return `${actor} mudou o dono`;
+    case 'quality_feedback': {
+      const fb = md.feedback as LeadQualityFeedback | undefined;
+      const label = fb ? LEAD_QUALITY_FEEDBACK_LABELS[fb] : '?';
+      return `${actor} avaliou a qualidade do lead: ${label}`;
+    }
   }
 }
 

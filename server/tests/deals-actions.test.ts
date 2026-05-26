@@ -149,7 +149,7 @@ describe('POST /api/deals/:id/stage', () => {
     const res = await request(app)
       .post(`/api/deals/${d.id}/stage`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ stage: 'perdido', lossReason: 'preco' });
+      .send({ stage: 'perdido', lossReason: 'preco', leadQualityFeedback: 'bad' });
     expect(res.status).toBe(200);
     expect(res.body.stage).toBe('perdido');
     expect(res.body.lossReason).toBe('preco');
@@ -179,7 +179,7 @@ describe('POST /api/deals/:id/stage', () => {
     const res = await request(app)
       .post(`/api/deals/${d.id}/stage`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ stage: 'ganho' });
+      .send({ stage: 'ganho', leadQualityFeedback: 'good' });
     expect(res.status).toBe(200);
     expect(res.body.closedAt).not.toBeNull();
 
