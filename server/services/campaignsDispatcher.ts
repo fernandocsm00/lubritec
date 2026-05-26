@@ -311,7 +311,14 @@ async function getOrCreateConversationForCampaign(
   campaignId: string,
   instanceId: string,
 ) {
-  const [existing] = await db.select().from(conversations).where(eq(conversations.phone, phone)).limit(1);
+  // Lookup tem que filtrar por (instance_id, phone) — alinhado com o webhook
+  // e com o UNIQUE index. Sem instanceId o dispatcher podia pegar conversa de
+  // outra instancia, causando mensagens cruzadas.
+  const [existing] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.instanceId, instanceId), eq(conversations.phone, phone)))
+    .limit(1);
   if (existing) return existing;
 
   const queue = await defaultCampaignQueue();

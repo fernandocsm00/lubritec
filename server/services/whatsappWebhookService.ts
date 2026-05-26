@@ -5,6 +5,7 @@ import type { InboundMessage } from '../lib/uazapiSchema';
 import type { ConversationQueue, LeadFlowStage, MessageKind, ProviderKind } from '@shared/types';
 import { recordTransition } from './stageTransitions';
 import { HttpError } from '../middleware/errorHandler';
+import { toCanonicalBrPhone } from '../lib/phoneBR';
 
 // ---------------------------------------------------------------------------
 // NormalizedInbound — provider-agnostic inbound message shape.
@@ -26,7 +27,12 @@ export interface NormalizedInbound {
 }
 
 function normalizePhone(raw: string): string {
-  // Remove tudo que não é dígito. Funciona pra "+55 11 9...", "5511...@s.whatsapp.net", "5511...@c.us", etc.
+  // Normaliza para a forma canonica BR (com 55 + 9 prefix). Inbound WhatsApp
+  // as vezes vem sem o 9 do celular -- sem isso geramos lead/conversation
+  // duplicados pro mesmo numero fisico. Ver phoneBR.ts.
+  const canonical = toCanonicalBrPhone(raw);
+  if (canonical) return canonical;
+  // Fallback pra digits-only quando nao parece BR (defensivo).
   return raw.replace(/\D/g, '');
 }
 

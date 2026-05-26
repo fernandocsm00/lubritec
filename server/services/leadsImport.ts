@@ -6,6 +6,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { ImportReport, Imbp, Segment } from '@shared/types';
 import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
+import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 
@@ -141,6 +142,8 @@ function normalizeHeader(h: string): string | null {
 }
 
 function normalizePhone(raw: string): string {
+  const canonical = toCanonicalBrPhone(raw);
+  if (canonical) return canonical;
   return raw.replace(/\D/g, '');
 }
 

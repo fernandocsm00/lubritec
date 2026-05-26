@@ -18,7 +18,7 @@ describe('createLead', () => {
     const lead = await createLead({ name: 'Empresa A', phone: '11999998888', cnpj: VALID_CNPJ_1 });
     expect(lead.status).toBe('frio');
     expect(lead.source).toBe('manual');
-    expect(lead.phone).toBe('11999998888');
+    expect(lead.phone).toBe('5511999998888'); // canonico E.164 BR com 55+9
     expect(lead.cnpj).toBe(VALID_CNPJ_1);
     expect(lead.id).toBeDefined();
   });
@@ -29,7 +29,7 @@ describe('createLead', () => {
       phone: '(11) 99999-7777',
       cnpj: '00.360.305/0001-04',
     });
-    expect(lead.phone).toBe('11999997777');
+    expect(lead.phone).toBe('5511999997777'); // canonico E.164 BR com 55+9
     expect(lead.cnpj).toBe(VALID_CNPJ_2);
   });
 
@@ -115,7 +115,7 @@ describe('parseLeadsCsv', () => {
     const { rows, rejected, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
     expect(missingHeaders).toEqual([]);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ name: 'Empresa A', phone: '11999990001', cnpj: VALID_CNPJ_1, email: 'a@x.com' });
+    expect(rows[0]).toMatchObject({ name: 'Empresa A', phone: '5511999990001', cnpj: VALID_CNPJ_1, email: 'a@x.com' });
     expect(rows[1].email).toBeNull();
     expect(rejected).toEqual([]);
   });
@@ -125,7 +125,7 @@ describe('parseLeadsCsv', () => {
     const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
     expect(rows[0]).toMatchObject({
       name: 'Empresa Maria',
-      phone: '11999990003',
+      phone: '5511999990003',
       cnpj: VALID_CNPJ_3,
     });
     expect(rejected).toEqual([]);

@@ -8,6 +8,7 @@ import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebh
 import { getMediaUrl } from './client';
 import type { MessageKind } from '@shared/types';
 import { updateTemplateStatus } from '../../hsmTemplateService';
+import { toCanonicalBrPhone } from '../../../lib/phoneBR';
 
 interface MetaInboundMessage {
   from: string;
@@ -125,7 +126,9 @@ async function processOneMessage(
   const normalized: NormalizedInbound = {
     instanceId,
     provider: 'meta_cloud',
-    leadPhone: msg.from,
+    // Normaliza pra forma canonica BR (com 55 + 9 prefix). Sem isso o mesmo
+    // numero pode virar leads/conversations duplicadas. Ver phoneBR.ts.
+    leadPhone: toCanonicalBrPhone(msg.from) ?? msg.from.replace(/\D/g, ''),
     leadName: contactName,
     kind,
     text: extractText(msg),

@@ -5,6 +5,7 @@ import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
 import { IMBP_TO_SEGMENT } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
+import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
 
@@ -12,7 +13,14 @@ import { recordTransition } from './stageTransitions';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Normaliza phone pra forma canonica BR (sempre com 55 e com 9 prefix em
+ * celulares). Se o input nao for um BR valido, faz fallback pra `digits only`
+ * (back-compat com leads internacionais ou casos de teste). Ver phoneBR.ts.
+ */
 function normalizePhone(raw: string): string {
+  const canonical = toCanonicalBrPhone(raw);
+  if (canonical) return canonical;
   return raw.replace(/\D/g, '');
 }
 
