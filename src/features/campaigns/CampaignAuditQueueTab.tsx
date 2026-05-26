@@ -12,18 +12,29 @@ interface Props { campaignId: string }
 
 export function CampaignAuditQueueTab({ campaignId }: Props) {
   const qc = useQueryClient();
+  // Lista geral da campanha — usada pra pending (qualquer um pode pegar) e contacted (historico).
   const { data: samples = [], isLoading } = useQuery({
     queryKey: ['audit-samples', campaignId],
     queryFn: () => listAuditSamples(campaignId),
   });
+  // Lista filtrada — apenas os assignments do usuario logado. mineOnly=true no backend.
+  // Evita exibir samples atribuidos a outros vendedores como "Atribuidos a mim".
+  const { data: myAssignedList = [] } = useQuery({
+    queryKey: ['audit-samples', campaignId, 'mine'],
+    queryFn: () => listAuditSamples(campaignId, { mineOnly: true }),
+  });
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['audit-samples', campaignId] });
+  };
 
   const claimMut = useMutation({
     mutationFn: () => claimAuditSample(campaignId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['audit-samples', campaignId] }),
+    onSuccess: invalidateAll,
   });
 
   const pending = samples.filter((s) => s.status === 'pending');
-  const myAssigned = samples.filter((s) => s.status === 'assigned');
+  const myAssigned = myAssignedList.filter((s) => s.status === 'assigned');
   const contacted = samples.filter((s) => s.status === 'contacted');
 
   return (

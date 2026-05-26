@@ -20,6 +20,14 @@ export async function enrollIfSampled(input: {
   forceSample?: boolean;
 }): Promise<void> {
   const sampled = input.forceSample ?? (Math.random() < AUDIT_SAMPLE_RATE);
+  // Log estruturado pra auditar "por que esse lead foi/nao foi pra fila".
+  // Sem isso, debugar reclamacao do tipo "lead X deveria ter sido amostrado"
+  // exige consulta direta no DB.
+  console.log(
+    `[audit-sample] leadId=${input.leadId} aiCallLogId=${input.aiCallLogId ?? 'null'} ` +
+    `campaignId=${input.campaignId ?? 'null'} sampled=${sampled}` +
+    (input.forceSample !== undefined ? ' (forced)' : ''),
+  );
   if (!sampled) return;
 
   try {
@@ -103,28 +111,41 @@ export async function listSamples(input: {
 /**
  * Pega o próximo sample pendente da fila e atribui ao usuário.
  * Returns null se a fila está vazia.
+ *
+ * SELECT FOR UPDATE SKIP LOCKED: garante que 2 vendedores chamando ao mesmo
+ * tempo NAO peguem o mesmo sample. O primeiro adquire row-lock; o segundo
+ * pula essa linha e tenta a proxima. Sem isso, ambos passariam pelo SELECT
+ * e o UPDATE do segundo sobrescreveria silenciosamente o assignment do
+ * primeiro — bug grave numa equipe de 5 vendedores em hora de pico.
+ *
+ * Envolvemos em transacao explicita pra que o lock dure ate o UPDATE.
  */
 export async function claimNextSample(input: {
   userId: string;
   campaignId?: string;
 }): Promise<PublicAuditSample | null> {
-  const conds = [eq(auditSampleAssignments.status, 'pending')];
-  if (input.campaignId) conds.push(eq(auditSampleAssignments.campaignId, input.campaignId));
+  const claimedId = await db.transaction(async (tx) => {
+    const conds = [eq(auditSampleAssignments.status, 'pending')];
+    if (input.campaignId) conds.push(eq(auditSampleAssignments.campaignId, input.campaignId));
 
-  const [row] = await db.select().from(auditSampleAssignments)
-    .where(and(...conds))
-    .orderBy(auditSampleAssignments.sampledAt)
-    .limit(1);
-  if (!row) return null;
+    const [row] = await tx.select().from(auditSampleAssignments)
+      .where(and(...conds))
+      .orderBy(auditSampleAssignments.sampledAt)
+      .limit(1)
+      .for('update', { skipLocked: true });
+    if (!row) return null;
 
-  await db.update(auditSampleAssignments).set({
-    assignedTo: input.userId,
-    assignedAt: new Date(),
-    status: 'assigned',
-  }).where(eq(auditSampleAssignments.id, row.id));
+    await tx.update(auditSampleAssignments).set({
+      assignedTo: input.userId,
+      assignedAt: new Date(),
+      status: 'assigned',
+    }).where(eq(auditSampleAssignments.id, row.id));
+    return row.id;
+  });
+  if (!claimedId) return null;
 
   const list = await listSamples({ assignedToMe: input.userId });
-  return list.find((s) => s.id === row.id) ?? null;
+  return list.find((s) => s.id === claimedId) ?? null;
 }
 
 /**

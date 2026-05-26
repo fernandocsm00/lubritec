@@ -248,8 +248,13 @@ export function useUploadMedia() {
 
 // ── Audit queue APIs ──────────────────────────────────────────────────────────
 
-export async function listAuditSamples(campaignId: string): Promise<PublicAuditSample[]> {
-  const res = await fetch(`/api/audit/samples?campaignId=${campaignId}`, { credentials: 'include' });
+export async function listAuditSamples(
+  campaignId: string,
+  opts: { mineOnly?: boolean } = {},
+): Promise<PublicAuditSample[]> {
+  const params = new URLSearchParams({ campaignId });
+  if (opts.mineOnly) params.set('mineOnly', 'true');
+  const res = await fetch(`/api/audit/samples?${params.toString()}`, { credentials: 'include' });
   const data = await res.json();
   return data.items;
 }
