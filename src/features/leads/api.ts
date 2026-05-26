@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
-import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage, LeadQualityFeedback } from '@shared/types';
+import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
+
+export interface LeadExtendedFields {
+  phone2?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  imbp?: Imbp | null;
+  segment?: Segment | null;
+}
 
 export interface ListParams {
   q?: string;
@@ -57,7 +66,7 @@ export function useCreateLead() {
       cnpj: string;
       email?: string | null;
       notes?: string | null;
-    }) => api<PublicLead>('/leads', { method: 'POST', body: JSON.stringify(input) }),
+    } & LeadExtendedFields) => api<PublicLead>('/leads', { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   });
 }
@@ -73,7 +82,7 @@ export function useUpdateLead() {
       status?: LeadStatus;
       cnpj?: string;
       phone?: string;
-    }) => {
+    } & LeadExtendedFields) => {
       const { id, ...body } = input;
       return api<PublicLead>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
     },

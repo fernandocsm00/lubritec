@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES, LEAD_QUALITY_FEEDBACK } from '../../shared/types';
+import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES, LEAD_QUALITY_FEEDBACK, IMBP_VALUES, SEGMENT_VALUES } from '../../shared/types';
 import { createLead, listLeads, updateLead, deleteLead, markLeadLost, getLeadById, closeLeadNoDeal } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
@@ -23,16 +23,35 @@ const cnpjInput = z
   .transform((v) => v.replace(/\D/g, ''))
   .pipe(z.string().length(14, 'CNPJ deve ter 14 dígitos'));
 
+// Telefone secundario: vazio/null aceito; quando enviado precisa ter 8+ digitos.
+const phone2Input = z
+  .string()
+  .transform((v) => v.replace(/\D/g, ''))
+  .refine((v) => v === '' || v.length >= 8, 'Telefone 2 muito curto')
+  .transform((v) => (v === '' ? null : v))
+  .nullable();
+
+const extendedFields = {
+  phone2: phone2Input.optional(),
+  address1: z.string().max(255).nullable().optional(),
+  address2: z.string().max(255).nullable().optional(),
+  city: z.string().max(120).nullable().optional(),
+  imbp: z.enum(IMBP_VALUES).nullable().optional(),
+  segment: z.enum(SEGMENT_VALUES).nullable().optional(),
+};
+
 const editableCoreCreate = {
   name: z.string().min(2).max(120),
   email: z.string().email().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  ...extendedFields,
 };
 
 const editableCoreUpdate = {
   name: z.string().min(1).max(120),
   email: z.string().email().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  ...extendedFields,
 };
 
 const createSchema = z.object({

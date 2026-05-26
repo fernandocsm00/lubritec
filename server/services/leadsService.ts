@@ -2,7 +2,8 @@ import { db } from '../db/client';
 import { leads, deals, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
+import { IMBP_TO_SEGMENT } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -31,9 +32,15 @@ function toPublic(row: typeof leads.$inferSelect & {
     id: row.id,
     name: row.name,
     phone: row.phone,
+    phone2: row.phone2,
     cnpj: row.cnpj,
     email: row.email,
     notes: row.notes,
+    address1: row.address1,
+    address2: row.address2,
+    city: row.city,
+    imbp: row.imbp,
+    segment: row.segment,
     status: row.status,
     source: row.source,
     flowStage: row.flowStage,
@@ -42,6 +49,20 @@ function toPublic(row: typeof leads.$inferSelect & {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Resolve segmento a partir do par (imbp, segment) recebido do client. Se IMBP
+ * foi informado, segmento eh sempre derivado dele (ignora valor enviado pra
+ * garantir consistencia). Se so segmento veio, usa o valor recebido. Se nada
+ * veio, retorna null.
+ */
+function resolveSegment(
+  imbp: Imbp | null | undefined,
+  segmentInput: Segment | null | undefined,
+): Segment | null {
+  if (imbp) return IMBP_TO_SEGMENT[imbp];
+  return segmentInput ?? null;
 }
 
 /**
@@ -60,9 +81,15 @@ function computeInitialStage(phone: string | null | undefined): 'incomplete' | '
 export async function createLead(input: {
   name: string;
   phone?: string | null;
+  phone2?: string | null;
   cnpj: string;
   email?: string | null;
   notes?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  imbp?: Imbp | null;
+  segment?: Segment | null;
 }): Promise<PublicLead> {
   // Phone agora é opcional pra suportar leads CNPJ-only (vão pra enriquecimento).
   const phoneRaw = input.phone ?? '';
@@ -70,12 +97,19 @@ export async function createLead(input: {
   if (phone !== null && phone.length < 8) {
     throw new HttpError(400, 'Phone must have at least 8 digits');
   }
+  const phone2Raw = input.phone2 ?? '';
+  const phone2 = phone2Raw ? normalizePhone(phone2Raw) : null;
+  if (phone2 !== null && phone2.length < 8) {
+    throw new HttpError(400, 'Phone 2 must have at least 8 digits');
+  }
 
   const cnpj = normalizeCnpj(input.cnpj);
   if (!isValidCnpjFormat(cnpj)) throw new HttpError(400, 'CNPJ inválido');
 
   const [existing] = await db.select().from(leads).where(eq(leads.cnpj, cnpj)).limit(1);
   if (existing) throw new HttpError(409, 'CNPJ já cadastrado');
+
+  const segment = resolveSegment(input.imbp ?? null, input.segment ?? null);
 
   // Race fix: if two requests pass the pre-check concurrently, the second insert
   // trips the unique constraint on cnpj. Translate the pg unique_violation
@@ -86,9 +120,15 @@ export async function createLead(input: {
       .values({
         name: input.name,
         phone,
+        phone2,
         cnpj,
         email: input.email ?? null,
         notes: input.notes ?? null,
+        address1: input.address1 ?? null,
+        address2: input.address2 ?? null,
+        city: input.city ?? null,
+        imbp: input.imbp ?? null,
+        segment,
         flowStage: computeInitialStage(phone),
       })
       .returning();
@@ -134,6 +174,13 @@ export async function updateLead(input: {
   // Phone é editável APENAS se o lead ainda não tem phone (caso de leads
   // CNPJ-only do CSV aguardando enriquecimento). Uma vez setado, imutável.
   phone?: string;
+  // Extended fields: livres pra editar a qualquer momento.
+  phone2?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  imbp?: Imbp | null;
+  segment?: Segment | null;
 }): Promise<PublicLead> {
   const { id, ...rest } = input;
   const patch: Partial<NewLead> = { updatedAt: new Date() };
@@ -141,6 +188,28 @@ export async function updateLead(input: {
   if (rest.email !== undefined) patch.email = rest.email;
   if (rest.notes !== undefined) patch.notes = rest.notes;
   if (rest.status !== undefined) patch.status = rest.status;
+  if (rest.address1 !== undefined) patch.address1 = rest.address1;
+  if (rest.address2 !== undefined) patch.address2 = rest.address2;
+  if (rest.city !== undefined) patch.city = rest.city;
+
+  if (rest.phone2 !== undefined) {
+    if (rest.phone2 === null || rest.phone2 === '') {
+      patch.phone2 = null;
+    } else {
+      const p2 = normalizePhone(rest.phone2);
+      if (p2.length < 8) throw new HttpError(400, 'Phone 2 must have at least 8 digits');
+      patch.phone2 = p2;
+    }
+  }
+
+  // Se IMBP veio no payload, segmento eh derivado dele (overrides qualquer
+  // segment input). Se so segment veio, usa o valor recebido.
+  if (rest.imbp !== undefined) {
+    patch.imbp = rest.imbp;
+    patch.segment = rest.imbp ? IMBP_TO_SEGMENT[rest.imbp] : (rest.segment ?? null);
+  } else if (rest.segment !== undefined) {
+    patch.segment = rest.segment;
+  }
 
   // Carrega o estado atual uma vez se vamos validar phone OU cnpj.
   const needsCurrent = rest.cnpj !== undefined || rest.phone !== undefined;

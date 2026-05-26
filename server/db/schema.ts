@@ -30,6 +30,8 @@ import {
   PROVIDER_KINDS,
   HSM_CATEGORIES,
   HSM_STATUSES,
+  IMBP_VALUES,
+  SEGMENT_VALUES,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -82,9 +84,15 @@ export const leads = pgTable('leads', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   phone: text('phone'),  // nullable: leads CNPJ-only aguardam enriquecimento
+  phone2: text('phone2'), // telefone secundario, usado como fallback no dispatcher
   cnpj: text('cnpj').unique(),
   email: text('email'),
   notes: text('notes'),
+  address1: text('address1'),
+  address2: text('address2'),
+  city: text('city'),
+  imbp: text('imbp', { enum: IMBP_VALUES }),
+  segment: text('segment', { enum: SEGMENT_VALUES }),
   status: text('status', { enum: LEAD_STATUSES }).notNull().default('frio'),
   source: text('source', { enum: LEAD_SOURCES }).notNull().default('manual'),
   flowStage: text('flow_stage', { enum: LEAD_FLOW_STAGES }).notNull().default('incomplete'),

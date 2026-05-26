@@ -34,6 +34,61 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const LEAD_SOURCES = ['manual', 'csv', 'whatsapp'] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
+// ── Taxonomia comercial Lubritec ─────────────────────────────────────────────
+// IMBP = "Linha de Negocio do Cliente" (codigo interno).
+// Segment = agrupamento de IMBPs. Cada IMBP pertence a exatamente 1 segmento.
+
+export const IMBP_VALUES = [
+  '000011-PVL-REVENDA',
+  '000012-MCO-REVENDA',
+  '000013-CVL-REVENDA',
+  '000014-ATACADISTA',
+  '000015-CVL-AGRI-REVENDA',
+  '000025-CVL-CONSUMO',
+  '000026-INDUSTRIA',
+  '000028-CVL-AGRI',
+] as const;
+export type Imbp = (typeof IMBP_VALUES)[number];
+
+export const IMBP_LABELS: Record<Imbp, string> = {
+  '000011-PVL-REVENDA':      '000011-PVL-REVENDA — Carros, autopecas, oficinas, postos',
+  '000012-MCO-REVENDA':      '000012-MCO-REVENDA — Motos, moto-pecas, oficinas de motos',
+  '000013-CVL-REVENDA':      '000013-CVL-REVENDA — Caminhoes, oficinas, concessionarias',
+  '000014-ATACADISTA':       '000014-ATACADISTA — Distribuidores, varejo',
+  '000015-CVL-AGRI-REVENDA': '000015-CVL-AGRI-REVENDA — Tratores, pesados, cooperativas (revenda)',
+  '000025-CVL-CONSUMO':      '000025-CVL-CONSUMO — Frotas, onibus, vans, mineradoras, construtoras',
+  '000026-INDUSTRIA':        '000026-INDUSTRIA — Maquinas industriais',
+  '000028-CVL-AGRI':         '000028-CVL-AGRI — Maquinarios agricolas (consumidor final)',
+};
+
+export const SEGMENT_VALUES = ['PVL', 'CVL', 'MCO', 'IND', 'ATA'] as const;
+export type Segment = (typeof SEGMENT_VALUES)[number];
+
+export const SEGMENT_LABELS: Record<Segment, string> = {
+  PVL: 'PVL — Veiculos Automotores',
+  CVL: 'CVL — Caminhoes e Linha Pesada',
+  MCO: 'MCO — Motocicletas',
+  IND: 'IND — Industrias',
+  ATA: 'ATA — Atacadistas',
+};
+
+/** Mapeamento IMBP → Segmento. Conforme taxonomia comercial. */
+export const IMBP_TO_SEGMENT: Record<Imbp, Segment> = {
+  '000011-PVL-REVENDA':      'PVL',
+  '000012-MCO-REVENDA':      'MCO',
+  '000013-CVL-REVENDA':      'CVL',
+  '000014-ATACADISTA':       'ATA',
+  '000015-CVL-AGRI-REVENDA': 'CVL',
+  '000025-CVL-CONSUMO':      'CVL',
+  '000026-INDUSTRIA':        'IND',
+  '000028-CVL-AGRI':         'CVL',
+};
+
+export function deriveSegmentFromImbp(imbp: Imbp | null | undefined): Segment | null {
+  if (!imbp) return null;
+  return IMBP_TO_SEGMENT[imbp] ?? null;
+}
+
 /**
  * Etapas do fluxo macro do lead (orthogonal ao `status` quente/morno/frio).
  *
@@ -71,9 +126,15 @@ export interface PublicLead {
   id: string;
   name: string;
   phone: string | null;
+  phone2: string | null;
   cnpj: string | null;
   email: string | null;
   notes: string | null;
+  address1: string | null;
+  address2: string | null;
+  city: string | null;
+  imbp: Imbp | null;
+  segment: Segment | null;
   status: LeadStatus;
   source: LeadSource;
   flowStage: LeadFlowStage;
