@@ -746,3 +746,48 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
     totalWonValue,
   };
 }
+
+export async function listUnqualifiedLeads(campaignId: string): Promise<Array<{
+  leadId: string;
+  leadName: string;
+  leadPhone: string | null;
+  leadCnpj: string | null;
+  decidedAt: string;
+  decisionReason: string | null;
+  ageInDays: number;
+  reattemptCount: number;
+}>> {
+  // Leads que esta campanha disparou + IA marcou não qualificado.
+  // JOIN: campaign_recipients × ai_call_logs onde qualified=false.
+  const result = await db.execute(sql`
+    SELECT
+      l.id as lead_id,
+      l.name as lead_name,
+      l.phone,
+      l.cnpj,
+      acl.created_at as decided_at,
+      acl.decision_reason,
+      EXTRACT(DAY FROM (now() - acl.created_at))::int as age_days,
+      (SELECT COUNT(*)::int FROM campaign_recipients cr2 WHERE cr2.lead_id = l.id) as reattempt_count
+    FROM ai_call_logs acl
+    INNER JOIN leads l ON l.id = acl.lead_id
+    INNER JOIN campaign_recipients cr ON cr.lead_id = l.id
+    WHERE cr.campaign_id = ${campaignId}
+      AND acl.qualified = false
+      AND acl.campaign_id = ${campaignId}
+    ORDER BY acl.created_at DESC
+    LIMIT 500
+  `);
+  type Row = { lead_id: string; lead_name: string; phone: string | null; cnpj: string | null;
+    decided_at: Date | string; decision_reason: string | null; age_days: number; reattempt_count: number };
+  return (result.rows as Row[]).map((r) => ({
+    leadId: r.lead_id,
+    leadName: r.lead_name,
+    leadPhone: r.phone,
+    leadCnpj: r.cnpj,
+    decidedAt: new Date(r.decided_at).toISOString(),
+    decisionReason: r.decision_reason,
+    ageInDays: r.age_days,
+    reattemptCount: r.reattempt_count,
+  }));
+}
