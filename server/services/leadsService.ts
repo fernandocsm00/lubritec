@@ -1,8 +1,8 @@
 import { db } from '../db/client';
-import { leads, type NewLead } from '../db/schema';
+import { leads, deals, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback } from '@shared/types';
 import { normalizeCnpj, isValidCnpjFormat } from '../lib/cnpj';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -365,4 +365,39 @@ export async function listLeads(params: {
     page,
     pageSize: PAGE_SIZE,
   };
+}
+
+/**
+ * Encerra um lead sem criar deal. Captura feedback de calibração da IA.
+ * Lead vai pra flowStage='lost'. Idempotente: se já lost, atualiza campos.
+ */
+export async function closeLeadNoDeal(input: {
+  leadId: string;
+  actorUserId: string;
+  reason: string;
+  quality: LeadQualityFeedback;
+}): Promise<void> {
+  // Rejeita se já existe deal — caminho errado, deveria ter usado changeStage.
+  const [existingDeal] = await db.select().from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
+  if (existingDeal) {
+    throw new HttpError(400, 'Lead already has a deal — use deal stage change instead');
+  }
+
+  await db.update(leads).set({
+    flowStage: 'lost',
+    closedNoDealAt: new Date(),
+    closedNoDealBy: input.actorUserId,
+    closedNoDealReason: input.reason,
+    closedNoDealQuality: input.quality,
+    updatedAt: new Date(),
+  }).where(eq(leads.id, input.leadId));
+
+  // Audit trail
+  await recordTransition({
+    leadId: input.leadId,
+    fromStage: null,
+    toStage: 'lost',
+    source: 'manual_lost',
+    metadata: { reason: input.reason, quality: input.quality, by: input.actorUserId },
+  });
 }

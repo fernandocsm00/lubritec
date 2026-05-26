@@ -248,3 +248,39 @@ describe('importLeadsFromCsv', () => {
     await expect(importLeadsFromCsv(Buffer.from(csv))).rejects.toMatchObject({ status: 400 });
   });
 });
+
+import { closeLeadNoDeal } from '../services/leadsService';
+
+describe('closeLeadNoDeal', () => {
+  let leadId: string; let userId: string;
+  beforeEach(async () => {
+    const [u] = await db.insert((await import('../db/schema')).users).values({
+      email: `closeur-${Date.now()}@x.com`, name: 'V', role: 'comercial', passwordHash: 'x',
+    }).returning({ id: (await import('../db/schema')).users.id });
+    userId = u.id;
+    const [l] = await db.insert((await import('../db/schema')).leads).values({ name: 'Lead Close', phone: '5511000000001' })
+      .returning({ id: (await import('../db/schema')).leads.id });
+    leadId = l.id;
+  });
+
+  it('encerra lead com feedback bad', async () => {
+    await closeLeadNoDeal({ leadId, actorUserId: userId, reason: 'Cliente não quer mais', quality: 'bad' });
+    const schema = await import('../db/schema');
+    const { eq } = await import('drizzle-orm');
+    const [row] = await db.select().from(schema.leads).where(eq(schema.leads.id, leadId)).limit(1);
+    expect(row.flowStage).toBe('lost');
+    expect(row.closedNoDealQuality).toBe('bad');
+    expect(row.closedNoDealBy).toBe(userId);
+    expect(row.closedNoDealAt).toBeInstanceOf(Date);
+    expect(row.closedNoDealReason).toBe('Cliente não quer mais');
+  });
+
+  it('rejeita se lead já tem deal', async () => {
+    // criar deal primeiro
+    const { createDeal } = await import('../services/dealsService');
+    await createDeal({ leadId, ownerUserId: userId, source: 'manual', proposalValue: 100 });
+    await expect(
+      closeLeadNoDeal({ leadId, actorUserId: userId, reason: 'x', quality: 'good' }),
+    ).rejects.toThrow(/already has a deal/i);
+  });
+});

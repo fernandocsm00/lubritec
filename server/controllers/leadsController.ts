@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES } from '../../shared/types';
-import { createLead, listLeads, updateLead, deleteLead, markLeadLost, getLeadById } from '../services/leadsService';
+import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES, LEAD_QUALITY_FEEDBACK } from '../../shared/types';
+import { createLead, listLeads, updateLead, deleteLead, markLeadLost, getLeadById, closeLeadNoDeal } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
 import {
@@ -193,5 +193,24 @@ export async function markLostHandler(req: Request, res: Response, next: NextFun
     const body = lostBody.parse(req.body ?? {});
     const lead = await markLeadLost({ id, reason: body.reason ?? null });
     res.json(lead);
+  } catch (e) { next(e); }
+}
+
+const closeNoDealBody = z.object({
+  reason: z.string().trim().min(3).max(500),
+  quality: z.enum(LEAD_QUALITY_FEEDBACK),
+});
+
+export async function closeNoDealHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const data = closeNoDealBody.parse(req.body);
+    await closeLeadNoDeal({
+      leadId: id,
+      actorUserId: req.user!.userId,
+      reason: data.reason,
+      quality: data.quality,
+    });
+    res.status(204).send();
   } catch (e) { next(e); }
 }
