@@ -1,11 +1,20 @@
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { CampaignFunnel as TFunnel } from './types';
 import { formatCurrency, formatPercent, LOSS_REASON_LABELS } from './helpers';
+import { fetchCalibrationMetrics } from './api';
 
-interface Props { funnel: TFunnel }
+interface Props { funnel: TFunnel; campaignId?: string }
 
-export function CampaignFunnel({ funnel }: Props) {
+export function CampaignFunnel({ funnel, campaignId }: Props) {
   const total = funnel.totalRecipients;
   const lostByReasonEntries = Object.entries(funnel.lostByReason).filter(([, n]) => n > 0);
+
+  const { data: cal } = useQuery({
+    queryKey: ['calibration', campaignId],
+    queryFn: () => fetchCalibrationMetrics(campaignId!),
+    enabled: !!campaignId,
+  });
 
   return (
     <div className="space-y-4">
@@ -48,6 +57,61 @@ export function CampaignFunnel({ funnel }: Props) {
             </div>
           )}
         </div>
+      )}
+
+      {campaignId && (
+        <Card>
+          <CardHeader><CardTitle>Calibração da IA</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {!cal ? <p>—</p> : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Qualificados pela IA</p>
+                    <p className="text-xl font-medium">{cal.totalQualifiedByAi}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Rejeitados pela IA</p>
+                    <p className="text-xl font-medium">{cal.totalNotQualifiedByAi}</p>
+                  </div>
+                </div>
+                <hr />
+                <div>
+                  <p className="text-xs text-muted-foreground">Precisão (feedback dos qualificados)</p>
+                  {cal.feedbackGivenCount === 0 ? (
+                    <p className="text-sm italic text-muted-foreground">
+                      Sem dados ainda — precisa de feedback dos vendedores no Kanban.
+                    </p>
+                  ) : (
+                    <p className="text-xl font-medium">
+                      {(cal.precision! * 100).toFixed(0)}%
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({cal.feedbackGoodCount}/{cal.feedbackGivenCount} marcados bons)
+                      </span>
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Recall estimado (via fila cega)</p>
+                  {cal.auditContacted === 0 ? (
+                    <p className="text-sm italic text-muted-foreground">
+                      Sem auditoria ainda — vendedores precisam contatar leads na fila cega.
+                    </p>
+                  ) : cal.estimatedRecall == null ? (
+                    <p className="text-sm italic text-muted-foreground">Insuficiente pra estimar.</p>
+                  ) : (
+                    <p className="text-xl font-medium">
+                      {(cal.estimatedRecall * 100).toFixed(0)}%
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({cal.auditGood} falsos negativos em {cal.auditContacted} contatados)
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

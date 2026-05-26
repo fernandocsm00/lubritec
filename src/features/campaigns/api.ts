@@ -12,7 +12,7 @@ import type {
   CampaignsTimeseries,
   TopCampaignsResponse,
 } from './types';
-import type { PublicAuditSample, LeadQualityFeedback } from '@shared/types';
+import type { PublicAuditSample, LeadQualityFeedback, CampaignCalibrationMetrics } from '@shared/types';
 
 export type ReportPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
 export type CampaignKind = 'all' | 'one_shot' | 'continuous';
@@ -280,6 +280,12 @@ export async function recordAuditOutcome(input: {
     body: JSON.stringify({ outcome: input.outcome, notes: input.notes }),
   });
   return res.json();
+}
+
+// ── Calibration metrics API ───────────────────────────────────────────────────
+
+export async function fetchCalibrationMetrics(campaignId: string): Promise<CampaignCalibrationMetrics> {
+  return api<CampaignCalibrationMetrics>(`/campaigns/${campaignId}/calibration-metrics`);
 }
 
 // ── Unqualified leads API ─────────────────────────────────────────────────────

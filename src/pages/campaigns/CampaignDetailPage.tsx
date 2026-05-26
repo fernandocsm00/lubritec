@@ -118,7 +118,7 @@ export default function CampaignDetailPage() {
         <TabsContent value="funnel">
           <div className="rounded-lg border border-border bg-card p-4 mb-4">
             <h3 className="text-sm font-semibold mb-3">Funil ROI</h3>
-            <CampaignFunnel funnel={data.funnel} />
+            <CampaignFunnel funnel={data.funnel} campaignId={id} />
           </div>
 
           <div className="rounded-lg border border-border bg-card p-4 mb-4">
