@@ -72,7 +72,7 @@ export function ImportCsvDialog({
     >
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Importar leads (CSV)</DialogTitle>
+          <DialogTitle>Importar leads (CSV ou XLSX)</DialogTitle>
         </DialogHeader>
 
         {!report ? (
@@ -89,12 +89,12 @@ export function ImportCsvDialog({
                 <>
                   <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Arraste um arquivo .csv ou clique para selecionar
+                    Arraste um arquivo .csv ou .xlsx, ou clique para selecionar
                   </p>
                   <input
                     id="csv-input"
                     type="file"
-                    accept=".csv,text/csv,application/vnd.ms-excel"
+                    accept=".csv,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     className="sr-only"
                     onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   />
@@ -107,7 +107,9 @@ export function ImportCsvDialog({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Colunas reconhecidas: <strong>nome, cnpj</strong> (obrigatórios), telefone, email, observacoes. Tamanho máx: 5MB.
+              Formatos aceitos: <strong>.csv</strong> ou <strong>.xlsx</strong> (Excel). Tamanho máx: 5MB.
+              <br />
+              Colunas reconhecidas: <strong>nome, cnpj</strong> (obrigatórios), telefone, telefone 2, endereço, cidade, IMBP, segmento, email, observações.
               <br />
               A validação de CNPJ na Receita Federal acontece em background após o import (não bloqueia mais a importação).
               Leads com CNPJ inativo ou inexistente aparecem com badge em <Link to="/cadastros" className="underline text-primary">Cadastros</Link>.

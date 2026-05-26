@@ -177,19 +177,34 @@ describe('parseLeadsCsv', () => {
     expect(rows[0].name).toBe('Alice');
   });
 
-  it('rejeita arquivo XLSX disfarcado como .csv com mensagem clara', async () => {
-    // XLSX moderno = ZIP (magic bytes "PK\x03\x04")
-    const fakeXlsx = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00]);
-    await expect(parseLeadsCsv(fakeXlsx)).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringMatching(/Excel|XLSX|CSV/i),
+  it('aceita arquivo XLSX nativamente (converte primeira planilha em CSV)', async () => {
+    // Cria um XLSX in-memory com 1 header + 1 linha
+    const ExcelJSImpl = (await import('exceljs')).default;
+    const wb = new ExcelJSImpl.Workbook();
+    const ws = wb.addWorksheet('Sheet1');
+    ws.addRow(['nome', 'telefone', 'cnpj']);
+    // Importante: forca o CNPJ a ser STRING (nao number) pra preservar leading zeros
+    const row = ws.addRow(['Empresa XLSX', '11999991234', VALID_CNPJ_2]);
+    row.getCell(3).numFmt = '@'; // text format
+    const arrayBuf = await wb.xlsx.writeBuffer();
+    const buf = Buffer.from(arrayBuf as ArrayBuffer);
+
+    const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
+    expect(missingHeaders).toEqual([]);
+    expect(rejected).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      name: 'Empresa XLSX',
+      phone: '5511999991234', // canonico
+      cnpj: VALID_CNPJ_2,
     });
   });
 
-  it('rejeita arquivo XLS antigo (BIFF) disfarcado como .csv', async () => {
+  it('rejeita arquivo XLS antigo (BIFF) com mensagem orientando salvar como XLSX/CSV', async () => {
     const fakeXls = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
     await expect(parseLeadsCsv(fakeXls)).rejects.toMatchObject({
       status: 400,
+      message: expect.stringMatching(/XLS.*pré-2007|XLSX|CSV/i),
     });
   });
 });

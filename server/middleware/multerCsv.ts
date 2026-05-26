@@ -3,9 +3,11 @@ import type { Request } from 'express';
 
 const ALLOWED_MIMES = new Set([
   'text/csv',
-  'application/vnd.ms-excel',
+  'application/vnd.ms-excel',                                                // .xls / generic Excel
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',       // .xlsx
   'application/csv',
   'text/plain',
+  'application/octet-stream',  // navegadores as vezes mandam isso pra .xlsx
 ]);
 
 export const multerCsv = multer({

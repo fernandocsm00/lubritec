@@ -1,4 +1,5 @@
 import { parse } from 'csv-parse/sync';
+import ExcelJS from 'exceljs';
 import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -136,6 +137,62 @@ function detectDelimiter(buf: Buffer): ',' | ';' {
   return (first.match(/;/g)?.length ?? 0) > (first.match(/,/g)?.length ?? 0) ? ';' : ',';
 }
 
+/**
+ * Escapa um valor pra CSV (RFC 4180): se contem virgula, aspas duplas ou
+ * quebra de linha, embrulha em aspas e duplica as aspas internas.
+ */
+function csvEscape(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/**
+ * Converte a primeira planilha de um workbook XLSX para uma string CSV.
+ * Preserva o texto formatado das celulas (cell.text) pra evitar perder
+ * leading zeros (CNPJ "00.360..." vira string textual, nao numero).
+ *
+ * Para celulas vazias usa string vazia. Linhas totalmente vazias sao puladas.
+ */
+async function xlsxToCsv(buf: Buffer): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as unknown as ArrayBuffer);
+  const ws = wb.worksheets[0];
+  if (!ws) return Buffer.from('');
+
+  const lines: string[] = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    // row.values inclui um undefined no indice 0 (ExcelJS quirk).
+    const raw = row.values as Array<unknown>;
+    // Determina o ultimo indice nao-vazio pra nao trailing-comma demais.
+    let lastNonEmpty = 0;
+    for (let i = 1; i < raw.length; i++) {
+      const v = raw[i];
+      if (v != null && String(v).trim() !== '') lastNonEmpty = i;
+    }
+    if (lastNonEmpty === 0) return; // linha vazia
+
+    const cells: string[] = [];
+    for (let i = 1; i <= lastNonEmpty; i++) {
+      const cell = row.getCell(i);
+      // cell.text respeita o numFmt (preserva CNPJ "00.360..." como string).
+      // Fallback pra value.toString() quando text vazio mas value existe.
+      let text = cell.text ?? '';
+      if (!text && cell.value != null) {
+        if (typeof cell.value === 'object' && 'result' in (cell.value as object)) {
+          text = String((cell.value as { result: unknown }).result ?? '');
+        } else {
+          text = String(cell.value);
+        }
+      }
+      cells.push(csvEscape(text));
+    }
+    lines.push(cells.join(','));
+  });
+  return Buffer.from(lines.join('\n'), 'utf-8');
+}
+
 function normalizeHeader(h: string): string | null {
   const key = h.trim().toLowerCase().replace(/\s+/g, '_');
   return HEADER_ALIASES[key] ?? null;
@@ -152,20 +209,23 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   rejected: { line: number; reason: string }[];
   missingHeaders: string[];
 }> {
-  // Detecta arquivos binarios comuns que usuarios as vezes sobem renomeados
-  // como ".csv" (XLSX, XLS, ZIP genericos). Devolve mensagem clara em vez de
-  // deixar o csv-parse explodir com 500 Internal Server Error.
-  // XLSX/XLS modernos sao ZIP -> magic bytes 50 4B 03 04 ("PK\x03\x04").
-  // XLS antigo (BIFF) comeca com D0 CF 11 E0.
-  if (buf.length >= 4) {
-    const isZipXlsx = buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
-    const isOldXls = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
-    if (isZipXlsx || isOldXls) {
-      throw new HttpError(
-        400,
-        'Arquivo parece ser Excel (XLSX/XLS), não CSV. No Excel, use "Salvar como" → "CSV UTF-8 (delimitado por vírgulas)" e tente novamente.',
-      );
+  // XLSX moderno: ZIP container, magic bytes "PK\x03\x04". Convertemos a
+  // primeira planilha pra CSV em memoria antes de seguir o fluxo normal.
+  if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) {
+    try {
+      buf = await xlsxToCsv(buf);
+    } catch (err) {
+      throw new HttpError(400, `Erro ao ler arquivo XLSX: ${err instanceof Error ? err.message : 'formato inválido'}`);
     }
+  }
+
+  // XLS legado (BIFF, pre-2007): nao suportado pelo exceljs. Pedimos pro
+  // usuario salvar como XLSX ou CSV.
+  if (buf.length >= 4 && buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0) {
+    throw new HttpError(
+      400,
+      'Formato XLS (Excel pré-2007) não é suportado. Salve como XLSX ou CSV no Excel e tente novamente.',
+    );
   }
 
   if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
