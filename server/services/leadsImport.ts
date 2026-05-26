@@ -152,6 +152,22 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   rejected: { line: number; reason: string }[];
   missingHeaders: string[];
 }> {
+  // Detecta arquivos binarios comuns que usuarios as vezes sobem renomeados
+  // como ".csv" (XLSX, XLS, ZIP genericos). Devolve mensagem clara em vez de
+  // deixar o csv-parse explodir com 500 Internal Server Error.
+  // XLSX/XLS modernos sao ZIP -> magic bytes 50 4B 03 04 ("PK\x03\x04").
+  // XLS antigo (BIFF) comeca com D0 CF 11 E0.
+  if (buf.length >= 4) {
+    const isZipXlsx = buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    const isOldXls = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+    if (isZipXlsx || isOldXls) {
+      throw new HttpError(
+        400,
+        'Arquivo parece ser Excel (XLSX/XLS), não CSV. No Excel, use "Salvar como" → "CSV UTF-8 (delimitado por vírgulas)" e tente novamente.',
+      );
+    }
+  }
+
   if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
     buf = buf.subarray(3);
   }

@@ -176,6 +176,22 @@ describe('parseLeadsCsv', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe('Alice');
   });
+
+  it('rejeita arquivo XLSX disfarcado como .csv com mensagem clara', async () => {
+    // XLSX moderno = ZIP (magic bytes "PK\x03\x04")
+    const fakeXlsx = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00]);
+    await expect(parseLeadsCsv(fakeXlsx)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/Excel|XLSX|CSV/i),
+    });
+  });
+
+  it('rejeita arquivo XLS antigo (BIFF) disfarcado como .csv', async () => {
+    const fakeXls = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    await expect(parseLeadsCsv(fakeXls)).rejects.toMatchObject({
+      status: 400,
+    });
+  });
 });
 
 describe('importLeadsFromCsv', () => {
