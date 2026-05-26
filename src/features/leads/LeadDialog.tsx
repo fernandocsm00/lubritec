@@ -31,6 +31,9 @@ import {
 import { useCreateLead, useUpdateLead } from './api';
 import { translateError } from './translateError';
 import { StageTimeline } from './StageTimeline';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { CaseSheet } from '@/features/case-sheet/CaseSheet';
+import { useAuthStore } from '@/features/auth/store';
 import { LEAD_STATUSES, type PublicLead } from '@shared/types';
 
 const cnpjDigits = (s: string) => s.replace(/\D/g, '');
@@ -70,6 +73,8 @@ export function LeadDialog({
   const create = useCreateLead();
   const update = useUpdateLead();
   const isEdit = lead !== null;
+  const userRole = useAuthStore((s) => s.user?.role);
+  const isAdmin = userRole === 'admin';
   // Lead criado via WhatsApp inbound vem sem CNPJ. Liberamos a edição nesses
   // casos. Uma vez setado, vira imutável (regra do backend).
   const cnpjEditable = !isEdit || !lead?.cnpj;
@@ -155,6 +160,13 @@ export function LeadDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Editar lead' : 'Novo lead'}</DialogTitle>
         </DialogHeader>
+        {isEdit ? (
+          <Tabs defaultValue="info">
+            <TabsList>
+              <TabsTrigger value="info">Informações</TabsTrigger>
+              <TabsTrigger value="case-sheet">Ficha do Caso</TabsTrigger>
+            </TabsList>
+            <TabsContent value="info">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -274,6 +286,86 @@ export function LeadDialog({
             </DialogFooter>
           </form>
         </Form>
+            </TabsContent>
+            <TabsContent value="case-sheet">
+              {lead?.id && (
+                <div className="max-h-[60vh] overflow-y-auto pr-1">
+                  <CaseSheet leadId={lead.id} isAdmin={isAdmin} />
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nome *</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="cnpj"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>CNPJ *</FormLabel>
+                      <FormControl><Input {...field} placeholder="00.000.000/0000-00" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Telefone *</FormLabel>
+                      <FormControl><Input {...field} placeholder="55 11 98765-4321" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl><Input {...field} type="email" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Observações</FormLabel>
+                    <FormControl><Textarea {...field} rows={3} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={pending}>
+                  {pending ? 'Salvando…' : 'Criar'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        )}
       </DialogContent>
     </Dialog>
   );
