@@ -1,6 +1,6 @@
 ﻿import { db } from '../db/client';
-import { conversations, messages, leads } from '../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { conversations, messages, leads, aiCallLogs } from '../db/schema';
+import { and, eq, desc } from 'drizzle-orm';
 import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
 import { recordAiCall, countRecentErrorsForConversation } from './aiMetrics';
 export { recordAiCall } from './aiMetrics';
@@ -514,6 +514,24 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     promptVersion: PROMPT_VERSION,
     campaignId: campaignIdForLog,
   });
+
+  // Se IA disse "não qualificado", amostra 10% pra auditoria cega.
+  if (qualification === 'not_qualified') {
+    const [logRow] = await db.select({ id: aiCallLogs.id })
+      .from(aiCallLogs)
+      .where(and(
+        eq(aiCallLogs.leadId, input.leadId),
+        eq(aiCallLogs.conversationId, input.conversationId),
+      ))
+      .orderBy(desc(aiCallLogs.createdAt))
+      .limit(1);
+    const { enrollIfSampled } = await import('./auditSampleService');
+    await enrollIfSampled({
+      leadId: input.leadId,
+      campaignId: campaignIdForLog,
+      aiCallLogId: logRow?.id ?? null,
+    });
+  }
 
   return {
     status: qualification === 'qualified' ? 'qualified_and_replied' : 'replied',
