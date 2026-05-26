@@ -36,6 +36,7 @@ function toPublicCampaign(
     status: row.status as CampaignStatus,
     templateId: row.templateId,
     messageBody: row.messageBody,
+    qualificationQuestion: row.qualificationQuestion ?? null,
     mediaUrl: row.mediaUrl,
     mediaMime: row.mediaMime,
     audienceFilter: (row.audienceFilter as AudienceFilters) ?? {},

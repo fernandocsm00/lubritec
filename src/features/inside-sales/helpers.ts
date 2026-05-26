@@ -49,6 +49,7 @@ export const ACTIVITY_ICONS: Record<DealActivityKind, string> = {
   lost: '❌',
   reactivated: '🔄',
   owner_changed: '👤',
+  quality_feedback: '⭐',
 };
 
 export function relativeTime(iso: string): string {

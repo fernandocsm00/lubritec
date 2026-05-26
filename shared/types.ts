@@ -219,6 +219,7 @@ export const DEAL_ACTIVITY_KINDS = [
   'lost',
   'reactivated',
   'owner_changed',
+  'quality_feedback',         // NOVO: vendedor deu feedback bom/ruim
 ] as const;
 export type DealActivityKind = (typeof DEAL_ACTIVITY_KINDS)[number];
 
@@ -237,6 +238,8 @@ export interface PublicDeal {
   notes: string | null;
   owner: { id: string; name: string } | null;
   closedAt: string | null;
+  leadQualityFeedback: LeadQualityFeedback | null;
+  leadQualityFeedbackAt: string | null;
   isStale: boolean;
   enteredCurrentStageAt: string;
   createdAt: string;
@@ -397,6 +400,7 @@ export interface PublicCampaign {
   status: CampaignStatus;
   templateId: string | null;
   messageBody: string;
+  qualificationQuestion: string | null;
   mediaUrl: string | null;
   mediaMime: string | null;
   audienceFilter: AudienceFilters;
@@ -920,4 +924,110 @@ export interface CampaignHsmVariable {
   index: number;
   source: 'static' | 'lead_field';
   value: string;
+}
+
+// ---------------------------------------------------------------------------
+// AI Calibration (Sprint Calibração IA — 2026-05-26)
+// ---------------------------------------------------------------------------
+
+export const LEAD_QUALITY_FEEDBACK = ['good', 'bad'] as const;
+export type LeadQualityFeedback = (typeof LEAD_QUALITY_FEEDBACK)[number];
+
+export const QUALIFICATION_PATHS = ['campaign_direct', 'conversation'] as const;
+export type QualificationPath = (typeof QUALIFICATION_PATHS)[number];
+
+export interface QuestionAnswer {
+  question: string;
+  answer: string;
+  consideredAt: string;        // ISO timestamp
+}
+
+/** Ficha do caso: composição read-only de tudo que importa pra calibrar IA. */
+export interface PublicCaseSheet {
+  leadId: string;
+  leadName: string;
+  // Decisão da IA
+  aiCallLogId: string | null;
+  qualified: boolean | null;
+  qualificationPath: QualificationPath | null;
+  decisionReason: string | null;
+  questionsAnswers: QuestionAnswer[];
+  promptVersion: string | null;
+  decidedAt: string | null;
+  model: string | null;
+  // Contexto da campanha (se origem campaign)
+  campaignId: string | null;
+  campaignName: string | null;
+  qualificationQuestion: string | null;     // pergunta da campanha
+  campaignMessageBody: string | null;       // primeira mensagem do disparo
+  firstInboundReply: string | null;         // primeira resposta do lead
+  // Trajetória do deal (se houver)
+  dealId: string | null;
+  dealStage: DealStage | null;
+  dealValue: number | null;
+  dealLossReason: LossReason | null;
+  leadQualityFeedback: LeadQualityFeedback | null;
+  leadQualityFeedbackAt: string | null;
+  // Encerramento sem deal (se houver)
+  closedNoDealAt: string | null;
+  closedNoDealReason: string | null;
+  closedNoDealQuality: LeadQualityFeedback | null;
+}
+
+export interface ReanalyzeCaseInput {
+  reason: string;     // por que admin pediu reanálise (livre)
+}
+
+// ── Audit sample queue ────────────────────────────────────────────
+export const AUDIT_SAMPLE_STATUSES = ['pending', 'assigned', 'contacted', 'skipped'] as const;
+export type AuditSampleStatus = (typeof AUDIT_SAMPLE_STATUSES)[number];
+
+export interface PublicAuditSample {
+  id: string;
+  leadId: string;
+  leadName: string;
+  leadPhone: string | null;
+  leadCnpj: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  sampledAt: string;
+  status: AuditSampleStatus;
+  assignedTo: { id: string; name: string } | null;
+  assignedAt: string | null;
+  contactedAt: string | null;
+  outcome: LeadQualityFeedback | null;
+  outcomeAt: string | null;
+  outcomeNotes: string | null;
+  // IMPORTANTE: a UI da fila cega NÃO mostra a decisão da IA nem o motivo.
+  // Esses campos só aparecem em endpoints internos de relatório.
+}
+
+export interface AuditSampleAssignInput {
+  // claim (toma pra si): vazio
+}
+
+export interface AuditSampleOutcomeInput {
+  outcome: LeadQualityFeedback;
+  notes?: string;
+}
+
+export interface CampaignCalibrationMetrics {
+  campaignId: string;
+  totalQualifiedByAi: number;          // IA disse "qualificado"
+  totalNotQualifiedByAi: number;       // IA disse "não qualificado"
+  feedbackGivenCount: number;          // quantos qualificados receberam feedback bin
+  feedbackGoodCount: number;           // dos qualificados, vendedor marcou "bom"
+  feedbackBadCount: number;            // dos qualificados, vendedor marcou "ruim"
+  precision: number | null;            // good / (good + bad) — null se 0 feedback
+  // Recall via fila cega
+  auditTotal: number;
+  auditContacted: number;
+  auditGood: number;                   // falsos negativos confirmados
+  auditBad: number;                    // verdadeiros negativos
+  estimatedRecall: number | null;      // good_qualified / (good_qualified + extrapolated_audit_good)
+}
+
+export interface CloseLeadNoDealInput {
+  reason: string;
+  quality: LeadQualityFeedback;
 }

@@ -27,6 +27,8 @@ function describe(a: PublicDealActivity): string {
       return `${actor} reativou (estava em ${STAGE_LABELS[md.from as DealStage]})`;
     case 'owner_changed':
       return `${actor} mudou o dono`;
+    case 'quality_feedback':
+      return `${actor} avaliou a qualidade do lead: ${md.feedback as string}`;
   }
 }
 
