@@ -12,6 +12,10 @@ import { notifyVendoresWhatsapp } from './whatsappNotify';
 import { isAiBusinessHours } from '../lib/businessHours';
 import type { OrgSettings } from '../db/schema';
 
+// Bump esta string a cada mudanca material no system prompt (buildSystemPrompt).
+// Permite filtrar metricas de calibracao por versao.
+export const PROMPT_VERSION = 'v1-2026-05-26';
+
 const MAX_HISTORY = 20;
 const QUALIFY_TAG = '[QUALIFICADO]';
 const NOT_QUALIFY_TAG = '[NAO_QUALIFICADO]';
@@ -148,6 +152,34 @@ export function parseQualificationTag(reply: string): {
   return { cleanReply: working, qualification, summary };
 }
 
+/**
+ * Extrai pares pergunta->resposta do historico recente.
+ * Procura por mensagens out (IA) que terminam em '?' seguidas de uma in (lead).
+ * Limita a 5 pares (mais que isso e ruido).
+ */
+function extractQuestionsAnswers(
+  history: Array<{ direction: 'in' | 'out'; body: string | null }>,
+  currentInbound: string,
+): Array<{ question: string; answer: string; consideredAt: string }> {
+  const pairs: Array<{ question: string; answer: string; consideredAt: string }> = [];
+  const now = new Date().toISOString();
+  // Reverso pra cronologia
+  const msgs = history.filter((m) => m.body);
+  for (let i = 0; i < msgs.length - 1; i++) {
+    const cur = msgs[i];
+    const next = msgs[i + 1];
+    if (cur.direction === 'out' && cur.body && cur.body.includes('?') && next.direction === 'in' && next.body) {
+      pairs.push({ question: cur.body.trim().slice(0, 500), answer: next.body.trim().slice(0, 500), consideredAt: now });
+    }
+  }
+  // Adiciona a resposta atual a ultima pergunta da IA, se houver
+  const lastOut = [...msgs].reverse().find((m) => m.direction === 'out' && m.body?.includes('?'));
+  if (lastOut?.body) {
+    pairs.push({ question: lastOut.body.trim().slice(0, 500), answer: currentInbound.slice(0, 500), consideredAt: now });
+  }
+  return pairs.slice(-5);
+}
+
 interface ProcessInput {
   conversationId: string;
   leadId: string;
@@ -280,6 +312,16 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       role: m.direction === 'out' ? ('model' as const) : ('user' as const),
       text: m.body!,
     }));
+
+  // Determinar qualification path: primeiro inbound de conversa originada de campanha = campaign_direct
+  const isFirstInbound = historyRows.filter((m) => m.direction === 'in').length <= 1;
+  const [convFull] = await db.select({ originKind: conversations.originKind, originCampaignId: conversations.originCampaignId })
+    .from(conversations)
+    .where(eq(conversations.id, input.conversationId))
+    .limit(1);
+  const qualificationPath: 'campaign_direct' | 'conversation' =
+    (isFirstInbound && convFull?.originKind === 'campaign') ? 'campaign_direct' : 'conversation';
+  const campaignIdForLog = convFull?.originCampaignId ?? null;
 
   // Carrega nome do lead pra contexto.
   const [leadRow] = await db
@@ -447,6 +489,11 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     outputTokens: geminiResult.outputTokens,
     latencyMs: geminiResult.latencyMs,
     qualified: qualification === 'qualified',
+    decisionReason: summary,
+    qualificationPath,
+    questionsAnswers: extractQuestionsAnswers(historyRows, input.inboundText),
+    promptVersion: PROMPT_VERSION,
+    campaignId: campaignIdForLog,
   });
 
   return {
