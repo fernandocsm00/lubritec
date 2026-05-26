@@ -303,8 +303,8 @@ async function logActivity(tx: any, opts: {
 export async function createDeal(input: {
   leadId: string;
   proposalValue?: number | null;
-  ownerUserId: string;
-  source: 'manual' | 'auto_image';
+  ownerUserId: string | null;       // aceita null (Pull model)
+  source: 'manual' | 'auto_image' | 'ai_qualified';
 }): Promise<PublicDeal> {
   // Idempotente: se já existe deal pra esse lead, retorna o existing.
   const [existing] = await db.select().from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
@@ -326,13 +326,14 @@ export async function createDeal(input: {
         leadId: input.leadId,
         stage: 'lead_no_comercial',
         proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
-        ownerUserId: input.ownerUserId,
+        ownerUserId: input.ownerUserId,       // pode ser null agora
       })
       .returning({ id: deals.id });
     await logActivity(tx, {
       dealId: created.id,
       kind: 'created',
-      actorUserId: input.source === 'auto_image' ? null : input.ownerUserId,
+      // Sem actor humano quando source e automatizada (ai_qualified, auto_image)
+      actorUserId: input.source === 'manual' ? input.ownerUserId : null,
       metadata: { source: input.source },
     });
     // Promove lead pra handed_off quando deal é criado (não regride 'lost').

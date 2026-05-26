@@ -458,6 +458,16 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       source: 'ai_qualification',
       metadata: { conversationId: input.conversationId },
     });
+
+    // Qualificacao criou flowStage='qualified'. Agora cria deal sem owner (Pull model).
+    // Idempotente — se ja existir deal (re-qualificacao), no-op via createDeal interno.
+    const { createDeal } = await import('./dealsService');
+    await createDeal({
+      leadId: input.leadId,
+      ownerUserId: null,        // Pull: vendedor puxa do Kanban "Nao atribuido"
+      source: 'ai_qualified',
+    });
+
     // Notifica admins/comerciais que tem lead qualificado pra atender.
     const inboxUrl = `/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`;
     await emitNotification({
