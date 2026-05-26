@@ -143,6 +143,7 @@ export async function createCampaign(input: {
   instanceId: string;
   hsmTemplateId?: string | null;
   hsmVariables?: CampaignHsmVariable[];
+  qualificationQuestion?: string | null;
 }): Promise<PublicCampaign> {
   // ── XOR validation: exactly one of templateId or hsmTemplateId must be set ──
   const hasTemplate = !!input.templateId;
@@ -199,6 +200,7 @@ export async function createCampaign(input: {
       instanceId,
       hsmTemplateId: input.hsmTemplateId ?? null,
       hsmVariables: (input.hsmVariables ?? []) as object[],
+      qualificationQuestion: input.qualificationQuestion ?? null,
     }).returning();
 
     if (eligibleRows.length > 0) {

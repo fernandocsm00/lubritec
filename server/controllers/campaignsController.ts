@@ -54,6 +54,7 @@ const createBody = z.object({
   audienceFilter: audienceFilterSchema,
   scheduledAt: z.string().datetime().nullable().optional(),
   ratePerMinute: z.number().int().min(1).max(120).optional(),
+  qualificationQuestion: z.string().trim().max(500).nullable().optional(),
 });
 
 const recipientsQuery = z.object({
@@ -217,6 +218,7 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
       scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
       ratePerMinute: data.ratePerMinute,
       createdByUserId: req.user!.userId,
+      qualificationQuestion: data.qualificationQuestion ?? null,
     });
     res.status(201).json(created);
   } catch (e) { next(e); }
