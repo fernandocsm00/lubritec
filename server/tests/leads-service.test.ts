@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createLead, updateLead, deleteLead, listLeads } from '../services/leadsService';
+import { createLead, updateLead, deleteLead, listLeads, closeLeadNoDeal } from '../services/leadsService';
 import { parseLeadsCsv, importLeadsFromCsv } from '../services/leadsImport';
 import { createLead as seedLead } from './helpers';
 import * as cnpjLookup from '../services/cnpjLookup';
@@ -248,8 +248,6 @@ describe('importLeadsFromCsv', () => {
     await expect(importLeadsFromCsv(Buffer.from(csv))).rejects.toMatchObject({ status: 400 });
   });
 });
-
-import { closeLeadNoDeal } from '../services/leadsService';
 
 describe('closeLeadNoDeal', () => {
   let leadId: string; let userId: string;
