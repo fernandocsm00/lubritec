@@ -770,6 +770,179 @@ git add server/services/campaignsService.ts server/controllers/campaignsControll
 git commit -m "feat(campaigns): salvar qualification_question na campanha (default null)"
 ```
 
+### Task B4: Criação automática de deal ao qualificar
+
+**Contexto:** Hoje a IA qualifica, move conversa pra fila Comercial e seta `lead.flowStage='qualified'`, MAS NÃO cria deal. Deal só nasce via `pipelineIntegration.maybeAddDealFromConversation` quando vendedor envia imagem. Mudança de regra: **toda qualificação cria deal sem owner (Pull model)** — deal nasce em `lead_no_comercial`, `ownerUserId=null`, vendedor puxa pra si.
+
+**Files:**
+- Modify: `server/services/dealsService.ts` (função `createDeal` — aceitar `ownerUserId: string | null` e novo source)
+- Modify: `server/services/aiAtendimento.ts` (chamar createDeal dentro da transação de qualificação)
+- Modify: `shared/types.ts` (estender enum interno de source se exposto; ver código)
+- Test: estender `server/tests/deals-feedback.test.ts` ou novo `server/tests/deals-ai-qualified.test.ts`
+
+- [ ] **Step 1: Escrever teste falhando**
+
+Criar `server/tests/deals-ai-qualified.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach } from 'vitest';
+import { db } from '../db/client';
+import { leads, deals } from '../db/schema';
+import { createDeal } from '../services/dealsService';
+import { eq } from 'drizzle-orm';
+
+describe('createDeal — source ai_qualified (sem owner)', () => {
+  let leadId: string;
+  beforeEach(async () => {
+    const [l] = await db.insert(leads).values({ name: 'Lead AI Qual', phone: '5511000000300' })
+      .returning({ id: leads.id });
+    leadId = l.id;
+  });
+
+  it('cria deal com ownerUserId=null e source=ai_qualified', async () => {
+    const deal = await createDeal({ leadId, ownerUserId: null, source: 'ai_qualified' });
+    expect(deal.stage).toBe('lead_no_comercial');
+    expect(deal.owner).toBeNull();
+    const [row] = await db.select().from(deals).where(eq(deals.id, deal.id)).limit(1);
+    expect(row.ownerUserId).toBeNull();
+  });
+
+  it('é idempotente (segundo call retorna o mesmo deal)', async () => {
+    const d1 = await createDeal({ leadId, ownerUserId: null, source: 'ai_qualified' });
+    const d2 = await createDeal({ leadId, ownerUserId: null, source: 'ai_qualified' });
+    expect(d1.id).toBe(d2.id);
+  });
+});
+```
+
+Run: `npx vitest run server/tests/deals-ai-qualified.test.ts`
+Expected: FAIL (createDeal exige ownerUserId: string, não aceita null).
+
+- [ ] **Step 2: Estender `createDeal`**
+
+Em `server/services/dealsService.ts`, modificar a função `createDeal`:
+
+```typescript
+export async function createDeal(input: {
+  leadId: string;
+  proposalValue?: number | null;
+  ownerUserId: string | null;       // AGORA aceita null (Pull model)
+  source: 'manual' | 'auto_image' | 'ai_qualified';
+}): Promise<PublicDeal> {
+  const [existing] = await db.select().from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
+  if (existing) {
+    return getDealById(existing.id);
+  }
+
+  const [leadBefore] = await db
+    .select({ flowStage: leads.flowStage })
+    .from(leads)
+    .where(eq(leads.id, input.leadId))
+    .limit(1);
+
+  const dealId = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(deals)
+      .values({
+        leadId: input.leadId,
+        stage: 'lead_no_comercial',
+        proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
+        ownerUserId: input.ownerUserId,       // pode ser null agora
+      })
+      .returning({ id: deals.id });
+    await logActivity(tx, {
+      dealId: created.id,
+      kind: 'created',
+      // Sem actor humano quando source é automatizada (ai_qualified, auto_image)
+      actorUserId: input.source === 'manual' ? input.ownerUserId : null,
+      metadata: { source: input.source },
+    });
+    await tx
+      .update(leads)
+      .set({ flowStage: 'handed_off', updatedAt: new Date() })
+      .where(and(eq(leads.id, input.leadId), sql`${leads.flowStage} <> 'lost'`));
+    return created.id;
+  });
+
+  if (leadBefore && leadBefore.flowStage !== 'handed_off' && leadBefore.flowStage !== 'lost') {
+    const { recordTransition } = await import('./stageTransitions');
+    await recordTransition({
+      leadId: input.leadId,
+      fromStage: leadBefore.flowStage as PublicLead['flowStage'],
+      toStage: 'handed_off',
+      source: 'deal_created',
+      metadata: { dealId, source: input.source, ownerUserId: input.ownerUserId },
+    });
+  }
+
+  return getDealById(dealId);
+}
+```
+
+Run: `npx vitest run server/tests/deals-ai-qualified.test.ts`
+Expected: PASS.
+
+- [ ] **Step 3: Adicionar 'ai_qualified' em TRANSITION_SOURCES (se aplicável)**
+
+Verificar `shared/types.ts` na constante `TRANSITION_SOURCES`. Já existe `'ai_qualification'` lá (linha ~776), que é o source da transição IA→qualified. Esse é usado pra o `flow_stage` change. **NÃO confundir com o source do deal** (esse é interno ao `metadata` da activity).
+
+Não há mudança a fazer aqui — só estamos passando `'ai_qualified'` como string no metadata da activity. Não precisa entrar em enum exposto.
+
+- [ ] **Step 4: Chamar `createDeal` no pipeline da IA**
+
+Em `server/services/aiAtendimento.ts`, localizar a transação onde `qualification === 'qualified'` move conversa pra Comercial e seta `flowStage='qualified'` (próximo da linha 392-406).
+
+DEPOIS de fechar essa transação (não dentro — `createDeal` tem sua própria transaction), adicionar:
+
+```typescript
+// Qualificação criou flowStage='qualified'. Agora cria deal sem owner (Pull model).
+// Idempotente — se já existir deal (re-qualificação), no-op via createDeal interno.
+if (qualification === 'qualified') {
+  const { createDeal } = await import('./dealsService');
+  await createDeal({
+    leadId: input.leadId,
+    ownerUserId: null,        // Pull: vendedor puxa do Kanban "Não atribuído"
+    source: 'ai_qualified',
+  });
+}
+```
+
+(Esse bloco deve vir DEPOIS do `await db.transaction(...)` que move pra comercial e ANTES do `emitNotification('lead_qualified', ...)`. Verificar fluxo exato no arquivo.)
+
+- [ ] **Step 5: Verificar callers existentes**
+
+Run: `Grep "createDeal\(" server/ -n`
+
+Listar todos os callers de `createDeal` e validar que continuam compilando com a nova signature (`ownerUserId: string | null`). Tipicamente:
+- `pipelineIntegration.ts` linha 24: passa `opts.userId` (string) — compatível.
+- `dealsController.ts` (handler de create manual): provavelmente passa `req.user.userId` — compatível.
+
+Se algum caller precisava de owner garantido, manter como string lá.
+
+- [ ] **Step 6: Atualizar PublicDeal mapper (se necessário)**
+
+`toPublic` em `dealsService.ts` já trata `row.owner ? {...} : null` corretamente (linha ~50). Sem mudança.
+
+- [ ] **Step 7: Typecheck + suite de testes**
+
+Run: `npm run lint && npx vitest run server/tests/deals`
+Expected: tudo verde. Atenção especial pra testes que assumiam `owner` sempre presente.
+
+- [ ] **Step 8: Smoke do fluxo de qualificação (opcional — pode esperar Parte G)**
+
+Se quiser validar agora, simular uma resposta inbound que dispara qualificação e conferir no DB:
+```sql
+SELECT id, owner_user_id, stage FROM deals WHERE lead_id = '<leadId>';
+-- Esperado: 1 linha, owner_user_id=NULL, stage='lead_no_comercial'
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add server/services/dealsService.ts server/services/aiAtendimento.ts server/tests/deals-ai-qualified.test.ts
+git commit -m "feat(ai): criar deal automaticamente ao qualificar (Pull model — ownerUserId=null)"
+```
+
 ---
 
 # Parte C — Feedback Binário no Desfecho
