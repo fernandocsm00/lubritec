@@ -2,20 +2,30 @@ import { db } from '../db/client';
 import {
   aiCallLogs, leads, deals, campaigns, conversations, messages,
 } from '../db/schema';
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { eq, and, ne, desc, asc } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicCaseSheet, QualificationPath, QuestionAnswer,
   LossReason, DealStage, LeadQualityFeedback,
 } from '@shared/types';
 
+// Entradas com este modelo sao stubs gravados pelo requestReanalysis — nao sao
+// decisoes reais da IA e devem ser filtradas tanto da ficha quanto das metricas
+// pra nao virar "decisao corrente" enganosa.
+export const REANALYSIS_STUB_MODEL = 'reanalysis-stub';
+
 export async function getCaseSheet(leadId: string): Promise<PublicCaseSheet> {
   const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
   if (!lead) throw new HttpError(404, 'Lead not found');
 
-  // Última decisão da IA (mais recente)
+  // Ultima decisao da IA (mais recente). Filtra stubs de reanalise pra
+  // nao virar "decisao corrente" do lead.
   const [aiLog] = await db.select().from(aiCallLogs)
-    .where(and(eq(aiCallLogs.leadId, leadId), eq(aiCallLogs.humanIntent, false)))
+    .where(and(
+      eq(aiCallLogs.leadId, leadId),
+      eq(aiCallLogs.humanIntent, false),
+      ne(aiCallLogs.model, REANALYSIS_STUB_MODEL),
+    ))
     .orderBy(desc(aiCallLogs.createdAt))
     .limit(1);
 
@@ -97,13 +107,13 @@ export async function requestReanalysis(input: {
   await db.insert(aiCallLogs).values({
     leadId: input.leadId,
     conversationId: null,
-    model: 'reanalysis-stub',
+    model: REANALYSIS_STUB_MODEL,
     inputTokens: 0,
     outputTokens: 0,
     latencyMs: 0,
     qualified: false,
     humanIntent: false,
     decisionReason: `[REANÁLISE SOLICITADA] ${input.reason}`,
-    promptVersion: 'reanalysis-stub',
+    promptVersion: REANALYSIS_STUB_MODEL,
   });
 }

@@ -15,7 +15,7 @@ const reanalyzeBody = z.object({
 
 export async function reanalyzeHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    if (req.user!.role !== 'admin') return res.status(403).json({ message: 'admin only' });
+    // Admin check eh feito pelo middleware requireRole('admin') na route.
     const data = reanalyzeBody.parse(req.body);
     await requestReanalysis({
       leadId: req.params.leadId,

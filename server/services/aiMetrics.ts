@@ -108,6 +108,9 @@ export async function getAiMetricsSummary(args: {
 }): Promise<AiMetricsSummary> {
   const { rangeStart, rangeEnd } = args;
 
+  // Filtra entradas de reanalysis-stub (gravadas por requestReanalysis no
+  // caseSheetService) — nao sao chamadas reais da IA e poluiriam metricas
+  // de totalCalls, avgLatency, avgCostPerCall etc.
   const [row] = await db
     .select({
       totalCalls: sql<number>`count(*)::int`,
@@ -120,7 +123,11 @@ export async function getAiMetricsSummary(args: {
       avgLatencyMs: sql<number>`coalesce(round(avg(${aiCallLogs.latencyMs}))::int, 0)`,
     })
     .from(aiCallLogs)
-    .where(and(gte(aiCallLogs.createdAt, rangeStart), lt(aiCallLogs.createdAt, rangeEnd)));
+    .where(and(
+      gte(aiCallLogs.createdAt, rangeStart),
+      lt(aiCallLogs.createdAt, rangeEnd),
+      sql`${aiCallLogs.model} <> 'reanalysis-stub'`,
+    ));
 
   const total = row.totalCalls;
   const qualified = row.qualifiedCount;
