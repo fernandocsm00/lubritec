@@ -15,15 +15,17 @@ const PAGE_SIZE = 50;
 const NO_RESPONSE_DAYS = Number(process.env.NO_RESPONSE_DAYS ?? '7');
 
 // UazAPI baixa mídia pela URL — precisa ser absoluta e pública. Uploads
-// ficam em /uploads/conversations/<file>; convertemos pra absoluta usando
-// APP_URL antes de mandar pro provider. Mantemos a relativa no DB pro
-// frontend renderizar via reverse proxy local.
-function toAbsoluteMediaUrl(relativePath: string): string {
+// ficam em /uploads/conversations/<file>; convertemos pra absoluta antes
+// de mandar pro provider. Mantemos a relativa no DB pro frontend renderizar
+// via reverse proxy local. Preferimos o baseUrl do próprio request (já é
+// o host público que o atendente acessou) e caímos pra APP_URL/localhost
+// só como último recurso (ex.: chamadas fora de request context).
+function toAbsoluteMediaUrl(relativePath: string, appBaseUrl?: string): string {
   if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) {
     return relativePath;
   }
-  const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-  return `${appUrl.replace(/\/$/, '')}${relativePath}`;
+  const base = appBaseUrl ?? process.env.APP_URL ?? 'http://localhost:3000';
+  return `${base.replace(/\/$/, '')}${relativePath}`;
 }
 
 async function getDefaultInstanceId(): Promise<string> {
@@ -371,6 +373,9 @@ export interface SendInput {
   body?: string | null;
   mediaUrl?: string | null;
   mediaMime?: string | null;
+  /** Base URL do request (req.protocol + host); usado pra montar a URL
+   * absoluta da mídia enviada ao provider quando mediaUrl é relativa. */
+  appBaseUrl?: string;
 }
 
 export async function sendMessage(input: SendInput): Promise<PublicMessage> {
@@ -396,7 +401,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
       to: conv.phone,
       kind: input.kind,
       text: outboundBody ?? undefined,
-      mediaUrl: input.mediaUrl ? toAbsoluteMediaUrl(input.mediaUrl) : undefined,
+      mediaUrl: input.mediaUrl ? toAbsoluteMediaUrl(input.mediaUrl, input.appBaseUrl) : undefined,
       mediaMime: input.mediaMime ?? undefined,
     });
   } catch {
@@ -478,6 +483,7 @@ export interface StartConversationInput {
   body?: string | null;
   mediaUrl?: string | null;
   mediaMime?: string | null;
+  appBaseUrl?: string;
 }
 
 export interface StartConversationResult {
@@ -583,6 +589,7 @@ export async function startConversation(
     body: input.body ?? null,
     mediaUrl: input.mediaUrl ?? null,
     mediaMime: input.mediaMime ?? null,
+    appBaseUrl: input.appBaseUrl,
   });
 
   const conversation = await getConversationById(conversationId, input.userId);

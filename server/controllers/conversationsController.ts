@@ -122,11 +122,23 @@ export async function readHandler(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
+// mediaUrl pode vir como URL absoluta (uploads externos / por URL) ou como
+// caminho relativo /uploads/conversations/... gerado pelo nosso próprio
+// endpoint POST /conversations/upload-media. z.string().url() rejeitava
+// silenciosamente os relativos e quebrava o anexo da inbox.
+const mediaUrlSchema = z
+  .string()
+  .max(2048)
+  .refine(
+    (v) => v.startsWith('/uploads/') || /^https?:\/\//i.test(v),
+    { message: 'mediaUrl must be absolute http(s) or a /uploads/ path' },
+  );
+
 const sendBody = z
   .object({
     kind: z.enum(MESSAGE_KINDS),
     body: z.string().max(4000).optional(),
-    mediaUrl: z.string().url().optional(),
+    mediaUrl: mediaUrlSchema.optional(),
     mediaMime: z.string().max(120).optional(),
   })
   .superRefine((d, ctx) => {
@@ -149,6 +161,7 @@ export async function sendMessageHandler(req: Request, res: Response, next: Next
       body: data.body ?? null,
       mediaUrl: data.mediaUrl ?? null,
       mediaMime: data.mediaMime ?? null,
+      appBaseUrl: `${req.protocol}://${req.get('host')}`,
     });
     res.json(msg);
   } catch (e) { next(e); }
@@ -160,7 +173,7 @@ const startBody = z
     name: z.string().max(120).optional(),
     kind: z.enum(MESSAGE_KINDS),
     body: z.string().max(4000).optional(),
-    mediaUrl: z.string().url().optional(),
+    mediaUrl: mediaUrlSchema.optional(),
     mediaMime: z.string().max(120).optional(),
   })
   .superRefine((d, ctx) => {
@@ -183,6 +196,7 @@ export async function startConversationHandler(req: Request, res: Response, next
       body: data.body ?? null,
       mediaUrl: data.mediaUrl ?? null,
       mediaMime: data.mediaMime ?? null,
+      appBaseUrl: `${req.protocol}://${req.get('host')}`,
     });
     res.json(result);
   } catch (e) { next(e); }

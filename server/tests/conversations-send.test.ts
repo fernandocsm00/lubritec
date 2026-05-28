@@ -154,4 +154,45 @@ describe('POST /api/conversations/:id/messages', () => {
       .send({ kind: 'image' });
     expect(res.status).toBe(400);
   });
+
+  it('aceita mediaUrl relativa (/uploads/...) e expande pra absoluta na chamada ao provider', async () => {
+    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
+      messageId: 'uazapi-out-004',
+      rawPayload: {},
+    });
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000050060' });
+    const conv = await createConversation({ phone: '11000050060', leadId: lead.id });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/messages`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'app.example.com')
+      .send({
+        kind: 'image',
+        mediaUrl: '/uploads/conversations/abc.png',
+        mediaMime: 'image/png',
+      });
+    expect(res.status).toBe(200);
+    // DB/UI continua com a relativa (portátil).
+    expect(res.body.mediaUrl).toBe('/uploads/conversations/abc.png');
+    // Provider recebe a absoluta montada com o host do request.
+    const call = vi.mocked(uazapiClient.sendMessage).mock.calls[0][0];
+    expect(call.mediaUrl).toBe('http://app.example.com/uploads/conversations/abc.png');
+  });
+
+  it('400 quando mediaUrl não é http(s) nem /uploads/', async () => {
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000050070' });
+    const conv = await createConversation({ phone: '11000050070', leadId: lead.id });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/messages`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        kind: 'image',
+        mediaUrl: 'file:///etc/passwd',
+      });
+    expect(res.status).toBe(400);
+  });
 });
