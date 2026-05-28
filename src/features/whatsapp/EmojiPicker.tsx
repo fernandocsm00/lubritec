@@ -24,7 +24,7 @@ export function EmojiPicker({ onPick }: Props) {
       </Button>
       {open && (
         <div
-          className="absolute bottom-12 left-0 bg-popover border border-border rounded-md shadow-lg p-2 grid grid-cols-8 gap-1 z-10"
+          className="absolute bottom-12 left-0 w-max bg-popover border border-border rounded-md shadow-lg p-2 grid grid-cols-8 gap-1 z-10"
           onMouseLeave={() => setOpen(false)}
         >
           {EMOJIS.map((e) => (
