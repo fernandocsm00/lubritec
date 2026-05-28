@@ -36,7 +36,8 @@ interface PendingMove {
 
 export function KanbanBoard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const owner: OwnerFilter = (searchParams.get('owner') as OwnerFilter) || 'mine';
+  const owner: OwnerFilter = (searchParams.get('owner') as OwnerFilter) || 'all';
+  const onlyMine = owner === 'mine';
   const q = searchParams.get('q') ?? '';
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
   const [searchInput, setSearchInput] = useState(q);
@@ -125,13 +126,18 @@ export function KanbanBoard() {
             onKeyDown={(e) => { if (e.key === 'Enter') patch({ q: searchInput || null }); }}
           />
         </div>
-        <Select value={owner} onValueChange={(v) => patch({ owner: v === 'mine' ? null : v })}>
+        <Select
+          // Quando "Apenas meus deals" esta marcado, owner='mine' nao aparece no
+          // Select (foi removido das opcoes) -- mostramos 'all' visualmente pra
+          // nao deixar o trigger vazio. O filtro real continua sendo owner='mine'.
+          value={onlyMine ? 'all' : owner}
+          onValueChange={(v) => patch({ owner: v === 'all' ? null : v })}
+        >
           <SelectTrigger className="h-9 w-[180px] text-xs">
             <SelectValue placeholder="Filtrar por dono" />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="mine">Meus deals</SelectItem>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="unassigned">Sem dono</SelectItem>
             </SelectGroup>
@@ -150,6 +156,15 @@ export function KanbanBoard() {
             )}
           </SelectContent>
         </Select>
+        <label className="flex items-center gap-2 text-xs text-foreground select-none cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-input accent-primary cursor-pointer"
+            checked={onlyMine}
+            onChange={(e) => patch({ owner: e.target.checked ? 'mine' : null })}
+          />
+          Apenas meus deals
+        </label>
         <div className="flex-1" />
         <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="h-4 w-4 mr-1" /> Adicionar ao pipeline

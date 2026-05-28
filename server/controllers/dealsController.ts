@@ -33,7 +33,9 @@ export async function boardHandler(req: Request, res: Response, next: NextFuncti
   try {
     const params = boardQuery.parse(req.query);
     const result = await listBoard({
-      ownerFilter: params.owner ?? 'mine',
+      // Default 'all': Pipeline mostra todos os deals por padrao; usuario pode
+      // marcar checkbox "Apenas meus deals" na UI pra filtrar pelos seus.
+      ownerFilter: params.owner ?? 'all',
       q: params.q,
       currentUserId: req.user!.userId,
     });
