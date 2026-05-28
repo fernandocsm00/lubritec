@@ -303,6 +303,7 @@ export interface PublicDeal {
   leadQualityFeedbackAt: string | null;
   isStale: boolean;
   enteredCurrentStageAt: string;
+  aiSummary: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,4 +1,5 @@
 import { useDraggable } from '@dnd-kit/core';
+import { Bot } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { avatarInitials, formatCurrency, relativeTime, LOSS_REASON_LABELS } from './helpers';
@@ -90,6 +91,23 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
           <span className="text-[11px] italic text-muted-foreground">Sem dono</span>
         )}
       </div>
+
+      {deal.aiSummary && (
+        <div
+          className="mb-2 px-2 py-1.5 rounded border-l-2 bg-primary/5"
+          style={{ borderLeftColor: 'var(--lc-navy)' }}
+        >
+          <div className="flex items-center gap-1 mb-0.5">
+            <Bot className="h-3 w-3 text-primary flex-shrink-0" />
+            <span className="text-[9px] uppercase tracking-wide text-primary font-semibold">
+              Resumo da IA
+            </span>
+          </div>
+          <p className="text-[11px] leading-snug text-foreground/80 line-clamp-3">
+            {deal.aiSummary}
+          </p>
+        </div>
+      )}
 
       {deal.stage === 'perdido' && deal.lossReason && (
         <div className="mb-2">

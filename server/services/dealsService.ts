@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { deals, dealActivities, leads, users } from '../db/schema';
+import { deals, dealActivities, leads, users, conversations } from '../db/schema';
 import {
   eq, and, or, ilike, desc, sql, inArray, gte, lte,
   type SQL,
@@ -31,6 +31,7 @@ interface RawDealRow {
   owner: typeof users.$inferSelect | null;
   enteredCurrentStageAt: Date;
   isStale: boolean;
+  aiSummary: string | null;
 }
 
 function toPublic(row: RawDealRow): PublicDeal {
@@ -54,10 +55,24 @@ function toPublic(row: RawDealRow): PublicDeal {
     leadQualityFeedbackAt: row.deal.leadQualityFeedbackAt?.toISOString() ?? null,
     isStale: Boolean(row.isStale),
     enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
+    aiSummary: row.aiSummary,
     createdAt: row.deal.createdAt.toISOString(),
     updatedAt: row.deal.updatedAt.toISOString(),
   };
 }
+
+// Resumo mais recente da IA para o lead do deal (varre conversas do lead e
+// pega o handoff_summary mais recente não-vazio). Surface fica no card do
+// Inside Sales e na ficha do deal.
+const aiSummarySql = sql<string | null>`(
+  SELECT c.handoff_summary
+  FROM ${conversations} c
+  WHERE c.lead_id = ${deals.leadId}
+    AND c.handoff_summary IS NOT NULL
+    AND c.handoff_summary <> ''
+  ORDER BY c.updated_at DESC
+  LIMIT 1
+)`;
 
 // SQL fragment that resolves to the timestamp the deal entered its current
 // stage. Falls back to created_at if no stage_changed/reactivated activity.
@@ -138,6 +153,7 @@ export async function listBoard(input: {
       owner: users,
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
+      aiSummary: aiSummarySql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -225,6 +241,7 @@ export async function listHistory(input: {
       owner: users,
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
+      aiSummary: aiSummarySql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -254,6 +271,7 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
       owner: users,
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
+      aiSummary: aiSummarySql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
