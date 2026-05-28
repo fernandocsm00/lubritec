@@ -76,7 +76,7 @@ describe('POST /api/conversations/start', () => {
     expect(res.body.conversation).toBeDefined();
     expect(res.body.message).toBeDefined();
     expect(res.body.message.direction).toBe('out');
-    expect(res.body.message.body).toBe('Olá, tudo bem?');
+    expect(res.body.message.body).toBe('*Test User:*\nOlá, tudo bem?');
 
     const phoneNorm = '5511987654321';
     const [lead] = await db.select().from(leads).where(eq(leads.phone, phoneNorm));
@@ -151,7 +151,7 @@ describe('POST /api/conversations/start', () => {
     expect(res.status).toBe(200);
     expect(res.body.message.kind).toBe('image');
     expect(res.body.message.mediaUrl).toBe('https://cdn.example.com/foo.jpg');
-    expect(res.body.message.body).toBe('olha essa promo');
+    expect(res.body.message.body).toBe('*Test User:*\nolha essa promo');
   });
 
   it('502 quando UazAPI falha — nada é persistido (lead/conversa também não)', async () => {

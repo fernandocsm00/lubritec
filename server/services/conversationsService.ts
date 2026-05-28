@@ -36,7 +36,8 @@ function previewFromMessage(row: {
     };
     return labels[row.kind] ?? '[mídia]';
   }
-  const body = row.body ?? '';
+  // Remove o prefixo "*Atendente:*\n" do snippet — a UI já mostra "Você: ".
+  const body = (row.body ?? '').replace(/^\*[^*\n]+:\*\n/, '');
   return body.length > 80 ? `${body.slice(0, 80)}…` : body;
 }
 
@@ -175,7 +176,8 @@ export async function getConversationCounts(): Promise<ConversationCounts> {
       total: sql<number>`count(*)::int`,
     })
     .from(conversations)
-    .where(sql`${conversations.status} != 'encerrada'`)
+    .where(sql`${conversations.status} != 'encerrada'
+      AND (${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')`)
     .groupBy(conversations.queue);
 
   const counts: ConversationCounts = { ia: 0, recepcao: 0, comercial: 0 };
@@ -367,13 +369,21 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     .limit(1);
   if (!conv) throw new HttpError(404, 'Conversation not found');
 
+  // Carrega autor antes do envio para prefixar o nome do atendente na mensagem.
+  // Vários atendentes compartilham o mesmo número — o prefixo deixa o lead
+  // saber quem está respondendo (e identificar troca de atendente).
+  const [sender] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+  const outboundBody = input.body && sender?.name
+    ? `*${sender.name}:*\n${input.body}`
+    : input.body ?? null;
+
   // Chama UazAPI primeiro — só persiste se sucesso.
   let uazapiResp;
   try {
     uazapiResp = await uazapiClient.sendMessage({
       to: conv.phone,
       kind: input.kind,
-      text: input.body ?? undefined,
+      text: outboundBody ?? undefined,
       mediaUrl: input.mediaUrl ?? undefined,
       mediaMime: input.mediaMime ?? undefined,
     });
@@ -390,7 +400,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         conversationId: conv.id,
         direction: 'out',
         kind: input.kind,
-        body: input.body ?? null,
+        body: outboundBody,
         mediaUrl: input.mediaUrl ?? null,
         mediaMime: input.mediaMime ?? null,
         sentByUserId: input.userId,
@@ -427,8 +437,6 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     console.warn('[pipeline] maybeAddDealFromConversation failed:', err);
   }
 
-  // Carrega o autor para o retorno público.
-  const [sender] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
   return {
     id: msg.id,
     conversationId: msg.conversationId,

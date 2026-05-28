@@ -1,5 +1,15 @@
 import type { PublicMessage } from './types';
 
+function renderWhatsappBold(text: string) {
+  const parts = text.split(/(\*[^*\n]+\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+      return <strong key={i}>{part.slice(1, -1)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 export function MessageBubble({ msg }: { msg: PublicMessage }) {
   const isOut = msg.direction === 'out';
   const time = new Date(msg.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -36,7 +46,7 @@ export function MessageBubble({ msg }: { msg: PublicMessage }) {
             Abrir documento
           </a>
         )}
-        {msg.body && <p className="text-sm whitespace-pre-wrap break-words leading-snug">{msg.body}</p>}
+        {msg.body && <p className="text-sm whitespace-pre-wrap break-words leading-snug">{renderWhatsappBold(msg.body)}</p>}
         <div className="text-[10px] text-muted-foreground/80 text-right mt-0.5">
           {time}
           {isOut && <span className="ml-1 text-sky-400">✓✓</span>}

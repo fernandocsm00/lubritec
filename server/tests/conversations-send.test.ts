@@ -73,7 +73,7 @@ describe('POST /api/conversations/:id/messages', () => {
       .send({ kind: 'text', body: 'Olá! Posso ajudar?' });
     expect(res.status).toBe(200);
     expect(res.body.direction).toBe('out');
-    expect(res.body.body).toBe('Olá! Posso ajudar?');
+    expect(res.body.body).toBe('*Test User:*\nOlá! Posso ajudar?');
 
     const rows = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(rows).toHaveLength(1);
