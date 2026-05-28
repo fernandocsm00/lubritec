@@ -14,6 +14,18 @@ import type {
 const PAGE_SIZE = 50;
 const NO_RESPONSE_DAYS = Number(process.env.NO_RESPONSE_DAYS ?? '7');
 
+// UazAPI baixa mídia pela URL — precisa ser absoluta e pública. Uploads
+// ficam em /uploads/conversations/<file>; convertemos pra absoluta usando
+// APP_URL antes de mandar pro provider. Mantemos a relativa no DB pro
+// frontend renderizar via reverse proxy local.
+function toAbsoluteMediaUrl(relativePath: string): string {
+  if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) {
+    return relativePath;
+  }
+  const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+  return `${appUrl.replace(/\/$/, '')}${relativePath}`;
+}
+
 async function getDefaultInstanceId(): Promise<string> {
   const [row] = await db.select({ id: whatsappInstance.id }).from(whatsappInstance)
     .where(eq(whatsappInstance.isDefault, true)).limit(1);
@@ -384,7 +396,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
       to: conv.phone,
       kind: input.kind,
       text: outboundBody ?? undefined,
-      mediaUrl: input.mediaUrl ?? undefined,
+      mediaUrl: input.mediaUrl ? toAbsoluteMediaUrl(input.mediaUrl) : undefined,
       mediaMime: input.mediaMime ?? undefined,
     });
   } catch {
