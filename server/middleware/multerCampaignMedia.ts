@@ -1,25 +1,19 @@
 import multer from 'multer';
-import path from 'node:path';
-import crypto from 'node:crypto';
-import fs from 'node:fs';
 
-const dir = path.join(process.cwd(), 'uploads', 'campaigns');
-fs.mkdirSync(dir, { recursive: true });
-
-const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+// Memory storage: o upload vai direto pra Buffer e o controller re-encoda pra
+// JPEG via sharp antes de gravar no disco. Evita arquivo intermediario invalido
+// (e.g. HEIC renomeado pra .png) que depois quebra na UazAPI.
 const MAX_SIZE = 5 * 1024 * 1024;
 
+// Aceita qualquer image/*. Confiar no mimetype declarado pelo browser ja foi
+// problema (HEIC/AVIF passando como image/png). A validacao real de formato
+// fica no controller via sharp.metadata() — se o sharp nao decodificar,
+// retornamos 400 com mensagem amigavel.
 export const multerCampaignMedia = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, dir),
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || '.bin';
-      cb(null, `${crypto.randomBytes(16).toString('hex')}${ext}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_SIZE },
   fileFilter: (_req, file, cb) => {
-    if (ALLOWED_MIMES.includes(file.mimetype)) {
+    if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
       cb(null, false);

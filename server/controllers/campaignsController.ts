@@ -1,5 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import sharp from 'sharp';
 import { CAMPAIGN_STATUSES, LEAD_STATUSES, LEAD_SOURCES, type CampaignHsmVariable } from '../../shared/types';
 import {
   listCampaigns,
@@ -268,15 +272,54 @@ export async function recipientsHandler(req: Request, res: Response, next: NextF
   } catch (e) { next(e); }
 }
 
+// Diretorio onde as imagens re-encodadas vao parar. Servido via express.static
+// em /uploads/campaigns/.
+const CAMPAIGN_MEDIA_DIR = path.join(process.cwd(), 'uploads', 'campaigns');
+// Limite de dimensao pra evitar enviar imagem 4000x3000 desnecessariamente
+// pesada ao WhatsApp — 1600px e o sweet spot da Meta.
+const MAX_IMAGE_DIMENSION = 1600;
+
 export async function uploadMediaHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: 'Invalid or missing file' });
     }
-    const filename = req.file.filename;
+
+    // Garante que o diretorio existe (era criado pelo multer disk storage antes;
+    // agora que mudamos pra memory storage, criamos aqui se nao existir).
+    await fs.mkdir(CAMPAIGN_MEDIA_DIR, { recursive: true });
+
+    // Re-encoda pra JPEG normalizado (sRGB, strip EXIF, max 1600px). Isso resolve:
+    //   - HEIC/AVIF/WebP renomeados como .png que UazAPI rejeita
+    //   - PNG 16-bit ou APNG que decoders simples nao suportam
+    //   - Imagens enormes que estouram limites do WhatsApp
+    // Se sharp nao decodificar (formato realmente exotico/corrompido), erra
+    // aqui e retornamos 400 amigavel — vendedor nao descobre so no disparo.
+    const filename = `${crypto.randomBytes(16).toString('hex')}.jpg`;
+    const outPath = path.join(CAMPAIGN_MEDIA_DIR, filename);
+
+    try {
+      await sharp(req.file.buffer, { failOn: 'truncated' })
+        .rotate() // respeita EXIF orientation antes de remover metadados
+        .resize({
+          width: MAX_IMAGE_DIMENSION,
+          height: MAX_IMAGE_DIMENSION,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 85, mozjpeg: true })
+        .toFile(outPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[campaigns:upload-media] sharp failed:', msg);
+      return res.status(400).json({
+        error: 'Formato de imagem não suportado. Use JPG, PNG ou WebP.',
+      });
+    }
+
     res.json({
       mediaUrl: `/uploads/campaigns/${filename}`,
-      mediaMime: req.file.mimetype,
+      mediaMime: 'image/jpeg',
     });
   } catch (e) { next(e); }
 }

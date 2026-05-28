@@ -18,23 +18,34 @@ const TINY_PNG = Buffer.from(
 );
 
 describe('POST /api/campaigns/upload-media', () => {
-  it('200 retorna mediaUrl + mediaMime', async () => {
+  it('200 retorna mediaUrl jpg + mediaMime image/jpeg (re-encoda via sharp)', async () => {
     const token = await loginAdmin();
     const res = await request(app)
       .post('/api/campaigns/upload-media')
       .set('Authorization', `Bearer ${token}`)
       .attach('file', TINY_PNG, { filename: 'tiny.png', contentType: 'image/png' });
     expect(res.status).toBe(200);
-    expect(res.body.mediaUrl).toMatch(/^\/uploads\/campaigns\/[a-f0-9]{32}\.png$/);
-    expect(res.body.mediaMime).toBe('image/png');
+    // Sempre sai como .jpg porque o sharp re-encoda tudo pra JPEG normalizado.
+    expect(res.body.mediaUrl).toMatch(/^\/uploads\/campaigns\/[a-f0-9]{32}\.jpg$/);
+    expect(res.body.mediaMime).toBe('image/jpeg');
   });
 
-  it('400 com mime inválido', async () => {
+  it('400 com mime inválido (rejeitado pelo multer fileFilter)', async () => {
     const token = await loginAdmin();
     const res = await request(app)
       .post('/api/campaigns/upload-media')
       .set('Authorization', `Bearer ${token}`)
       .attach('file', Buffer.from('whatever'), { filename: 'x.txt', contentType: 'text/plain' });
     expect(res.status).toBe(400);
+  });
+
+  it('400 com bytes que nao sao imagem real (mime declarado image/png mas conteudo lixo)', async () => {
+    const token = await loginAdmin();
+    const res = await request(app)
+      .post('/api/campaigns/upload-media')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', Buffer.from('not really an image'), { filename: 'fake.png', contentType: 'image/png' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Formato de imagem/i);
   });
 });
