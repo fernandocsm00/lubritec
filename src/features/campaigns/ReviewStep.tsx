@@ -1,6 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { brtInputToUtcIso, utcIsoToBrtInput } from '@/lib/datetimeBR';
 import type { CampaignHsmVariable } from './types';
 import type { InstanceListItem, HsmTemplateRecord } from '@shared/types';
 
@@ -113,10 +114,13 @@ export function ReviewStep(p: Props) {
         {p.scheduledAt !== null && (
           <Input
             type="datetime-local"
-            value={p.scheduledAt.slice(0, 16)}
+            // Sempre exibimos/parseamos em BRT explicitamente. NAO usar
+            // new Date(local-string) porque ele depende do TZ do navegador
+            // (bug real: usuario com TZ=UTC agendou 08:30 e disparou 05:30 BRT).
+            value={utcIsoToBrtInput(p.scheduledAt)}
             onChange={(e) => {
               const v = e.target.value;
-              if (v) p.onScheduledAtChange(new Date(v).toISOString());
+              if (v) p.onScheduledAtChange(brtInputToUtcIso(v));
             }}
             className="mt-2 max-w-xs"
           />
