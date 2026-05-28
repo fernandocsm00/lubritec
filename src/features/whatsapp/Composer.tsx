@@ -1,4 +1,4 @@
-import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -47,25 +47,29 @@ export function Composer({ conversationId }: Props) {
     }
   }
 
-  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    // Permite Ctrl+V de imagem/arquivo direto no campo: abre o dialog de
-    // anexo já pré-preenchido. Texto puro segue o paste normal do textarea.
-    const items = e.clipboardData?.items;
-    if (!items || items.length === 0) return;
-    for (let i = 0; i < items.length; i += 1) {
-      const item = items[i];
-      if (item.kind !== 'file') continue;
-      const raw = item.getAsFile();
-      if (!raw) continue;
-      e.preventDefault();
-      // Clipboard images costumam vir com name='image.png' fixo — renomeia
-      // pra evitar colisões e dar contexto no nome enviado pra UazAPI.
-      const ext = raw.type.split('/')[1]?.split('+')[0] || 'bin';
-      const named = new File([raw], `colado-${Date.now()}.${ext}`, { type: raw.type });
-      mediaUploadRef.current?.openWithFile(named);
-      return;
+  // Listener global de paste: permite Ctrl+V de imagem/arquivo em qualquer
+  // lugar da tela da conversa, não só dentro da textarea. Atendente tira print
+  // (Win+Shift+S) e cola direto sem precisar focar o campo antes. Texto puro
+  // não é interceptado — segue o paste normal.
+  useEffect(() => {
+    function handlePaste(e: globalThis.ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      for (let i = 0; i < items.length; i += 1) {
+        const item = items[i];
+        if (item.kind !== 'file') continue;
+        const raw = item.getAsFile();
+        if (!raw) continue;
+        e.preventDefault();
+        const ext = raw.type.split('/')[1]?.split('+')[0] || 'bin';
+        const named = new File([raw], `colado-${Date.now()}.${ext}`, { type: raw.type });
+        mediaUploadRef.current?.openWithFile(named);
+        return;
+      }
     }
-  }
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   return (
     <div className="border-t border-border bg-background px-3 py-2 flex items-end gap-2">
@@ -84,7 +88,6 @@ export function Composer({ conversationId }: Props) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
-        onPaste={onPaste}
         placeholder="Digite uma mensagem (Enter envia, Shift+Enter quebra linha, Ctrl+V cola imagens)"
         className="flex-1 min-h-[40px] max-h-32 resize-none"
         rows={1}
