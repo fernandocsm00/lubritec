@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Paperclip, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,19 @@ interface Props {
   onPick: (input: { kind: MessageKind; mediaUrl: string; mediaMime?: string; caption?: string }) => void;
 }
 
+export interface MediaUploadHandle {
+  /** Abre o dialog já com um arquivo (ex.: imagem colada via Ctrl+V). */
+  openWithFile: (file: File) => void;
+}
+
 type Source = 'file' | 'url';
+
+function kindFromMime(mime: string): MessageKind {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
 
 const ACCEPT_BY_KIND: Record<Exclude<MessageKind, 'text' | 'unknown'>, string> = {
   image: 'image/jpeg,image/png,image/webp,image/gif',
@@ -30,7 +42,10 @@ const ACCEPT_BY_KIND: Record<Exclude<MessageKind, 'text' | 'unknown'>, string> =
   document: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip',
 };
 
-export function MediaUpload({ onPick }: Props) {
+export const MediaUpload = forwardRef<MediaUploadHandle, Props>(function MediaUpload(
+  { onPick }: Props,
+  ref,
+) {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<Source>('file');
   const [kind, setKind] = useState<MessageKind>('image');
@@ -44,6 +59,16 @@ export function MediaUpload({ onPick }: Props) {
     setUrl(''); setCaption(''); setKind('image');
     setFile(null); setSource('file');
   }
+
+  useImperativeHandle(ref, () => ({
+    openWithFile(f: File) {
+      reset();
+      setFile(f);
+      setKind(kindFromMime(f.type));
+      setSource('file');
+      setOpen(true);
+    },
+  }), []);
 
   async function submit() {
     if (source === 'url') {
@@ -195,4 +220,4 @@ export function MediaUpload({ onPick }: Props) {
       </Dialog>
     </>
   );
-}
+});
