@@ -16,6 +16,8 @@ import {
   sendMessageHandler,
   startConversationHandler,
   uploadMediaHandler,
+  deleteMessageHandler,
+  editMessageHandler,
 } from '../controllers/conversationsController';
 
 const router = Router();
@@ -47,5 +49,7 @@ router.post('/:id/queue', authGuard, queueHandler);
 router.post('/:id/close', authGuard, closeHandler);
 router.post('/:id/read', authGuard, readHandler);
 router.post('/:id/messages', authGuard, sendMessageHandler);
+router.delete('/:id/messages/:msgId', authGuard, deleteMessageHandler);
+router.patch('/:id/messages/:msgId', authGuard, editMessageHandler);
 
 export default router;

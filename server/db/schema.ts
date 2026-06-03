@@ -140,6 +140,10 @@ export const messages = pgTable('messages', {
   rawPayload: jsonb('raw_payload').notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  // Edit/delete (migration 032) — espelha revoke/edit nativo do WhatsApp via UazAPI.
+  editedAt: timestamp('edited_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  originalBody: text('original_body'),
 }, (t) => ({
   providerMsgidUniq: uniqueIndex('idx_messages_provider_msgid')
     .on(t.provider, t.providerMsgId)

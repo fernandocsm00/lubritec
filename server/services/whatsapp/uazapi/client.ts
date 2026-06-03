@@ -95,8 +95,72 @@ export async function sendUazapiMessage(opts: SendMessageOpts): Promise<UazapiSe
   );
 }
 
+/**
+ * Revoga (apaga pra todos) uma mensagem ja enviada via UazAPI.
+ * Endpoint: POST /message/delete  body: { id }
+ * O id aceita formato 'owner:messageid' OU 'messageid' puro — ambos os formatos
+ * vem do response do /send/* e ficam em messages.provider_msg_id.
+ *
+ * UazAPI gera webhook 'messages_update' status=Deleted ao concluir.
+ */
+export async function deleteUazapiMessage(id: string): Promise<void> {
+  const cfg = await loadSendConfig();
+  await retry(
+    async () => {
+      const res = await fetch(`${cfg.baseUrl}/message/delete`, {
+        method: 'POST',
+        headers: { token: cfg.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new UazapiError(res.status, text);
+      }
+    },
+    {
+      attempts: 3,
+      baseDelayMs: 500,
+      shouldRetry: (err) =>
+        err instanceof UazapiError ? err.status >= 500 || err.status === 429 : true,
+    },
+  );
+}
+
+/**
+ * Edita o texto de uma mensagem enviada via UazAPI.
+ * Endpoint: POST /message/edit  body: { id, text }
+ * UazAPI exige que a msg tenha sido enviada pela propria instancia e esteja
+ * na janela permitida pelo WhatsApp (~15min). Retorna 4xx fora disso.
+ */
+export async function editUazapiMessage(id: string, text: string): Promise<void> {
+  const cfg = await loadSendConfig();
+  await retry(
+    async () => {
+      const res = await fetch(`${cfg.baseUrl}/message/edit`, {
+        method: 'POST',
+        headers: { token: cfg.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, text }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new UazapiError(res.status, body);
+      }
+    },
+    {
+      attempts: 3,
+      baseDelayMs: 500,
+      shouldRetry: (err) =>
+        err instanceof UazapiError ? err.status >= 500 || err.status === 429 : true,
+    },
+  );
+}
+
 // Backward-compat shim — preserva a interface usada por conversationsService
 // e pelos vi.mock dos testes do WhatsApp Inbox.
 export const uazapiClient = {
   sendMessage: sendUazapiMessage,
+  deleteMessage: deleteUazapiMessage,
+  editMessage: editUazapiMessage,
 };

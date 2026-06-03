@@ -176,6 +176,42 @@ export function useChangeQueue() {
   });
 }
 
+export function useDeleteMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, messageId }: { conversationId: string; messageId: string }) =>
+      api<PublicMessage>(`/conversations/${conversationId}/messages/${messageId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages', vars.conversationId] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export function useEditMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      conversationId,
+      messageId,
+      body,
+    }: {
+      conversationId: string;
+      messageId: string;
+      body: string;
+    }) =>
+      api<PublicMessage>(`/conversations/${conversationId}/messages/${messageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ body }),
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages', vars.conversationId] });
+    },
+  });
+}
+
 export function useCloseConversation() {
   const qc = useQueryClient();
   return useMutation({

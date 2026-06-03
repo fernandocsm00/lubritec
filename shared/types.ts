@@ -214,6 +214,8 @@ export interface PublicMessage {
   mediaMime: string | null;
   sentByUser: { id: string; name: string } | null;
   sentAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
 }
 
 export interface PublicMessageTemplate {

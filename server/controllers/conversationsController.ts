@@ -19,6 +19,8 @@ import {
   markRead,
   sendMessage,
   startConversation,
+  deleteOutboundMessage,
+  editOutboundMessage,
 } from '../services/conversationsService';
 
 const csvOf = <T extends string>(values: readonly T[]) =>
@@ -210,6 +212,24 @@ export async function startConversationHandler(req: Request, res: Response, next
       appBaseUrl: `${req.protocol}://${req.get('host')}`,
     });
     res.json(result);
+  } catch (e) { next(e); }
+}
+
+const msgIdParams = z.object({ id: z.string().uuid(), msgId: z.string().uuid() });
+const editBody = z.object({ body: z.string().min(1).max(4000) });
+
+export async function deleteMessageHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { msgId } = msgIdParams.parse(req.params);
+    res.json(await deleteOutboundMessage(msgId, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+export async function editMessageHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { msgId } = msgIdParams.parse(req.params);
+    const { body } = editBody.parse(req.body);
+    res.json(await editOutboundMessage(msgId, req.user!.userId, body));
   } catch (e) { next(e); }
 }
 

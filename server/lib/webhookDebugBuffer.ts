@@ -17,6 +17,8 @@ export interface WebhookDebugEntry {
     | { kind: 'extracted'; messageId: string; from: string; messageKind: string; fromMe: boolean }
     | { kind: 'not_a_message'; reason: string }
     | { kind: 'inserted' | 'duplicate' | 'ignored'; messageId: string }
+    | { kind: 'message_deleted'; messageId: string }
+    | { kind: 'ignored_update'; reason: string }
     | { kind: 'error'; message: string };
 }
 

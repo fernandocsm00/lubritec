@@ -287,6 +287,8 @@ export async function listMessages(
     mediaMime: r.msg.mediaMime,
     sentByUser: r.sender ? { id: r.sender.id, name: r.sender.name } : null,
     sentAt: r.msg.sentAt.toISOString(),
+    editedAt: r.msg.editedAt?.toISOString() ?? null,
+    deletedAt: r.msg.deletedAt?.toISOString() ?? null,
   }));
 
   return { items, hasMore };
@@ -537,6 +539,155 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     mediaMime: msg.mediaMime,
     sentByUser: sender ? { id: sender.id, name: sender.name } : null,
     sentAt: msg.sentAt.toISOString(),
+    editedAt: msg.editedAt?.toISOString() ?? null,
+    deletedAt: msg.deletedAt?.toISOString() ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Edit / delete de mensagem enviada (revoke via UazAPI + soft delete local)
+// ---------------------------------------------------------------------------
+
+const EDIT_WINDOW_MS = 15 * 60 * 1000;       // janela do WhatsApp pra edicao
+const DELETE_WINDOW_MS = 48 * 60 * 60 * 1000; // janela pra apagar pra todos
+
+async function loadMessageForMutation(messageId: string) {
+  const [row] = await db
+    .select({ msg: messages })
+    .from(messages)
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  if (!row) throw new HttpError(404, 'Message not found');
+  return row.msg;
+}
+
+async function isAdmin(userId: string): Promise<boolean> {
+  const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+  return u?.role === 'admin';
+}
+
+function ensureMutationPermissions(args: {
+  msg: { direction: 'in' | 'out'; sentByUserId: string | null; deletedAt: Date | null; provider: string };
+  userId: string;
+  userIsAdmin: boolean;
+  action: 'edit' | 'delete';
+}) {
+  const { msg, userId, userIsAdmin, action } = args;
+  if (msg.direction !== 'out') {
+    throw new HttpError(400, 'Cannot mutate inbound messages');
+  }
+  if (msg.deletedAt) {
+    throw new HttpError(409, 'Message already deleted');
+  }
+  // Autor pode sempre; admin pode em qualquer msg outbound.
+  // sentByUserId pode ser null pra msgs da IA — so admin pode mexer nelas.
+  const isAuthor = msg.sentByUserId !== null && msg.sentByUserId === userId;
+  if (!isAuthor && !userIsAdmin) {
+    throw new HttpError(403, `Sem permissao pra ${action} esta mensagem`);
+  }
+  if (msg.provider !== 'uazapi') {
+    // Meta Cloud nao tem revoke/edit nativo nessa API; bloqueia explicito
+    // em vez de fingir que apagou.
+    throw new HttpError(501, `${action} nao suportado pro provider ${msg.provider}`);
+  }
+}
+
+/**
+ * Apaga pra todos: chama UazAPI /message/delete (revoke nativo do WhatsApp)
+ * e marca deleted_at no banco. Cliente passa a ver "Esta mensagem foi
+ * apagada" no WhatsApp dele. Se o provider falhar, NAO marca local — UI
+ * fica consistente com o que o cliente esta vendo.
+ */
+export async function deleteOutboundMessage(messageId: string, userId: string): Promise<PublicMessage> {
+  const msg = await loadMessageForMutation(messageId);
+  const userIsAdmin = await isAdmin(userId);
+  ensureMutationPermissions({ msg, userId, userIsAdmin, action: 'delete' });
+
+  const ageMs = Date.now() - msg.sentAt.getTime();
+  if (ageMs > DELETE_WINDOW_MS) {
+    throw new HttpError(409, 'Janela de 48h pra apagar pra todos ja expirou');
+  }
+  if (!msg.providerMsgId) {
+    throw new HttpError(409, 'Mensagem sem providerMsgId — nao pode ser revogada no WhatsApp');
+  }
+
+  await uazapiClient.deleteMessage(msg.providerMsgId);
+
+  await db
+    .update(messages)
+    .set({ deletedAt: new Date() })
+    .where(eq(messages.id, messageId));
+
+  return loadPublicMessage(messageId);
+}
+
+/**
+ * Edita o texto: chama UazAPI /message/edit (edit nativo) e atualiza body
+ * + edited_at. Snapshot do body anterior em original_body (so na 1a edicao).
+ */
+export async function editOutboundMessage(
+  messageId: string,
+  userId: string,
+  newText: string,
+): Promise<PublicMessage> {
+  const trimmed = newText.trim();
+  if (!trimmed) throw new HttpError(400, 'Texto vazio');
+  if (trimmed.length > 4000) throw new HttpError(400, 'Texto excede 4000 caracteres');
+
+  const msg = await loadMessageForMutation(messageId);
+  const userIsAdmin = await isAdmin(userId);
+  ensureMutationPermissions({ msg, userId, userIsAdmin, action: 'edit' });
+
+  if (msg.kind !== 'text') {
+    throw new HttpError(400, 'So mensagens de texto podem ser editadas');
+  }
+  const ageMs = Date.now() - msg.sentAt.getTime();
+  if (ageMs > EDIT_WINDOW_MS) {
+    throw new HttpError(409, 'Janela de 15min pra editar ja expirou');
+  }
+  if (!msg.providerMsgId) {
+    throw new HttpError(409, 'Mensagem sem providerMsgId — nao pode ser editada no WhatsApp');
+  }
+  if (trimmed === msg.body) {
+    // No-op explicito — evita gerar webhook desnecessario.
+    return loadPublicMessage(messageId);
+  }
+
+  await uazapiClient.editMessage(msg.providerMsgId, trimmed);
+
+  await db
+    .update(messages)
+    .set({
+      body: trimmed,
+      editedAt: new Date(),
+      // Snapshot apenas na primeira edicao (audit/debug).
+      originalBody: msg.originalBody ?? msg.body,
+    })
+    .where(eq(messages.id, messageId));
+
+  return loadPublicMessage(messageId);
+}
+
+async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
+  const [row] = await db
+    .select({ msg: messages, sender: users })
+    .from(messages)
+    .leftJoin(users, eq(messages.sentByUserId, users.id))
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  if (!row) throw new HttpError(404, 'Message not found');
+  return {
+    id: row.msg.id,
+    conversationId: row.msg.conversationId,
+    direction: row.msg.direction,
+    kind: row.msg.kind,
+    body: row.msg.body,
+    mediaUrl: row.msg.mediaUrl,
+    mediaMime: row.msg.mediaMime,
+    sentByUser: row.sender ? { id: row.sender.id, name: row.sender.name } : null,
+    sentAt: row.msg.sentAt.toISOString(),
+    editedAt: row.msg.editedAt?.toISOString() ?? null,
+    deletedAt: row.msg.deletedAt?.toISOString() ?? null,
   };
 }
 

@@ -1,4 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
+import { eq, or } from 'drizzle-orm';
+import { db } from '../db/client';
+import { messages } from '../db/schema';
 import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
 import { loadValidWebhookTokens } from '../services/whatsappInstanceService';
@@ -8,6 +11,62 @@ import {
   summarizeHeaders,
   type WebhookDebugEntry,
 } from '../lib/webhookDebugBuffer';
+
+/**
+ * UazAPI manda evento 'messages_update' (ou 'messages.update') com status
+ * 'Deleted' quando uma msg eh revogada — seja por nos via POST /message/delete
+ * OU pelo proprio cliente apagando pelo celular dele.
+ *
+ * Marca deleted_at na msg local correspondente (idempotente). Retorna o
+ * resultado pro debug buffer se conseguiu casar, ou null se nao eh esse tipo
+ * de evento (e o handler segue pro extractInbound normal).
+ *
+ * Match pelo provider_msg_id: aceita formato 'owner:messageid' OU so 'messageid'
+ * porque o ID que gravamos no send vem nesse formato e o webhook ja vem com
+ * messageid puro — entao matchamos por OU.
+ */
+async function tryHandleMessageUpdate(
+  payload: Record<string, unknown>,
+): Promise<{ kind: 'message_deleted'; messageId: string } | { kind: 'ignored_update'; reason: string } | null> {
+  const event = String(
+    payload.event ?? payload.EventType ?? payload.type ?? payload.eventType ?? '',
+  ).toLowerCase();
+  if (!event.includes('update')) return null;
+
+  const msgObj =
+    (payload.message as Record<string, unknown> | undefined) ??
+    (payload.data as Record<string, unknown> | undefined) ??
+    payload;
+  const status = String(msgObj.status ?? '').toLowerCase();
+  if (!status.includes('delete')) {
+    return { kind: 'ignored_update', reason: `status=${status || 'unknown'}` };
+  }
+
+  const msgId =
+    (msgObj.id as string | undefined) ??
+    (msgObj.messageid as string | undefined) ??
+    (msgObj.messageId as string | undefined);
+  if (!msgId) return { kind: 'ignored_update', reason: 'missing message id' };
+
+  // Match flexivel: provider_msg_id pode estar gravado como 'owner:messageid'
+  // (vindo do send response) ou so 'messageid' (vindo do payload de update).
+  const suffix = msgId.includes(':') ? msgId.split(':').pop()! : msgId;
+  const result = await db
+    .update(messages)
+    .set({ deletedAt: new Date() })
+    .where(
+      or(
+        eq(messages.providerMsgId, msgId),
+        eq(messages.providerMsgId, suffix),
+      ),
+    )
+    .returning({ id: messages.id });
+
+  if (result.length === 0) {
+    return { kind: 'ignored_update', reason: `no local message matching ${msgId}` };
+  }
+  return { kind: 'message_deleted', messageId: result[0].id };
+}
 
 /**
  * Lê o token enviado pela uazapiGO. Aceita múltiplas convenções porque
@@ -114,6 +173,16 @@ export async function whatsappWebhookHandler(
     if (!parsed.success) {
       console.warn('[whatsapp:webhook] non-object body, ignoring');
       debug.result = { kind: 'non_object_body' };
+      pushDebugEntry(debug);
+      return res.status(200).end();
+    }
+
+    // Antes de tratar como mensagem nova: detecta messages_update com status
+    // Deleted (uazapi /message/delete OU cliente apagou pelo celular dele).
+    // Marca deleted_at na linha local correspondente pra UI refletir.
+    const updateResult = await tryHandleMessageUpdate(parsed.data);
+    if (updateResult) {
+      debug.result = updateResult;
       pushDebugEntry(debug);
       return res.status(200).end();
     }
