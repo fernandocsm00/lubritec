@@ -9,6 +9,7 @@ import {
   byLeadHandler,
   listMessagesHandler,
   claimHandler,
+  assignHandler,
   queueHandler,
   closeHandler,
   readHandler,
@@ -41,6 +42,7 @@ router.post(
 router.get('/:id', authGuard, getHandler);
 router.get('/:id/messages', authGuard, listMessagesHandler);
 router.post('/:id/claim', authGuard, claimHandler);
+router.post('/:id/assign', authGuard, assignHandler);
 router.post('/:id/queue', authGuard, queueHandler);
 router.post('/:id/close', authGuard, closeHandler);
 router.post('/:id/read', authGuard, readHandler);

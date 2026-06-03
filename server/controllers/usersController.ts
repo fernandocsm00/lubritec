@@ -4,6 +4,7 @@ import {
   inviteUser,
   listUsers,
   listAssignableUsers,
+  listConversationAssignees,
   updateUser,
   resendInvite,
   deleteUserById,
@@ -71,6 +72,15 @@ export async function inviteHandler(req: Request, res: Response, next: NextFunct
 export async function listAssignableHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const list = await listAssignableUsers();
+    res.json({ users: list });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listConversationAssigneesHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const list = await listConversationAssignees();
     res.json({ users: list });
   } catch (e) {
     next(e);

@@ -320,6 +320,58 @@ export async function claimConversation(
   return loadAndReturn(id, userId);
 }
 
+/**
+ * Atribui a conversa a um usuario especifico (nao o currentUser). Aceita
+ * targetUserId=null pra desatribuir (volta pra "Sem dono" sem fechar).
+ *
+ * Diferenca pro claimConversation:
+ *  - claim eh pra "eu pego" (currentUser).
+ *  - assign eh pra "passar pra outra pessoa" (gerente atribuindo, troca de
+ *    turno, etc.). Mantem o mesmo efeito colateral: se atribuir a alguem,
+ *    status vira em_atendimento; se desatribuir, status volta a
+ *    aguardando_atendimento (a menos que esteja encerrada).
+ */
+export async function assignConversation(
+  id: string,
+  targetUserId: string | null,
+  currentUserId: string,
+): Promise<PublicConversation> {
+  if (targetUserId) {
+    const [target] = await db
+      .select({ id: users.id, isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, targetUserId))
+      .limit(1);
+    if (!target) throw new HttpError(404, 'Target user not found');
+    if (!target.isActive) throw new HttpError(409, 'Target user is inactive');
+  }
+
+  const [conv] = await db
+    .select({ status: conversations.status })
+    .from(conversations)
+    .where(eq(conversations.id, id))
+    .limit(1);
+  if (!conv) throw new HttpError(404, 'Conversation not found');
+
+  const nextStatus =
+    conv.status === 'encerrada'
+      ? 'encerrada'
+      : targetUserId
+        ? 'em_atendimento'
+        : 'aguardando_atendimento';
+
+  await db
+    .update(conversations)
+    .set({
+      assignedTo: targetUserId,
+      status: nextStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(conversations.id, id));
+
+  return loadAndReturn(id, currentUserId);
+}
+
 export async function changeQueue(
   id: string,
   queue: ConversationQueue,

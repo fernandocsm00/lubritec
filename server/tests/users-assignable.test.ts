@@ -51,3 +51,25 @@ describe('GET /api/users/assignable', () => {
     expect((await request(app).get('/api/users').set('Authorization', `Bearer ${tRec}`)).status).toBe(403);
   });
 });
+
+describe('GET /api/users/conversation-assignees', () => {
+  it('401 sem token', async () => {
+    const res = await request(app).get('/api/users/conversation-assignees');
+    expect(res.status).toBe(401);
+  });
+
+  it('inclui admin, comercial E recepcao ativos', async () => {
+    const tAdmin = await loginAs('a4@x.com', 'admin');
+    await createUser({ email: 'c4@x.com', password: 'pw12345', role: 'comercial' });
+    await createUser({ email: 'r4@x.com', password: 'pw12345', role: 'recepcao' });
+
+    const res = await request(app)
+      .get('/api/users/conversation-assignees')
+      .set('Authorization', `Bearer ${tAdmin}`);
+    expect(res.status).toBe(200);
+    const roles = res.body.users.map((u: { role: string }) => u.role);
+    expect(roles).toContain('admin');
+    expect(roles).toContain('comercial');
+    expect(roles).toContain('recepcao');
+  });
+});

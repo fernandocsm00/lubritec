@@ -13,6 +13,7 @@ import {
   getConversationByLeadId,
   listMessages,
   claimConversation,
+  assignConversation,
   changeQueue,
   closeConversation,
   markRead,
@@ -97,6 +98,16 @@ export async function claimHandler(req: Request, res: Response, next: NextFuncti
   try {
     const { id } = idParams.parse(req.params);
     res.json(await claimConversation(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+const assignBody = z.object({ userId: z.string().uuid().nullable() });
+
+export async function assignHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const { userId } = assignBody.parse(req.body);
+    res.json(await assignConversation(id, userId, req.user!.userId));
   } catch (e) { next(e); }
 }
 

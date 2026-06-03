@@ -1,15 +1,25 @@
 import { toast } from 'sonner';
-import { Bot } from 'lucide-react';
+import { Bot, UserPlus, Check } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { useChangeQueue, useClaimConversation, useCloseConversation } from './api';
+import {
+  useAssignConversation,
+  useChangeQueue,
+  useClaimConversation,
+  useCloseConversation,
+  useConversationAssignees,
+} from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import { CONVERSATION_QUEUES } from '@shared/types';
 import { formatCnpj } from '@/lib/utils';
 import type { PublicConversation } from './types';
+
+const ROLE_LABEL: Record<'admin' | 'comercial' | 'recepcao', string> = {
+  admin: 'Admin', comercial: 'Comercial', recepcao: 'Recepção',
+};
 
 const QUEUE_LABEL: Record<PublicConversation['queue'], string> = {
   ia: 'IA', recepcao: 'Recepção', comercial: 'Comercial',
@@ -17,8 +27,10 @@ const QUEUE_LABEL: Record<PublicConversation['queue'], string> = {
 
 export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; currentUserId: string }) {
   const claim = useClaimConversation();
+  const assign = useAssignConversation();
   const changeQueue = useChangeQueue();
   const close = useCloseConversation();
+  const { data: assignees } = useConversationAssignees();
 
   const isMine = conv.assignedTo?.id === currentUserId;
   const subtitle = [
@@ -30,6 +42,13 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
     try {
       await claim.mutateAsync(conv.id);
       toast.success('Conversa atribuída a você.');
+    } catch { toast.error('Falha ao atribuir.'); }
+  }
+
+  async function doAssign(userId: string | null, name: string) {
+    try {
+      await assign.mutateAsync({ id: conv.id, userId });
+      toast.success(userId ? `Atribuída a ${name}.` : 'Atribuição removida.');
     } catch { toast.error('Falha ao atribuir.'); }
   }
 
@@ -70,6 +89,48 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
             Reatribuir a mim
           </Button>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" disabled={assign.isPending}>
+              <UserPlus className="h-4 w-4 mr-1" /> Atribuir ▾
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="max-h-72 overflow-y-auto w-56">
+            {(!assignees || assignees.length === 0) && (
+              <DropdownMenuItem disabled>Nenhum usuário disponível</DropdownMenuItem>
+            )}
+            {assignees?.map((u) => {
+              const isCurrent = conv.assignedTo?.id === u.id;
+              return (
+                <DropdownMenuItem
+                  key={u.id}
+                  onSelect={() => !isCurrent && doAssign(u.id, u.name)}
+                  disabled={isCurrent}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span className="flex flex-col min-w-0">
+                    <span className="truncate text-sm">{u.name}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {ROLE_LABEL[u.role]}
+                    </span>
+                  </span>
+                  {isCurrent && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                </DropdownMenuItem>
+              );
+            })}
+            {conv.assignedTo && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => doAssign(null, '')}
+                  className="text-muted-foreground"
+                >
+                  Remover atribuição
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" variant="outline">Mover ▾</Button>

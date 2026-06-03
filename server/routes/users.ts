@@ -5,6 +5,7 @@ import {
   updateHandler,
   resendInviteHandler,
   listAssignableHandler,
+  listConversationAssigneesHandler,
 } from '../controllers/usersController';
 import { authGuard } from '../middleware/authGuard';
 import { requireRole } from '../middleware/requireRole';
@@ -12,6 +13,7 @@ import { requireRole } from '../middleware/requireRole';
 const router = Router();
 
 router.get('/assignable', authGuard, listAssignableHandler);
+router.get('/conversation-assignees', authGuard, listConversationAssigneesHandler);
 router.get('/', authGuard, requireRole('admin'), listHandler);
 router.post('/', authGuard, requireRole('admin'), inviteHandler);
 router.patch('/:id', authGuard, requireRole('admin'), updateHandler);

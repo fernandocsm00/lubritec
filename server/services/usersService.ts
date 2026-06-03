@@ -89,6 +89,23 @@ export async function listAssignableUsers() {
   return rows;
 }
 
+/**
+ * Lista usuarios elegiveis pra atribuicao de CONVERSAS (inbox).
+ * Inclui recepcao alem de admin/comercial — conversas de qualquer fila podem
+ * ser atribuidas a qualquer atendente ativo (gerente passando pra alguem).
+ *
+ * listAssignableUsers (sem recepcao) continua sendo usada por deals/kanban,
+ * que sao escopo comercial.
+ */
+export async function listConversationAssignees() {
+  const rows = await db
+    .select({ id: users.id, name: users.name, role: users.role })
+    .from(users)
+    .where(and(eq(users.isActive, true), inArray(users.role, ['admin', 'comercial', 'recepcao'])))
+    .orderBy(asc(users.name));
+  return rows;
+}
+
 export async function resendInvite(userId: string) {
   return db.transaction(async (tx) => {
     const [user] = await tx.select().from(users).where(eq(users.id, userId)).limit(1);

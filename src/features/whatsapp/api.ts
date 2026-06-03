@@ -137,6 +137,33 @@ export function useClaimConversation() {
   });
 }
 
+export interface ConversationAssignee {
+  id: string;
+  name: string;
+  role: 'admin' | 'comercial' | 'recepcao';
+}
+
+export function useConversationAssignees() {
+  return useQuery({
+    queryKey: ['users', 'conversation-assignees'],
+    queryFn: () =>
+      api<{ users: ConversationAssignee[] }>('/users/conversation-assignees').then((r) => r.users),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useAssignConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, userId }: { id: string; userId: string | null }) =>
+      api<PublicConversation>(`/conversations/${id}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+  });
+}
+
 export function useChangeQueue() {
   const qc = useQueryClient();
   return useMutation({
