@@ -47,6 +47,13 @@ export function MessageBubble({ msg }: { msg: PublicMessage }) {
           </a>
         )}
         {msg.body && <p className="text-sm whitespace-pre-wrap break-words leading-snug">{renderWhatsappBold(msg.body)}</p>}
+        {/* Safety-net: msgs sem body nem media renderizavel (kind=unknown legado,
+            ou anexo nao baixado) — mostra placeholder pro bubble nao ficar vazio. */}
+        {!msg.body && !msg.mediaUrl && (
+          <p className="text-sm italic text-muted-foreground/80 leading-snug">
+            📎 Mensagem não suportada
+          </p>
+        )}
         <div className="text-[10px] text-muted-foreground/80 text-right mt-0.5">
           {time}
           {isOut && <span className="ml-1 text-sky-400">✓✓</span>}

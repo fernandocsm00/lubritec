@@ -210,12 +210,15 @@ export async function ingestInboundMessage(
         .where(eq(conversations.id, c.id));
     }
 
-    // 3. Insert message with provider from input (not hardcoded)
+    // 3. Insert message with provider from input (not hardcoded).
+    // Body aceita texto inclusive em kinds nao-text — extractInbound usa isso
+    // pra repassar label fallback (ex: "🎞️ Figurinha") quando nao da pra
+    // renderizar o anexo, evitando bubble vazio no chat.
     await tx.insert(messages).values({
       conversationId,
       direction: 'in',
       kind: input.kind,
-      body: input.kind === 'text' ? input.text : null,
+      body: input.text ?? null,
       mediaUrl: input.mediaUrl,
       mediaMime: input.mediaMime,
       providerMsgId: input.providerMsgId,
@@ -259,7 +262,7 @@ export async function ingestInbound(
     leadPhone: normalizePhone(m.from),
     leadName: m.contactName ?? undefined,
     kind: m.kind,
-    text: m.kind === 'text' ? (m.text ?? undefined) : undefined,
+    text: m.text ?? undefined,
     mediaUrl: m.mediaUrl ?? undefined,
     mediaMime: m.mediaMime ?? undefined,
     providerMsgId: m.id,

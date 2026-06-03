@@ -61,16 +61,39 @@ function asObj(v: unknown): Record<string, unknown> | undefined {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
 }
 
-/** Mapeia o `type`/`messageType` da uazapiGO pro nosso MessageKind. */
+/** Mapeia o `type`/`messageType`/`mediaType` da uazapiGO pro nosso MessageKind.
+ *  Stickers viram 'image' (sao WebP) — quem distingue stickers eh o fallback
+ *  de body pra mostrar "🎞️ Figurinha" no UI. */
 function mapKind(raw: string | null): MessageKind {
   if (!raw) return 'unknown';
   const t = raw.toLowerCase();
   if (t === 'text' || t === 'conversation' || t === 'extendedtextmessage') return 'text';
+  if (t === 'sticker' || t.includes('sticker')) return 'image';
   if (t === 'image' || t.includes('image')) return 'image';
   if (t === 'audio' || t.includes('audio') || t.includes('ptt')) return 'audio';
   if (t === 'video' || t.includes('video')) return 'video';
   if (t === 'document' || t.includes('document')) return 'document';
   return 'unknown';
+}
+
+/** Texto fallback pra bubble nao ficar em branco quando nao da pra renderizar
+ *  a media (sem URL, kind nao suportado, etc). */
+function fallbackBodyFor(kind: MessageKind, isSticker: boolean): string {
+  if (isSticker) return '🎞️ Figurinha';
+  if (kind === 'image') return '🖼️ Imagem';
+  if (kind === 'audio') return '🎵 Áudio';
+  if (kind === 'video') return '🎬 Vídeo';
+  if (kind === 'document') return '📎 Documento';
+  return '📎 Mensagem não suportada';
+}
+
+/** URLs placeholder que uazapiGO manda em vez de download direto.
+ *  https://a.whatsapp.net eh marker; directPath eh path encriptado nao baixavel sem mediaKey. */
+function isUsableMediaUrl(url: string | null | undefined): boolean {
+  if (!url || url.length < 20) return false;
+  const lower = url.toLowerCase();
+  if (lower === 'https://a.whatsapp.net' || lower === 'https://a.whatsapp.net/') return false;
+  return /^https?:\/\//.test(url);
 }
 
 function parseTimestamp(v: unknown): Date {
@@ -150,18 +173,30 @@ export function extractInbound(payload: UazapiInbound): InboundMessage | null {
     from.includes('@g.us');
   if (isGroup) return null;
 
-  const rawType = pickString(msg, ['type', 'messageType', 'message_type']);
-  const kind = mapKind(rawType);
+  // mediaType (uazapiGO) eh mais especifico: text vem como 'conversation' em
+  // messageType, mas mediaType vazio; sticker vem com mediaType='sticker' e
+  // messageType='StickerMessage' (com type='media' generico). Preferimos mediaType.
+  const rawType = pickString(msg, ['messageType', 'type', 'message_type']);
+  const mediaType = pickString(msg, ['mediaType', 'media_type']);
+  const kind = mapKind(mediaType ?? rawType);
+  const isSticker =
+    (mediaType?.toLowerCase().includes('sticker') ?? false) ||
+    (rawType?.toLowerCase().includes('sticker') ?? false);
 
   const text =
     pickString(msg, ['text', 'body', 'conversation', 'caption']) ??
     pickString(asObj(msg.message), ['conversation', 'text']) ??
     pickString(asObj(asObj(msg.message)?.extendedTextMessage), ['text']);
 
-  const mediaUrl = pickString(msg, [
-    'media_url', 'mediaUrl', 'url', 'fileUrl', 'file_url', 'fileURL',
-  ]);
-  const mediaMime = pickString(msg, ['mimetype', 'mimeType', 'mime_type', 'mime']);
+  // Media URL pode vir no root ou dentro de `content` (caso uazapiGO recente).
+  const content = asObj(msg.content);
+  const rawMediaUrl =
+    pickString(msg, ['media_url', 'mediaUrl', 'url', 'fileUrl', 'file_url', 'fileURL']) ??
+    pickString(content, ['url', 'URL', 'mediaUrl', 'fileUrl']);
+  const mediaUrl = isUsableMediaUrl(rawMediaUrl) ? rawMediaUrl : null;
+  const mediaMime =
+    pickString(msg, ['mimetype', 'mimeType', 'mime_type', 'mime']) ??
+    pickString(content, ['mimetype', 'mimeType', 'mime_type', 'mime']);
 
   const timestamp = parseTimestamp(
     msg.timestamp ?? msg.t ?? msg.messageTimestamp ?? payload.timestamp,
@@ -177,11 +212,25 @@ export function extractInbound(payload: UazapiInbound): InboundMessage | null {
     && rawContactName.length > 1
     && /[a-zA-Z0-9À-ɏ]/.test(rawContactName);
 
+  // Body final:
+  //  - text → o texto da msg
+  //  - midia com URL renderizavel → null (UI mostra o anexo)
+  //  - midia SEM URL ou kind=unknown → label fallback ("🎞️ Figurinha" etc) pra
+  //    bubble nunca ficar em branco no chat.
+  let finalText: string | null;
+  if (kind === 'text') {
+    finalText = text;
+  } else if (mediaUrl) {
+    finalText = text; // caption opcional do anexo, quando vier
+  } else {
+    finalText = fallbackBodyFor(kind, isSticker);
+  }
+
   return {
     id,
     from,
     contactName: isValidName ? rawContactName : null,
-    text: kind === 'text' ? text : null,
+    text: finalText,
     kind,
     mediaUrl: kind === 'text' ? null : mediaUrl,
     mediaMime: kind === 'text' ? null : mediaMime,
