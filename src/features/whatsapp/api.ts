@@ -199,6 +199,18 @@ export function useUploadConversationMedia() {
   });
 }
 
+export function useUpdateTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }: { id: string; title?: string; body?: string }) =>
+      api<PublicMessageTemplate>(`/message-templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['message-templates'] }),
+  });
+}
+
 export function useDeleteTemplate() {
   const qc = useQueryClient();
   return useMutation({

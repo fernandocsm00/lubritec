@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Users } from 'lucide-react';
 import { InstancesList } from '@/features/settings/whatsapp/InstancesList';
 import { TemplatesListPage } from '@/features/settings/whatsapp/templates/TemplatesListPage';
+import { QuickReplyManager } from '@/features/whatsapp/QuickReplyManager';
 import { WebhookDebugPanel } from '@/features/settings/whatsapp/WebhookDebugPanel';
 
 export default function WhatsappConnectionTab() {
-  const [tab, setTab] = useState<'lines' | 'templates'>('lines');
+  const [tab, setTab] = useState<'lines' | 'templates' | 'quick-replies'>('lines');
 
   return (
     <div className="max-w-4xl mx-auto h-full overflow-y-auto pb-6">
@@ -25,6 +26,14 @@ export default function WhatsappConnectionTab() {
           }`}
         >
           Templates HSM (Meta)
+        </button>
+        <button
+          onClick={() => setTab('quick-replies')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+            tab === 'quick-replies' ? 'border-lc-navy text-lc-navy' : 'border-transparent text-zinc-500 hover:text-zinc-700'
+          }`}
+        >
+          Respostas rápidas
         </button>
       </nav>
 
@@ -55,6 +64,8 @@ export default function WhatsappConnectionTab() {
       )}
 
       {tab === 'templates' && <TemplatesListPage />}
+
+      {tab === 'quick-replies' && <QuickReplyManager />}
     </div>
   );
 }
