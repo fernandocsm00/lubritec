@@ -4,7 +4,7 @@ import { createApp } from '../app';
 import { db } from '../db/client';
 import { conversations } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createConversation } from './helpers';
+import { createUser, createLead, createConversation, createMessage } from './helpers';
 
 const app = createApp();
 
@@ -79,6 +79,57 @@ describe('POST /api/conversations/:id/queue', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ queue: 'invalida' });
     expect(res.status).toBe(400);
+  });
+
+  it('move pra ia com inbound nao respondido seta pending_ai_response', async () => {
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000041003' });
+    const conv = await createConversation({ phone: '11000041003', leadId: lead.id, queue: 'comercial' });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'Oi' });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/queue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ queue: 'ia' });
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.queue).toBe('ia');
+    expect(row.pendingAiResponse).toBe(true);
+  });
+
+  it('move pra ia com ultima msg outbound NAO seta pending_ai_response', async () => {
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000041004' });
+    const conv = await createConversation({ phone: '11000041004', leadId: lead.id, queue: 'comercial' });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'Oi', sentAt: new Date(Date.now() - 1000) });
+    await createMessage({ conversationId: conv.id, direction: 'out', body: 'Resposta', sentAt: new Date() });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/queue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ queue: 'ia' });
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.pendingAiResponse).toBe(false);
+  });
+
+  it('move pra fila NAO-ia nunca seta pending_ai_response', async () => {
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000041005' });
+    const conv = await createConversation({ phone: '11000041005', leadId: lead.id, queue: 'ia' });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'Oi' });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/queue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ queue: 'recepcao' });
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.queue).toBe('recepcao');
+    expect(row.pendingAiResponse).toBe(false);
   });
 });
 

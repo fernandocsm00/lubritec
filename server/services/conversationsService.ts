@@ -325,9 +325,30 @@ export async function changeQueue(
   queue: ConversationQueue,
   currentUserId: string,
 ): Promise<PublicConversation> {
+  const patch: Partial<typeof conversations.$inferInsert> = {
+    queue,
+    updatedAt: new Date(),
+  };
+
+  // Move manual pra IA com inbound nao respondido: enfileira pro aiPendingWorker.
+  // A IA so eh chamada pelo webhook na chegada de nova msg — sem isso, mover uma
+  // conversa pra fila IA depois que o cliente ja escreveu deixaria a msg sem
+  // resposta ate o cliente mandar outra. Worker processa em <=60s (em horario).
+  if (queue === 'ia') {
+    const [last] = await db
+      .select({ direction: messages.direction })
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(desc(messages.sentAt))
+      .limit(1);
+    if (last?.direction === 'in') {
+      patch.pendingAiResponse = true;
+    }
+  }
+
   const [updated] = await db
     .update(conversations)
-    .set({ queue, updatedAt: new Date() })
+    .set(patch)
     .where(eq(conversations.id, id))
     .returning({ id: conversations.id });
   if (!updated) throw new HttpError(404, 'Conversation not found');
