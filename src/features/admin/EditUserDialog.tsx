@@ -90,11 +90,19 @@ export function EditUserDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <Input value={user.email} disabled />
+            {/* Email eh display-only, nao eh um campo controlado pelo react-hook-form.
+                NAO usar FormItem/FormLabel aqui — eles dependem do contexto criado
+                por <FormField> e quebram com "useFormField should be used within <FormField>". */}
+            <div className="space-y-2">
+              <label
+                htmlFor="edit-user-email"
+                className="text-sm font-medium leading-none"
+              >
+                Email
+              </label>
+              <Input id="edit-user-email" value={user.email} disabled />
               <p className="text-xs text-muted-foreground">Email não pode ser alterado.</p>
-            </FormItem>
+            </div>
             <FormField
               control={form.control}
               name="name"
