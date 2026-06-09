@@ -55,6 +55,9 @@ export function useDeleteInstance() {
 
 export interface WebhookDebugEntry {
   receivedAt: string;
+  provider?: 'uazapi' | 'meta_cloud';
+  method?: 'GET' | 'POST';
+  instanceId?: string;
   headers: Record<string, string>;
   body: unknown;
   bodyKeys: string[] | null;

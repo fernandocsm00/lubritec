@@ -7,6 +7,9 @@
 
 export interface WebhookDebugEntry {
   receivedAt: string;       // ISO timestamp
+  provider?: 'uazapi' | 'meta_cloud';
+  method?: 'GET' | 'POST';
+  instanceId?: string;
   headers: Record<string, string>;
   body: unknown;
   bodyKeys: string[] | null;
@@ -19,7 +22,14 @@ export interface WebhookDebugEntry {
     | { kind: 'inserted' | 'duplicate' | 'ignored'; messageId: string }
     | { kind: 'message_deleted'; messageId: string }
     | { kind: 'ignored_update'; reason: string }
-    | { kind: 'error'; message: string };
+    | { kind: 'error'; message: string }
+    // Meta-specific
+    | { kind: 'meta_verify_ok' }
+    | { kind: 'meta_verify_failed'; reason: string }
+    | { kind: 'meta_instance_not_found' }
+    | { kind: 'meta_no_raw_body' }
+    | { kind: 'meta_hmac_failed' }
+    | { kind: 'meta_accepted'; entries: number; messages: number; statuses: number; templateUpdates: number };
 }
 
 const BUFFER_SIZE = 50;
@@ -34,6 +44,7 @@ const SAFE_HEADER_NAMES = [
   'user-agent',
   'host',
   'x-forwarded-for',
+  'x-hub-signature-256',
 ];
 
 export function summarizeHeaders(headers: Record<string, unknown>): Record<string, string> {
