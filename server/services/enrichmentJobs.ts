@@ -134,6 +134,70 @@ export async function startBulkEnrichment(userId: string): Promise<PublicEnrichm
   return buildPublic(job);
 }
 
+// ---------------------------------------------------------------------------
+// appendLeadsToActiveJob — anexa novos leads incompletos ao snapshot do job
+// em curso. Usado pelo auto-disparo pós-importação de CSV.
+//
+// Filtros aplicados:
+//  - Apenas leads com flow_stage='incomplete' E cnpj com 14 dígitos (CNPJ;
+//    CPFs não são enriquecíveis via BrasilAPI).
+//  - Dedupe via ON CONFLICT DO NOTHING contra a PK composta (job_id, lead_id).
+// ---------------------------------------------------------------------------
+
+export async function appendLeadsToActiveJob(
+  leadIds: string[],
+): Promise<{ jobId: string; appended: number } | null> {
+  const job = await loadActiveRow();
+  if (!job) return null;
+
+  if (leadIds.length === 0) {
+    return { jobId: job.id, appended: 0 };
+  }
+
+  // Filtra os leadIds pra incluir apenas incompletos com CNPJ válido (14 dig).
+  const eligible = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(and(
+      inArray(leads.id, leadIds),
+      eq(leads.flowStage, 'incomplete'),
+      sql`${leads.cnpj} IS NOT NULL`,
+      sql`length(${leads.cnpj}) = 14`,
+    ));
+
+  if (eligible.length === 0) {
+    return { jobId: job.id, appended: 0 };
+  }
+
+  let appended = 0;
+  await db.transaction(async (tx) => {
+    // Insert com ON CONFLICT (job_id, lead_id) DO NOTHING — dedupe nativo
+    // contra a PK composta. Chunks de 500 pra evitar SQL gigante.
+    const CHUNK = 500;
+    for (let i = 0; i < eligible.length; i += CHUNK) {
+      const slice = eligible.slice(i, i + CHUNK);
+      const result = await tx
+        .insert(enrichmentJobLeads)
+        .values(slice.map((c) => ({ jobId: job.id, leadId: c.id })))
+        .onConflictDoNothing()
+        .returning({ leadId: enrichmentJobLeads.leadId });
+      appended += result.length;
+    }
+
+    if (appended > 0) {
+      await tx
+        .update(enrichmentJobs)
+        .set({
+          totalLeads: sql`${enrichmentJobs.totalLeads} + ${appended}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(enrichmentJobs.id, job.id));
+    }
+  });
+
+  return { jobId: job.id, appended };
+}
+
 export async function cancelCurrentJob(): Promise<PublicEnrichmentJob | null> {
   const active = await loadActiveRow();
   if (!active) return null;
