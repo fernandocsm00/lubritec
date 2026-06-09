@@ -8,6 +8,7 @@ import {
   importHandler,
   enrichHandler,
   bulkEnrichStartHandler,
+  bulkEnrichRetryFailedHandler,
   bulkEnrichGetHandler,
   bulkEnrichCancelHandler,
   bulkEnrichPauseHandler,
@@ -27,6 +28,7 @@ router.get('/', authGuard, listHandler);
 // Bulk enrichment routes — vêm ANTES de /:id pra não conflitar.
 router.get('/enrich-bulk', authGuard, requireRole('admin'), bulkEnrichGetHandler);
 router.post('/enrich-bulk', authGuard, requireRole('admin'), bulkEnrichStartHandler);
+router.post('/enrich-bulk/retry-failed', authGuard, requireRole('admin'), bulkEnrichRetryFailedHandler);
 router.post('/enrich-bulk/cancel', authGuard, requireRole('admin'), bulkEnrichCancelHandler);
 router.post('/enrich-bulk/pause', authGuard, requireRole('admin'), bulkEnrichPauseHandler);
 router.post('/enrich-bulk/resume', authGuard, requireRole('admin'), bulkEnrichResumeHandler);

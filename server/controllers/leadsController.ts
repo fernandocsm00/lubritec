@@ -6,6 +6,7 @@ import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
 import {
   startBulkEnrichment,
+  startRetryApiErrorJob,
   getCurrentJob,
   cancelCurrentJob,
   pauseCurrentJob,
@@ -162,6 +163,13 @@ export async function enrichHandler(req: Request, res: Response, next: NextFunct
 export async function bulkEnrichStartHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const job = await startBulkEnrichment(req.user!.userId);
+    res.json(job);
+  } catch (e) { next(e); }
+}
+
+export async function bulkEnrichRetryFailedHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const job = await startRetryApiErrorJob(req.user!.userId);
     res.json(job);
   } catch (e) { next(e); }
 }

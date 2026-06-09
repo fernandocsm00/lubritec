@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import { createApp } from '../app';
 import { createUser, createLead } from './helpers';
 import * as cnpjLookup from '../services/cnpjLookup';
+import { db } from '../db/client';
+import { enrichmentJobs, enrichmentJobLeads } from '../db/schema';
 
 const app = createApp();
 
@@ -197,5 +199,61 @@ describe('POST /api/leads/import', () => {
       .attach('file', Buffer.from('whatever'), { filename: 'bad.png', contentType: 'image/png' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Invalid file type/);
+  });
+});
+
+describe('POST /api/leads/enrich-bulk/retry-failed', () => {
+  it('401 sem token', async () => {
+    const res = await request(app).post('/api/leads/enrich-bulk/retry-failed');
+    expect(res.status).toBe(401);
+  });
+
+  it('403 com role recepcao', async () => {
+    await createUser({ email: 'retry-rec@x.com', password: 'pw12345', role: 'recepcao' });
+    const token = await loginAs('retry-rec@x.com');
+    const res = await request(app)
+      .post('/api/leads/enrich-bulk/retry-failed')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('200 quando há candidatos api_error', async () => {
+    const admin = await createUser({ email: 'retry-admin@x.com', password: 'pw12345', role: 'admin' });
+    const token = await loginAs('retry-admin@x.com');
+    const lead = await createLead({ phone: null, cnpj: '11222333000181' });
+
+    const [oldJob] = await db.insert(enrichmentJobs).values({
+      status: 'completed',
+      totalLeads: 1,
+      processedCount: 1,
+      succeededCount: 0,
+      failedCount: 1,
+      startedAt: new Date(),
+      completedAt: new Date(),
+      createdByUserId: admin.id,
+    }).returning();
+    await db.insert(enrichmentJobLeads).values({
+      jobId: oldJob.id,
+      leadId: lead.id,
+      status: 'failed',
+      resultStatus: 'api_error',
+      processedAt: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/api/leads/enrich-bulk/retry-failed')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.totalLeads).toBe(1);
+    expect(res.body.status).toBe('running');
+  });
+
+  it('400 quando zero candidatos', async () => {
+    await createUser({ email: 'retry-admin2@x.com', password: 'pw12345', role: 'admin' });
+    const token = await loginAs('retry-admin2@x.com');
+    const res = await request(app)
+      .post('/api/leads/enrich-bulk/retry-failed')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(400);
   });
 });
