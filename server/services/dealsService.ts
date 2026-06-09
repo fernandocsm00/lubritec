@@ -301,6 +301,31 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
 }
 
 // ---------------------------------------------------------------------------
+// getDealByLeadId — usado pelo painel da conversa pra exibir/mover fase
+// ---------------------------------------------------------------------------
+
+export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null> {
+  const [row] = await db
+    .select({
+      deal: deals,
+      lead: leads,
+      owner: users,
+      enteredCurrentStageAt: enteredStageSql,
+      isStale: isStaleSql,
+      aiSummary: aiSummarySql,
+    })
+    .from(deals)
+    .leftJoin(leads, eq(deals.leadId, leads.id))
+    .leftJoin(users, eq(deals.ownerUserId, users.id))
+    .where(eq(deals.leadId, leadId))
+    .orderBy(desc(deals.updatedAt))
+    .limit(1);
+
+  if (!row) return null;
+  return toPublic(row);
+}
+
+// ---------------------------------------------------------------------------
 // Mutations (todas registram activity no log)
 // ---------------------------------------------------------------------------
 
