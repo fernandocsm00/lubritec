@@ -15,6 +15,7 @@ COPY tsconfig.json tsconfig.server.json vite.config.ts tailwind.config.ts compon
 COPY server ./server
 COPY shared ./shared
 COPY src ./src
+COPY public ./public
 
 # Type-check (both client and server) + Vite build → /app/dist.
 # Server is NOT compiled to dist-server: we run TypeScript directly via tsx in prod.
