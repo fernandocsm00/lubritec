@@ -139,6 +139,8 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
           isDefault: shouldBeDefault,
           phoneNumber: phoneInfo.display_phone_number,
           profileName: phoneInfo.verified_name,
+          lastStatus: 'connected',
+          lastStatusAt: new Date(),
           providerConfig: cfg,
         }).returning();
         createdRow = row;
@@ -245,6 +247,27 @@ export async function connectInstanceHandler(req: Request, res: Response, next: 
     const [row] = await db.select().from(whatsappInstance)
       .where(eq(whatsappInstance.id, id)).limit(1);
     if (!row) throw new HttpError(404, 'Instance not found');
+
+    if (row.provider === 'meta_cloud') {
+      const provider = await resolveProvider(id);
+      const live = await provider.getStatus();
+      await db.update(whatsappInstance).set({
+        lastStatus: live.status,
+        lastStatusAt: new Date(),
+        phoneNumber: live.phoneNumber ?? row.phoneNumber,
+        profileName: live.profileName ?? row.profileName,
+        updatedAt: new Date(),
+      }).where(eq(whatsappInstance.id, id));
+      invalidateProvider(id);
+      return res.json({
+        status: live.status,
+        qrCode: live.qrCode,
+        phoneNumber: live.phoneNumber ?? row.phoneNumber,
+        profileName: live.profileName ?? row.profileName,
+        lastStatusAt: live.lastCheckedAt,
+      });
+    }
+
     if (!row.isDefault) {
       throw new HttpError(501,
         'Connect for non-default instances will be supported in a follow-up. ' +
