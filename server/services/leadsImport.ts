@@ -10,6 +10,11 @@ import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
+import {
+  startBulkEnrichment,
+  appendLeadsToActiveJob,
+  ENRICHMENT_TICK_MS,
+} from './enrichmentJobs';
 
 // Mudanca 2026-05-22: removida a validacao SINCRONA via BrasilAPI durante o
 // import. Antes: cada CNPJ era consultado na hora (21s entre calls -> 200 linhas
@@ -331,11 +336,53 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   return { rows, rejected, missingHeaders: [] };
 }
 
+/**
+ * Dispara enriquecimento BrasilAPI pra leads recém-criados em flow_stage='incomplete'.
+ *
+ * Estratégia:
+ *  - Se há job ativo (pending/running/paused), anexa os novos IDs via
+ *    appendLeadsToActiveJob (dedupe nativo).
+ *  - Caso contrário, cria novo job via startBulkEnrichment, que snapshota TODOS
+ *    os incompletes (cobre backlog antigo de graça).
+ *
+ * Try/catch envolvendo tudo: erro nunca falha o import. Retorna null em qualquer
+ * falha (incluindo HttpError 400 "Nenhum lead incompleto…" do startBulkEnrichment).
+ */
+async function triggerAutoEnrichment(
+  newLeadIds: string[],
+  userId: string,
+): Promise<NonNullable<ImportReport['enrichmentTriggered']> | null> {
+  try {
+    const appended = await appendLeadsToActiveJob(newLeadIds);
+    if (appended) {
+      const minutes = Math.ceil((appended.appended * ENRICHMENT_TICK_MS) / 60_000);
+      return {
+        jobId: appended.jobId,
+        mode: 'appended',
+        newLeadsQueued: appended.appended,
+        estimatedMinutes: minutes,
+      };
+    }
+    // Sem job ativo — cria um novo.
+    const job = await startBulkEnrichment(userId);
+    const minutes = Math.ceil((job.totalLeads * ENRICHMENT_TICK_MS) / 60_000);
+    return {
+      jobId: job.id,
+      mode: 'started',
+      newLeadsQueued: job.totalLeads,
+      estimatedMinutes: minutes,
+    };
+  } catch (err) {
+    console.error('[auto-enrichment] trigger failed:', err);
+    return null;
+  }
+}
+
 // Mantemos a assinatura `opts` por backwards-compat com chamadores e testes,
 // mas o parametro `throttleMs` nao tem mais efeito (nao ha mais throttle).
 export async function importLeadsFromCsv(
   buf: Buffer,
-  _opts: { throttleMs?: number } = {},
+  opts: { throttleMs?: number; userId?: string } = {},
 ): Promise<ImportReport> {
   const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
   if (missingHeaders.length > 0) {
@@ -451,5 +498,15 @@ export async function importLeadsFromCsv(
     await tryEnrollSafe(leadId);
   }
 
-  return { inserted, updated, skipped: 0, rejected };
+  // Auto-disparo de enriquecimento — best-effort. Pega os leads novos que
+  // ficaram em 'incomplete' e os anexa ao job ativo (ou cria um novo).
+  let enrichmentTriggered: ImportReport['enrichmentTriggered'] = null;
+  const newIncompleteIds = newLeads
+    .filter((l) => l.stage === 'incomplete')
+    .map((l) => l.id);
+  if (opts.userId && newIncompleteIds.length > 0) {
+    enrichmentTriggered = await triggerAutoEnrichment(newIncompleteIds, opts.userId);
+  }
+
+  return { inserted, updated, skipped: 0, rejected, enrichmentTriggered };
 }
