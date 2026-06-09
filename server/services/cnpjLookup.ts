@@ -38,8 +38,15 @@ export async function lookupCnpj(rawCnpj: string): Promise<CnpjLookupResult> {
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    // UA explícito: a WAF da BrasilAPI bloqueia (403) o UA default do fetch
+    // nativo do Node em algumas regiões. Identificar-se também é boa prática
+    // pra crawler/scraper público (eles podem nos contatar se houver abuso).
     const res = await fetch(`${BRASILAPI_BASE}/${cnpj}`, {
       signal: controller.signal,
+      headers: {
+        'User-Agent': 'LubriConnect/1.0 (+contato: fernando@agenciaimperium.com.br)',
+        'Accept': 'application/json',
+      },
     });
 
     if (res.status === 404) {
