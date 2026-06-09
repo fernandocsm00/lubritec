@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,6 +43,13 @@ export function KanbanBoard() {
   const [searchInput, setSearchInput] = useState(q);
   const { data: assignableUsers } = useAssignableUsers();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+
+  // Abre o DealDrawer automaticamente quando a URL contém ?dealId=<uuid>
+  useEffect(() => {
+    const id = searchParams.get('dealId');
+    if (id) setSelectedDealId(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [addOpen, setAddOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
