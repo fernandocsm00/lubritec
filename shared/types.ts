@@ -150,6 +150,12 @@ export interface ImportReport {
   updated: number;
   skipped: number;
   rejected: { line: number; reason: string }[];
+  enrichmentTriggered?: {
+    jobId: string;
+    mode: 'started' | 'appended';
+    newLeadsQueued: number;
+    estimatedMinutes: number;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
