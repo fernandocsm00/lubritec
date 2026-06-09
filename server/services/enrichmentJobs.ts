@@ -198,6 +198,57 @@ export async function appendLeadsToActiveJob(
   return { jobId: job.id, appended };
 }
 
+// ---------------------------------------------------------------------------
+// startRetryApiErrorJob — cria job que processa SÓ leads com result_status='api_error'.
+// Útil pra retentar falhas transientes da BrasilAPI sem reprocessar todos os
+// incompletes. Filtros: flow_stage='incomplete', cnpj IS NOT NULL e length(cnpj)=14,
+// e pelo menos UMA row em enrichment_job_leads com result_status='api_error'.
+// DISTINCT garante 1 entrada por lead mesmo com múltiplas tentativas antigas.
+// ---------------------------------------------------------------------------
+
+export async function startRetryApiErrorJob(userId: string): Promise<PublicEnrichmentJob> {
+  const active = await loadActiveRow();
+  if (active) {
+    throw new HttpError(409, 'Já existe um job de enriquecimento em andamento');
+  }
+
+  const candidates = await db
+    .selectDistinct({ id: leads.id })
+    .from(leads)
+    .innerJoin(enrichmentJobLeads, eq(enrichmentJobLeads.leadId, leads.id))
+    .where(and(
+      eq(leads.flowStage, 'incomplete'),
+      sql`${leads.cnpj} IS NOT NULL`,
+      sql`length(${leads.cnpj}) = 14`,
+      eq(enrichmentJobLeads.resultStatus, 'api_error'),
+    ));
+
+  if (candidates.length === 0) {
+    throw new HttpError(400, 'Nenhum lead com erro BrasilAPI pra retentar');
+  }
+
+  const now = new Date();
+  const [job] = await db
+    .insert(enrichmentJobs)
+    .values({
+      status: 'running',
+      totalLeads: candidates.length,
+      startedAt: now,
+      createdByUserId: userId,
+    })
+    .returning();
+
+  const CHUNK = 500;
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const slice = candidates.slice(i, i + CHUNK);
+    await db.insert(enrichmentJobLeads).values(
+      slice.map((c) => ({ jobId: job.id, leadId: c.id })),
+    );
+  }
+
+  return buildPublic(job);
+}
+
 export async function cancelCurrentJob(): Promise<PublicEnrichmentJob | null> {
   const active = await loadActiveRow();
   if (!active) return null;
