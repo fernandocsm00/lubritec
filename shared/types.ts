@@ -191,6 +191,7 @@ export interface PublicConversation {
   assignedTo: { id: string; name: string } | null;
   originKind: OriginKind;
   originCampaignId: string | null;
+  originCampaignName: string | null;
   lastMessagePreview: string;
   lastMessageDirection: MessageDirection | null;
   lastMessageAt: string;
