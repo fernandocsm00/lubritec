@@ -140,7 +140,9 @@ export async function importHandler(req: Request, res: Response, next: NextFunct
     if (!req.file) {
       return res.status(400).json({ error: 'Invalid file type' });
     }
-    const report = await importLeadsFromCsv(req.file.buffer);
+    const report = await importLeadsFromCsv(req.file.buffer, {
+      userId: req.user!.userId,
+    });
     res.json(report);
   } catch (e) {
     next(e);
