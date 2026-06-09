@@ -107,6 +107,28 @@ describe('GET /api/conversations', () => {
     expect(res.status).toBe(200);
     expect(res.body.items.length).toBeGreaterThan(0);
     expect(res.body.items.every((c: { phone: string }) => c.phone === '11000010030')).toBe(true);
+    const item = res.body.items.find((c: { phone: string }) => c.phone === '11000010030');
+    expect(item).toBeDefined();
+    expect(item.originCampaignName).toBe(campaign.name);
+  });
+
+  it('retorna originCampaignName null em conversa orgânica', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000010045' });
+    await createConversation({
+      phone: '11000010045',
+      leadId: lead.id,
+      originKind: 'organic',
+      originCampaignId: null,
+    });
+
+    const res = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((c: { phone: string }) => c.phone === '11000010045');
+    expect(item).toBeDefined();
+    expect(item.originCampaignName).toBeNull();
   });
 
   it('filtra por assignment=mine', async () => {

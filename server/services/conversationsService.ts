@@ -1,5 +1,5 @@
 ﻿import { db } from '../db/client';
-import { conversations, messages, leads, users, whatsappInstance } from '../db/schema';
+import { conversations, messages, leads, users, whatsappInstance, campaigns } from '../db/schema';
 import { eq, and, or, ilike, asc, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
@@ -116,6 +116,7 @@ export async function listConversations(input: ListInput): Promise<{
       conv: conversations,
       lead: leads,
       assignee: users,
+      campaignName: campaigns.name,
       lastMsgBody: sql<string | null>`(
         SELECT m.body FROM messages m
         WHERE m.conversation_id = ${conversations.id}
@@ -135,6 +136,7 @@ export async function listConversations(input: ListInput): Promise<{
     .from(conversations)
     .leftJoin(leads, eq(conversations.leadId, leads.id))
     .leftJoin(users, eq(conversations.assignedTo, users.id))
+    .leftJoin(campaigns, eq(conversations.originCampaignId, campaigns.id))
     .where(where)
     // Na fila Comercial: FIFO por tempo de espera (entered_queue_at ASC).
     // Conversas sem enteredQueueAt (historico antigo) caem no fim via NULLS LAST.
@@ -163,6 +165,7 @@ export async function listConversations(input: ListInput): Promise<{
       assignedTo: r.assignee ? { id: r.assignee.id, name: r.assignee.name } : null,
       originKind: r.conv.originKind,
       originCampaignId: r.conv.originCampaignId,
+      originCampaignName: r.campaignName ?? null,
       lastMessagePreview: previewFromMessage({
         body: r.lastMsgBody,
         kind: r.lastMsgKind ?? 'text',
