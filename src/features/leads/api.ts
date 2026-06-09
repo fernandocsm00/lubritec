@@ -162,6 +162,17 @@ export function useStartBulkEnrichment() {
   });
 }
 
+export function useRetryFailedBulkEnrichment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<PublicEnrichmentJob>('/leads/enrich-bulk/retry-failed', { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: BULK_KEY });
+      qc.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
 export function useCancelBulkEnrichment() {
   const qc = useQueryClient();
   return useMutation({
