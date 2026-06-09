@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Image as ImageIcon, Bot, Clock } from 'lucide-react';
+import { Image as ImageIcon, Bot, Clock, Megaphone } from 'lucide-react';
 import {
   formatRelativeTime,
   avatarInitials,
@@ -85,6 +85,17 @@ export function ConversationRow({ conv, active, currentUserId, onClick }: Props)
             </div>
           )}
         </div>
+        {conv.originKind === 'campaign' && conv.originCampaignName && (
+          <div className="mt-1">
+            <span
+              className="inline-flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-[140px]"
+              title={`Campanha: ${conv.originCampaignName}`}
+            >
+              <Megaphone className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{conv.originCampaignName}</span>
+            </span>
+          </div>
+        )}
       </div>
     </button>
   );
