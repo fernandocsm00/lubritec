@@ -5,6 +5,7 @@ import {
   listBoard,
   listHistory,
   getDealById,
+  getDealByLeadId,
 } from '../services/dealsService';
 
 const idParams = z.object({ id: z.string().uuid() });
@@ -144,5 +145,15 @@ export async function deleteHandler(req: Request, res: Response, next: NextFunct
     const { id } = idParams.parse(req.params);
     await deleteDeal(id);
     res.status(204).end();
+  } catch (e) { next(e); }
+}
+
+const byLeadParams = z.object({ leadId: z.string().uuid() });
+
+export async function byLeadHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { leadId } = byLeadParams.parse(req.params);
+    const deal = await getDealByLeadId(leadId);
+    res.json(deal);
   } catch (e) { next(e); }
 }
