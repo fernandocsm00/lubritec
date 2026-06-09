@@ -4,8 +4,17 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
 import { useAuthStore } from '@/features/auth/store';
-import { useCreateDeal } from '@/features/inside-sales/api';
+import {
+  useCreateDeal, useChangeStage, useDealByLead,
+} from '@/features/inside-sales/api';
+import { STAGE_LABELS } from '@/features/inside-sales/helpers';
+import { GanhoValueDialog } from '@/features/inside-sales/GanhoValueDialog';
+import { LossReasonDialog } from '@/features/inside-sales/LossReasonDialog';
+import { DEAL_STAGES, type DealStage, type LossReason, type LeadQualityFeedback } from '@shared/types';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import { formatCnpj } from '@/lib/utils';
@@ -98,26 +107,130 @@ export function LeadSidebar({ conversationId, filters }: Props) {
 function PipelineSection({ leadId }: { leadId: string }) {
   const role = useAuthStore((s) => s.user?.role);
   const visible = role === 'admin' || role === 'comercial';
-  const create = useCreateDeal();
-
   if (!visible) return null;
-
-  async function addToPipeline() {
-    try {
-      await create.mutateAsync({ leadId });
-      toast.success('Adicionado ao pipeline.');
-      window.location.href = `/inside-sales?owner=all`;
-    } catch {
-      toast.error('Falha ao adicionar.');
-    }
-  }
 
   return (
     <div className="px-4 py-3 border-b border-border">
-      <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Pipeline</h4>
-      <Button size="sm" variant="outline" className="w-full" onClick={addToPipeline} disabled={create.isPending}>
-        + Adicionar ao pipeline
-      </Button>
+      <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+        Pipeline
+      </h4>
+      <PipelinePhasePicker leadId={leadId} />
+    </div>
+  );
+}
+
+function PipelinePhasePicker({ leadId }: { leadId: string }) {
+  const { data: deal, isLoading } = useDealByLead(leadId);
+  const create = useCreateDeal();
+  const change = useChangeStage();
+
+  const [pendingStage, setPendingStage] = useState<DealStage | null>(null);
+  const showGanho = pendingStage === 'ganho';
+  const showPerdido = pendingStage === 'perdido';
+
+  const currentStage: DealStage | '' = deal?.stage ?? '';
+  const isBusy = create.isPending || change.isPending;
+
+  async function handleSelect(stage: DealStage) {
+    if (stage === 'ganho' || stage === 'perdido') {
+      setPendingStage(stage);
+      return;
+    }
+    try {
+      if (!deal) {
+        const created = await create.mutateAsync({ leadId });
+        if (stage !== 'lead_no_comercial') {
+          await change.mutateAsync({ id: created.id, stage });
+        }
+        toast.success('Lead adicionado ao pipeline.');
+      } else if (deal.stage !== stage) {
+        await change.mutateAsync({ id: deal.id, stage });
+        toast.success(`Movido para "${STAGE_LABELS[stage]}".`);
+      }
+    } catch {
+      toast.error('Falha ao mover lead.');
+    }
+  }
+
+  async function confirmGanho(value: number, feedback: LeadQualityFeedback) {
+    setPendingStage(null);
+    try {
+      let targetDealId = deal?.id;
+      if (!targetDealId) {
+        const created = await create.mutateAsync({ leadId, proposalValue: value });
+        targetDealId = created.id;
+      }
+      await change.mutateAsync({
+        id: targetDealId,
+        stage: 'ganho',
+        leadQualityFeedback: feedback,
+      });
+      toast.success('Marcado como ganho.');
+    } catch {
+      toast.error('Falha ao marcar como ganho.');
+    }
+  }
+
+  async function confirmPerdido(reason: LossReason, feedback: LeadQualityFeedback) {
+    setPendingStage(null);
+    try {
+      let targetDealId = deal?.id;
+      if (!targetDealId) {
+        const created = await create.mutateAsync({ leadId });
+        targetDealId = created.id;
+      }
+      await change.mutateAsync({
+        id: targetDealId,
+        stage: 'perdido',
+        lossReason: reason,
+        leadQualityFeedback: feedback,
+      });
+      toast.success('Marcado como perdido.');
+    } catch {
+      toast.error('Falha ao marcar como perdido.');
+    }
+  }
+
+  if (isLoading) {
+    return <Skeleton className="h-9 w-full" />;
+  }
+
+  return (
+    <div className="space-y-2">
+      <Select
+        value={currentStage}
+        onValueChange={(v) => handleSelect(v as DealStage)}
+        disabled={isBusy}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Não está no pipeline" />
+        </SelectTrigger>
+        <SelectContent>
+          {DEAL_STAGES.map((s) => (
+            <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {deal && (
+        <a
+          href={`/inside-sales?dealId=${deal.id}`}
+          className="block text-xs text-primary hover:underline"
+        >
+          Abrir no pipeline →
+        </a>
+      )}
+
+      <GanhoValueDialog
+        open={showGanho}
+        onConfirm={confirmGanho}
+        onCancel={() => setPendingStage(null)}
+      />
+      <LossReasonDialog
+        open={showPerdido}
+        onConfirm={confirmPerdido}
+        onCancel={() => setPendingStage(null)}
+      />
     </div>
   );
 }
