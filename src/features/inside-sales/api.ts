@@ -97,6 +97,15 @@ export function useDeal(id: string | null) {
   });
 }
 
+export function useDealByLead(leadId: string | null) {
+  return useQuery({
+    queryKey: ['deals', 'by-lead', leadId],
+    queryFn: () => api<PublicDeal | null>(`/deals/by-lead/${leadId}`),
+    enabled: !!leadId,
+    staleTime: 30_000,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
