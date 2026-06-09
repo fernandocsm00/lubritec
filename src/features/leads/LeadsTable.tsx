@@ -62,7 +62,7 @@ const ENRICHMENT_ISSUE: Partial<Record<LeadEnrichmentResult, { label: string; cl
   api_error: {
     label: 'BrasilAPI falhou',
     className: 'bg-slate-200 text-slate-700 border-slate-400 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
-    title: 'Erro temporário na BrasilAPI — será tentado novamente.',
+    title: 'Erro temporário na BrasilAPI (rate limit, timeout ou 5xx). Clique no menu do lead em "Buscar telefone (BrasilAPI)" pra tentar de novo.',
   },
 };
 
