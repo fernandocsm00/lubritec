@@ -30,13 +30,23 @@ export function ImportCsvDialog({
     try {
       const r = await importMut.mutateAsync(file);
       setReport(r);
-      // Mensagem reforca que validacao CNPJ continua acontecendo, agora em background
-      // — usuario pode acompanhar leads com problemas pelo filtro em /cadastros.
-      toast.success(
-        `Import concluído: ${r.inserted} novos, ${r.updated} atualizados.\n` +
-        `Validação de CNPJ na Receita Federal rolando em background — leads com problema aparecem em "Com problemas" no filtro.`,
-        { duration: 8_000 },
-      );
+
+      const baseMsg = `Import concluído: ${r.inserted} novos, ${r.updated} atualizados.`;
+
+      if (r.enrichmentTriggered && r.enrichmentTriggered.newLeadsQueued > 0) {
+        const et = r.enrichmentTriggered;
+        const tail =
+          et.mode === 'started'
+            ? `${et.newLeadsQueued} leads na fila de enriquecimento — conclui em ~${et.estimatedMinutes}min.`
+            : `${et.newLeadsQueued} leads anexados ao job de enriquecimento em andamento (+~${et.estimatedMinutes}min).`;
+        toast.success(`${baseMsg}\n${tail}`, { duration: 8_000 });
+      } else {
+        toast.success(
+          `${baseMsg}\n` +
+          `Validação de CNPJ na Receita Federal rolando em background — leads com problema aparecem em "Com problemas" no filtro.`,
+          { duration: 8_000 },
+        );
+      }
     } catch (e) {
       const msg = e instanceof Error ? translateError(e.message) : 'Erro ao importar.';
       toast.error(msg);
