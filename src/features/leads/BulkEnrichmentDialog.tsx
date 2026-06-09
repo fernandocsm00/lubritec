@@ -23,6 +23,7 @@ import {
 import {
   useBulkEnrichmentJob,
   useStartBulkEnrichment,
+  useRetryFailedBulkEnrichment,
   useCancelBulkEnrichment,
   usePauseBulkEnrichment,
   useResumeBulkEnrichment,
@@ -38,6 +39,7 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
     pollMs: open ? 3_000 : 30_000,
   });
   const start = useStartBulkEnrichment();
+  const retry = useRetryFailedBulkEnrichment();
   const cancel = useCancelBulkEnrichment();
   const pause = usePauseBulkEnrichment();
   const resume = useResumeBulkEnrichment();
@@ -67,6 +69,17 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
       toast.success('Enriquecimento iniciado.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erro ao iniciar');
+    }
+  }
+
+  async function onRetryFailed() {
+    try {
+      const job = await retry.mutateAsync();
+      toast.success(`Retentando ${job.totalLeads} lead${job.totalLeads === 1 ? '' : 's'} com erro BrasilAPI.`);
+    } catch (e) {
+      // 400 → "Nenhum lead com erro BrasilAPI pra retentar"
+      // 409 → "Já existe um job de enriquecimento em andamento"
+      toast.error(e instanceof Error ? e.message : 'Erro ao retentar');
     }
   }
 
@@ -205,9 +218,18 @@ export function BulkEnrichmentDialog({ trigger }: { trigger: React.ReactNode }) 
                 </Button>
               )}
               {!isActive && (
-                <Button onClick={onStart} disabled={start.isPending}>
-                  {start.isPending ? 'Iniciando…' : 'Iniciar enriquecimento'}
-                </Button>
+                <>
+                  <Button onClick={onStart} disabled={start.isPending || retry.isPending}>
+                    {start.isPending ? 'Iniciando…' : 'Iniciar enriquecimento'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={onRetryFailed}
+                    disabled={retry.isPending || start.isPending}
+                  >
+                    {retry.isPending ? 'Retentando…' : 'Retentar BrasilAPI falhou'}
+                  </Button>
+                </>
               )}
               <Button variant="ghost" onClick={() => setOpen(false)}>Fechar</Button>
             </div>
