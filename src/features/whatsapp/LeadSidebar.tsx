@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/select';
 import { useAuthStore } from '@/features/auth/store';
 import {
-  useCreateDeal, useChangeStage, useDealByLead,
+  useCreateDeal, useChangeStage, useDealByLead, usePatchDeal,
 } from '@/features/inside-sales/api';
 import { STAGE_LABELS } from '@/features/inside-sales/helpers';
 import { GanhoValueDialog } from '@/features/inside-sales/GanhoValueDialog';
@@ -119,19 +119,26 @@ function PipelineSection({ leadId }: { leadId: string }) {
   );
 }
 
+// Sentinela usada no Select pra representar "sem deal" — Radix Select nao
+// aceita value="" então usamos um marcador explicito (igual ao padrão de
+// CampaignReportFilters.tsx).
+const PHASE_NONE = '__any__' as const;
+
 function PipelinePhasePicker({ leadId }: { leadId: string }) {
   const { data: deal, isLoading } = useDealByLead(leadId);
   const create = useCreateDeal();
   const change = useChangeStage();
+  const patch = usePatchDeal();
 
   const [pendingStage, setPendingStage] = useState<DealStage | null>(null);
   const showGanho = pendingStage === 'ganho';
   const showPerdido = pendingStage === 'perdido';
 
-  const currentStage: DealStage | '' = deal?.stage ?? '';
-  const isBusy = create.isPending || change.isPending;
+  const currentStage: DealStage | typeof PHASE_NONE = deal?.stage ?? PHASE_NONE;
+  const isBusy = create.isPending || change.isPending || patch.isPending;
 
-  async function handleSelect(stage: DealStage) {
+  async function handleSelect(stage: DealStage | typeof PHASE_NONE) {
+    if (stage === PHASE_NONE) return;
     if (stage === 'ganho' || stage === 'perdido') {
       setPendingStage(stage);
       return;
@@ -159,6 +166,8 @@ function PipelinePhasePicker({ leadId }: { leadId: string }) {
       if (!targetDealId) {
         const created = await create.mutateAsync({ leadId, proposalValue: value });
         targetDealId = created.id;
+      } else if (deal?.proposalValue == null) {
+        await patch.mutateAsync({ id: targetDealId, proposalValue: value });
       }
       await change.mutateAsync({
         id: targetDealId,
@@ -199,13 +208,14 @@ function PipelinePhasePicker({ leadId }: { leadId: string }) {
     <div className="space-y-2">
       <Select
         value={currentStage}
-        onValueChange={(v) => handleSelect(v as DealStage)}
+        onValueChange={(v) => handleSelect(v as DealStage | typeof PHASE_NONE)}
         disabled={isBusy}
       >
         <SelectTrigger>
           <SelectValue placeholder="Não está no pipeline" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value={PHASE_NONE}>Não está no pipeline</SelectItem>
           {DEAL_STAGES.map((s) => (
             <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
           ))}
