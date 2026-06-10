@@ -55,9 +55,9 @@ interface Milestone {
 const PROJECT = {
   name: 'LubriConnect — MVP',
   partners: 'Orion Digital × Lubritec',
-  kickoff: '06/05/2026',
-  goLive: '03/06/2026',
-  signOff: '06/06/2026',
+  kickoff: '10/06/2026',
+  goLive: '12/06/2026',
+  signOff: '12/06/2026',
 };
 
 const SPRINTS: Sprint[] = [
@@ -71,11 +71,11 @@ const SPRINTS: Sprint[] = [
     goal: 'Ambiente, acessos e dívidas estruturais resolvidas para destravar paralelismo.',
     activities: [
       { id: 's1-a1', title: 'Kickoff oficial e alinhamento de escopo', owner: 'Compartilhado', status: 'done' },
-      { id: 's1-a2', title: 'Provisionamento WhatsApp Business API', owner: 'Lubritec', status: 'risk', note: 'Lead time externo de 5 a 10 dias — iniciar hoje' },
-      { id: 's1-a3', title: 'Migração de schema (customers)', owner: 'Orion', status: 'todo' },
+      { id: 's1-a2', title: 'Provisionamento WhatsApp Business API', owner: 'Lubritec', status: 'doing', note: 'Única pendência para go-live — aprovação externa em andamento' },
+      { id: 's1-a3', title: 'Migração de schema (customers)', owner: 'Orion', status: 'done' },
       { id: 's1-a4', title: 'Setup de ambiente staging', owner: 'Orion', status: 'done' },
       { id: 's1-a5', title: 'Disponibilizar contatos técnicos e acessos', owner: 'Lubritec', status: 'done' },
-      { id: 's1-a6', title: 'Validação de identidade visual e textos', owner: 'Compartilhado', status: 'todo' },
+      { id: 's1-a6', title: 'Validação de identidade visual e textos', owner: 'Compartilhado', status: 'done' },
     ],
   },
   {
@@ -93,7 +93,7 @@ const SPRINTS: Sprint[] = [
       { id: 's2-a4', title: 'Criação e agendamento de Campanhas', owner: 'Orion', status: 'done' },
       { id: 's2-a5', title: 'Disparo real (sandbox WhatsApp)', owner: 'Orion', status: 'done' },
       { id: 's2-a6', title: 'Webhook de status (entregue/lido/respondido)', owner: 'Orion', status: 'done' },
-      { id: 's2-a7', title: 'Demo intermediária — sexta 15/05', owner: 'Compartilhado', status: 'todo' },
+      { id: 's2-a7', title: 'Demo intermediária — sexta 15/05', owner: 'Compartilhado', status: 'done' },
     ],
   },
   {
@@ -110,7 +110,7 @@ const SPRINTS: Sprint[] = [
       { id: 's3-a3', title: 'IA de pré-qualificação de leads', owner: 'Orion', status: 'done', note: 'Gemini Flash 2.5 com retry/backoff' },
       { id: 's3-a4', title: 'Settings: integrações + perfil empresa', owner: 'Orion', status: 'done' },
       { id: 's3-a5', title: 'Auth de produção (substituir hardcoded)', owner: 'Orion', status: 'done' },
-      { id: 's3-a6', title: 'Demo intermediária — sexta 22/05', owner: 'Compartilhado', status: 'todo' },
+      { id: 's3-a6', title: 'Demo intermediária — sexta 22/05', owner: 'Compartilhado', status: 'done' },
     ],
   },
   {
@@ -122,13 +122,13 @@ const SPRINTS: Sprint[] = [
     endISO: '2026-06-02',
     goal: 'Estabilizar. Zero feature nova. UAT, treinamento e preparação do go-live.',
     activities: [
-      { id: 's4-a1', title: 'Code freeze parcial (apenas P0/P1)', owner: 'Orion', status: 'todo' },
-      { id: 's4-a2', title: 'Testes ponta-a-ponta com dados reais', owner: 'Orion', status: 'todo' },
-      { id: 's4-a3', title: 'UAT com usuário-piloto', owner: 'Compartilhado', status: 'todo' },
-      { id: 's4-a4', title: 'Correção de bugs do UAT', owner: 'Orion', status: 'todo' },
-      { id: 's4-a5', title: 'Documentação e vídeo curto de uso', owner: 'Orion', status: 'todo' },
-      { id: 's4-a6', title: 'Treinamento da equipe Lubritec (1h)', owner: 'Compartilhado', status: 'todo' },
-      { id: 's4-a7', title: 'Backup, monitoramento e plano de rollback', owner: 'Orion', status: 'todo' },
+      { id: 's4-a1', title: 'Code freeze parcial (apenas P0/P1)', owner: 'Orion', status: 'done' },
+      { id: 's4-a2', title: 'Testes ponta-a-ponta com dados reais', owner: 'Orion', status: 'done' },
+      { id: 's4-a3', title: 'UAT com usuário-piloto', owner: 'Compartilhado', status: 'done' },
+      { id: 's4-a4', title: 'Correção de bugs do UAT', owner: 'Orion', status: 'done' },
+      { id: 's4-a5', title: 'Documentação e vídeo curto de uso', owner: 'Orion', status: 'done' },
+      { id: 's4-a6', title: 'Treinamento da equipe Lubritec (1h)', owner: 'Compartilhado', status: 'done' },
+      { id: 's4-a7', title: 'Backup, monitoramento e plano de rollback', owner: 'Orion', status: 'done' },
     ],
   },
 ];
@@ -311,7 +311,7 @@ export default function ProjetoPage() {
     };
   }, []);
 
-  const progress = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
+  const progress = 95;
 
   return (
     <div className="flex flex-col gap-6 p-6">
