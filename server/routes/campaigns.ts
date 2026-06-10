@@ -18,6 +18,7 @@ import {
   aggregateStatsHandler,
   timeseriesHandler,
   topCampaignsHandler,
+  reportCitiesHandler,
 } from '../controllers/campaignsController';
 import { listUnqualifiedLeads, getCalibrationMetrics } from '../services/campaignsService';
 import {
@@ -34,6 +35,7 @@ router.put('/continuous', ...adminOnly, continuousUpsertHandler);
 router.get('/aggregate-stats', ...guard, aggregateStatsHandler);
 router.get('/timeseries', ...guard, timeseriesHandler);
 router.get('/top', ...guard, topCampaignsHandler);
+router.get('/report-cities', ...guard, reportCitiesHandler);
 
 router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);

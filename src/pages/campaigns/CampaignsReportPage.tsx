@@ -9,11 +9,13 @@ import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
 import { CampaignsTimeseriesChart } from '@/features/campaigns/CampaignsTimeseriesChart';
 import { TopCampaignsTable } from '@/features/campaigns/TopCampaignsTable';
 import { LossReasonsCard } from '@/features/campaigns/LossReasonsCard';
+import { CampaignReportFilters } from '@/features/campaigns/CampaignReportFilters';
 import {
   REPORT_PERIOD_LABELS,
   CAMPAIGN_KIND_LABELS,
   type ReportPeriod,
   type CampaignKind,
+  type ReportLeadFilters,
 } from '@/features/campaigns/api';
 
 const PERIODS: ReportPeriod[] = ['today', '7d', 'month', '30d', 'quarter'];
@@ -22,6 +24,7 @@ const KINDS: CampaignKind[] = ['all', 'one_shot', 'continuous'];
 export default function CampaignsReportPage() {
   const [period, setPeriod] = useState<ReportPeriod>('30d');
   const [kind, setKind] = useState<CampaignKind>('all');
+  const [leadFilters, setLeadFilters] = useState<ReportLeadFilters>({});
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] p-6 overflow-auto">
@@ -39,7 +42,7 @@ export default function CampaignsReportPage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <div className="flex gap-2 mb-3 flex-wrap">
         <Select value={period} onValueChange={(v) => setPeriod(v as ReportPeriod)}>
           <SelectTrigger className="w-[180px] h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -58,17 +61,21 @@ export default function CampaignsReportPage() {
         </Select>
       </div>
 
-      <CampaignsReportBar period={period} kind={kind} compare />
+      <div className="mb-4">
+        <CampaignReportFilters value={leadFilters} onChange={setLeadFilters} />
+      </div>
+
+      <CampaignsReportBar period={period} kind={kind} compare filters={leadFilters} />
 
       <div className="space-y-4">
-        <CampaignsTimeseriesChart period={period} kind={kind} />
+        <CampaignsTimeseriesChart period={period} kind={kind} filters={leadFilters} />
 
         <div className="grid lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <TopCampaignsTable period={period} kind={kind} limit={5} />
+            <TopCampaignsTable period={period} kind={kind} limit={5} filters={leadFilters} />
           </div>
           <div className="lg:col-span-1">
-            <LossReasonsCard period={period} kind={kind} />
+            <LossReasonsCard period={period} kind={kind} filters={leadFilters} />
           </div>
         </div>
       </div>

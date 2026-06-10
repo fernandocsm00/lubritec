@@ -17,6 +17,23 @@ import type { PublicAuditSample, LeadQualityFeedback, CampaignCalibrationMetrics
 export type ReportPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
 export type CampaignKind = 'all' | 'one_shot' | 'continuous';
 
+/**
+ * Recortes opcionais do relatório por atributos dos leads destinatários.
+ * Quando nenhum é preenchido, o backend retorna metricas consolidadas (default).
+ */
+export interface ReportLeadFilters {
+  imbp?: string;
+  segment?: string;
+  city?: string;
+}
+
+function appendLeadFilters(u: URLSearchParams, f?: ReportLeadFilters) {
+  if (!f) return;
+  if (f.imbp) u.set('imbp', f.imbp);
+  if (f.segment) u.set('segment', f.segment);
+  if (f.city) u.set('city', f.city);
+}
+
 export const REPORT_PERIOD_LABELS: Record<ReportPeriod, string> = {
   today: 'Hoje',
   '7d': 'Últimos 7 dias',
@@ -57,40 +74,71 @@ export function useCampaignsAggregateStats(opts?: {
   period?: ReportPeriod;
   kind?: CampaignKind;
   compare?: boolean;
+  filters?: ReportLeadFilters;
 }) {
   const period = opts?.period ?? '30d';
   const kind = opts?.kind ?? 'all';
   const compare = opts?.compare ?? false;
+  const filters = opts?.filters;
   const u = new URLSearchParams({ period, kind });
   if (compare) u.set('compare', 'true');
+  appendLeadFilters(u, filters);
   const qs = u.toString();
   return useQuery({
-    queryKey: ['campaigns', 'aggregate-stats', period, kind, compare],
+    queryKey: ['campaigns', 'aggregate-stats', period, kind, compare, filters?.imbp, filters?.segment, filters?.city],
     queryFn: () => api<CampaignsAggregateStats>(`/campaigns/aggregate-stats?${qs}`),
     refetchInterval: 30_000,
   });
 }
 
-export function useCampaignsTimeseries(opts?: { period?: ReportPeriod; kind?: CampaignKind }) {
+export function useCampaignsTimeseries(opts?: {
+  period?: ReportPeriod;
+  kind?: CampaignKind;
+  filters?: ReportLeadFilters;
+}) {
   const period = opts?.period ?? '30d';
   const kind = opts?.kind ?? 'all';
-  const qs = new URLSearchParams({ period, kind }).toString();
+  const filters = opts?.filters;
+  const u = new URLSearchParams({ period, kind });
+  appendLeadFilters(u, filters);
+  const qs = u.toString();
   return useQuery({
-    queryKey: ['campaigns', 'timeseries', period, kind],
+    queryKey: ['campaigns', 'timeseries', period, kind, filters?.imbp, filters?.segment, filters?.city],
     queryFn: () => api<CampaignsTimeseries>(`/campaigns/timeseries?${qs}`),
     refetchInterval: 60_000,
   });
 }
 
-export function useTopCampaigns(opts?: { period?: ReportPeriod; kind?: CampaignKind; limit?: number }) {
+export function useTopCampaigns(opts?: {
+  period?: ReportPeriod;
+  kind?: CampaignKind;
+  limit?: number;
+  filters?: ReportLeadFilters;
+}) {
   const period = opts?.period ?? '30d';
   const kind = opts?.kind ?? 'all';
   const limit = opts?.limit ?? 5;
-  const qs = new URLSearchParams({ period, kind, limit: String(limit) }).toString();
+  const filters = opts?.filters;
+  const u = new URLSearchParams({ period, kind, limit: String(limit) });
+  appendLeadFilters(u, filters);
+  const qs = u.toString();
   return useQuery({
-    queryKey: ['campaigns', 'top', period, kind, limit],
+    queryKey: ['campaigns', 'top', period, kind, limit, filters?.imbp, filters?.segment, filters?.city],
     queryFn: () => api<TopCampaignsResponse>(`/campaigns/top?${qs}`),
     refetchInterval: 60_000,
+  });
+}
+
+export interface ReportCityOption {
+  city: string;
+  count: number;
+}
+
+export function useCampaignReportCities() {
+  return useQuery({
+    queryKey: ['campaigns', 'report-cities'],
+    queryFn: () => api<{ items: ReportCityOption[] }>(`/campaigns/report-cities`),
+    staleTime: 5 * 60_000,
   });
 }
 

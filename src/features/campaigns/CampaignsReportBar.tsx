@@ -4,6 +4,7 @@ import {
   useCampaignsAggregateStats,
   type ReportPeriod,
   type CampaignKind,
+  type ReportLeadFilters,
 } from './api';
 import { formatCurrency } from './helpers';
 
@@ -12,6 +13,8 @@ interface Props {
   kind?: CampaignKind;
   /** Quando true, busca tambem o periodo anterior e exibe Δ% em cada KPI. */
   compare?: boolean;
+  /** Recortes opcionais por IMBP / Segmento / Cidade do lead destinatário. */
+  filters?: ReportLeadFilters;
 }
 
 /**
@@ -19,8 +22,8 @@ interface Props {
  * e tambem na pagina dedicada /campanhas/relatorio (com period/kind/compare).
  * Mostra o panorama global em 6 KPIs.
  */
-export function CampaignsReportBar({ period = '30d', kind = 'all', compare = false }: Props) {
-  const { data, isLoading, isError } = useCampaignsAggregateStats({ period, kind, compare });
+export function CampaignsReportBar({ period = '30d', kind = 'all', compare = false, filters }: Props) {
+  const { data, isLoading, isError } = useCampaignsAggregateStats({ period, kind, compare, filters });
 
   if (isError) {
     return (

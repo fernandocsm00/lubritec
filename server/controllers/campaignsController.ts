@@ -4,7 +4,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import sharp from 'sharp';
-import { CAMPAIGN_STATUSES, LEAD_STATUSES, LEAD_SOURCES, type CampaignHsmVariable } from '../../shared/types';
+import {
+  CAMPAIGN_STATUSES,
+  LEAD_STATUSES,
+  LEAD_SOURCES,
+  IMBP_VALUES,
+  SEGMENT_VALUES,
+  type CampaignHsmVariable,
+} from '../../shared/types';
 import {
   listCampaigns,
   getCampaignById,
@@ -19,6 +26,7 @@ import {
   getCampaignsAggregateStats,
   getCampaignsTimeseries,
   getTopCampaigns,
+  listCampaignReportCities,
 } from '../services/campaignsService';
 import { dryRun } from '../services/campaignsAudience';
 import { resolvePeriod, type PeriodKey } from '../lib/period';
@@ -73,10 +81,19 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
+// Filtros opcionais comuns aos 3 endpoints de relatório. Sliceiam metricas
+// pelos atributos dos LEADS destinatários (campaigns nao tem essas colunas).
+const reportFilterSchema = {
+  imbp: z.enum(IMBP_VALUES).optional(),
+  segment: z.enum(SEGMENT_VALUES).optional(),
+  city: z.string().trim().min(1).max(120).optional(),
+};
+
 const aggregateStatsQuery = z.object({
   period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
   kind: z.enum(['all', 'one_shot', 'continuous']).optional(),
   compare: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  ...reportFilterSchema,
 });
 
 export async function aggregateStatsHandler(req: Request, res: Response, next: NextFunction) {
@@ -85,11 +102,13 @@ export async function aggregateStatsHandler(req: Request, res: Response, next: N
     const periodKey: PeriodKey = q.period ?? '30d';
     const range = resolvePeriod(periodKey);
     const kind = q.kind ?? 'all';
+    const leadFilters = { imbp: q.imbp, segment: q.segment, city: q.city };
 
     const current = await getCampaignsAggregateStats({
       start: range.start,
       end: range.end,
       kind,
+      ...leadFilters,
     });
     const base = {
       ...current,
@@ -109,6 +128,7 @@ export async function aggregateStatsHandler(req: Request, res: Response, next: N
       start: range.prevStart,
       end: range.prevEnd,
       kind,
+      ...leadFilters,
     });
     res.json({
       ...base,
@@ -129,6 +149,7 @@ export async function aggregateStatsHandler(req: Request, res: Response, next: N
 const timeseriesQuery = z.object({
   period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
   kind: z.enum(['all', 'one_shot', 'continuous']).optional(),
+  ...reportFilterSchema,
 });
 
 export async function timeseriesHandler(req: Request, res: Response, next: NextFunction) {
@@ -140,6 +161,9 @@ export async function timeseriesHandler(req: Request, res: Response, next: NextF
       start: range.start,
       end: range.end,
       kind: q.kind ?? 'all',
+      imbp: q.imbp,
+      segment: q.segment,
+      city: q.city,
     });
     res.json({
       buckets,
@@ -157,6 +181,7 @@ const topQuery = z.object({
   period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
   kind: z.enum(['all', 'one_shot', 'continuous']).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
+  ...reportFilterSchema,
 });
 
 export async function topCampaignsHandler(req: Request, res: Response, next: NextFunction) {
@@ -169,6 +194,9 @@ export async function topCampaignsHandler(req: Request, res: Response, next: Nex
       end: range.end,
       kind: q.kind ?? 'all',
       limit: q.limit ?? 5,
+      imbp: q.imbp,
+      segment: q.segment,
+      city: q.city,
     });
     res.json({
       items,
@@ -179,6 +207,15 @@ export async function topCampaignsHandler(req: Request, res: Response, next: Nex
         label: range.label,
       },
     });
+  } catch (e) { next(e); }
+}
+
+// Lista cidades distintas (com contagem de leads) que aparecem em recipients de
+// campanhas. Alimenta o combobox de Cidade no filtro do relatório.
+export async function reportCitiesHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const items = await listCampaignReportCities();
+    res.json({ items });
   } catch (e) { next(e); }
 }
 

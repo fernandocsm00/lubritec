@@ -88,10 +88,16 @@ const listQuery = z.object({
   flowStage: z.enum(LEAD_FLOW_STAGES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
   withIssues: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-  campaignIds: z.preprocess(
-    (v) => (typeof v === 'string' ? v.split(',').filter(Boolean) : v),
-    z.array(z.string().uuid()).optional(),
-  ),
+  // zod v4: `.optional()` precisa ficar FORA do z.preprocess; se ficar dentro,
+  // a chave fica obrigatória no parent z.object e qualquer chamada sem
+  // campaignIds derruba a request com "expected nonoptional, received
+  // undefined".
+  campaignIds: z
+    .preprocess(
+      (v) => (typeof v === 'string' ? v.split(',').filter(Boolean) : v),
+      z.array(z.string().uuid()),
+    )
+    .optional(),
   sort: z.enum(['name', 'created_at']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),

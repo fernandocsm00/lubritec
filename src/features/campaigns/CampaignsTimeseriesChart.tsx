@@ -1,10 +1,16 @@
-import { useCampaignsTimeseries, type ReportPeriod, type CampaignKind } from './api';
+import {
+  useCampaignsTimeseries,
+  type ReportPeriod,
+  type CampaignKind,
+  type ReportLeadFilters,
+} from './api';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { CampaignsTimeseriesBucket } from './types';
 
 interface Props {
   period: ReportPeriod;
   kind: CampaignKind;
+  filters?: ReportLeadFilters;
 }
 
 /**
@@ -12,8 +18,8 @@ interface Props {
  * Eixo Y compartilhado entre as 3 series — sent costuma dominar, replied e won
  * aparecem pequenos. Util pra ver tendencia geral.
  */
-export function CampaignsTimeseriesChart({ period, kind }: Props) {
-  const { data, isLoading, isError } = useCampaignsTimeseries({ period, kind });
+export function CampaignsTimeseriesChart({ period, kind, filters }: Props) {
+  const { data, isLoading, isError } = useCampaignsTimeseries({ period, kind, filters });
 
   if (isError) {
     return (

@@ -1,12 +1,18 @@
 import { XCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useCampaignsAggregateStats, type ReportPeriod, type CampaignKind } from './api';
+import {
+  useCampaignsAggregateStats,
+  type ReportPeriod,
+  type CampaignKind,
+  type ReportLeadFilters,
+} from './api';
 import { LOSS_REASON_LABELS } from './helpers';
 import type { LossReason } from './types';
 
 interface Props {
   period: ReportPeriod;
   kind: CampaignKind;
+  filters?: ReportLeadFilters;
 }
 
 /**
@@ -14,8 +20,8 @@ interface Props {
  * com contagem e percentual sobre total de perdidos. Util pra entender "por que
  * leads caem" — informa prompt da IA e abordagem comercial.
  */
-export function LossReasonsCard({ period, kind }: Props) {
-  const { data, isLoading } = useCampaignsAggregateStats({ period, kind });
+export function LossReasonsCard({ period, kind, filters }: Props) {
+  const { data, isLoading } = useCampaignsAggregateStats({ period, kind, filters });
 
   const total = data ? Object.values(data.lostByReason).reduce((a, b) => a + b, 0) : 0;
   const items: { reason: LossReason; n: number; pct: number }[] = data

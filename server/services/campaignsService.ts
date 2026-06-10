@@ -18,7 +18,7 @@ import type {
 } from '@shared/types';
 import { LOSS_REASONS } from '@shared/types';
 import { resolveAudience } from './campaignsAudience';
-import { filterEligibleLeads, COOLDOWN_REASON } from './campaignsCooldown';
+import { filterEligibleLeads } from './campaignsCooldown';
 import { getTemplateById, countBodyVariables } from './hsmTemplateService';
 import type { HsmComponent } from '@shared/types';
 
@@ -179,9 +179,16 @@ export async function createCampaign(input: {
 
   const instanceId = input.instanceId;
 
+  // Bloqueados por cooldown 24h NÃO entram como destinatários — a campanha
+  // dispara apenas para quem foi efetivamente selecionado (eligible). O preview
+  // (dryRun) ainda exibe os bloqueados pro vendedor saber quem ficou de fora.
+  // Decisão tomada em 2026-05-28 (Fernando): se quiser disparar pra alguém em
+  // cooldown, agendar a campanha para depois da janela.
+  // Safety-net do dispatcher continua ativo — se alguém entrar em cooldown
+  // entre criação e envio (caso comum em campanhas agendadas), o tick pula.
   const eligibleSet = new Set(eligible);
   const eligibleRows = audience.filter((a) => eligibleSet.has(a.leadId));
-  const blockedRows = audience.filter((a) => !eligibleSet.has(a.leadId));
+  const excludedByCooldownCount = audience.length - eligibleRows.length;
 
   return db.transaction(async (tx) => {
     const [c] = await tx.insert(campaigns).values({
@@ -193,8 +200,8 @@ export async function createCampaign(input: {
       mediaUrl: input.mediaUrl ?? null,
       mediaMime: input.mediaMime ?? null,
       audienceFilter: input.audienceFilter as object,
-      audienceTotal: audience.length,
-      skippedCount: blockedRows.length,
+      audienceTotal: eligibleRows.length,
+      skippedCount: 0,
       scheduledAt: input.scheduledAt ?? null,
       ratePerMinute: input.ratePerMinute ?? 20,
       createdByUserId: input.createdByUserId,
@@ -214,20 +221,10 @@ export async function createCampaign(input: {
         .onConflictDoNothing({ target: [campaignRecipients.campaignId, campaignRecipients.leadId] });
     }
 
-    if (blockedRows.length > 0) {
-      await tx.insert(campaignRecipients)
-        .values(blockedRows.map((a) => ({
-          campaignId: c.id,
-          leadId: a.leadId,
-          phone: a.phone,
-          status: 'skipped' as const,
-          failureReason: COOLDOWN_REASON,
-        })))
-        .onConflictDoNothing({ target: [campaignRecipients.campaignId, campaignRecipients.leadId] });
-    }
-
     const [creator] = await tx.select().from(users).where(eq(users.id, input.createdByUserId)).limit(1);
-    return toPublicCampaign(c, creator ?? null, blockedRows.length);
+    // skippedByCooldown no retorno reflete os excluídos do filtro original —
+    // útil pro frontend exibir "X contatos em cooldown ficaram de fora".
+    return toPublicCampaign(c, creator ?? null, excludedByCooldownCount);
   });
 }
 
@@ -359,15 +356,48 @@ export async function listRecipients(input: {
  * Para period-over-period (Δ%), o handler chama essa funcao 2 vezes:
  *   uma com periodo atual, outra com periodo anterior (mesma duracao).
  */
-export interface AggregateStatsInput {
+export interface ReportLeadFilters {
+  /** Recorte por IMBP do lead destinatário. */
+  imbp?: string;
+  /** Recorte por Segmento (derivado do IMBP). */
+  segment?: string;
+  /** Recorte por cidade exata (case-insensitive). */
+  city?: string;
+}
+
+export interface AggregateStatsInput extends ReportLeadFilters {
   start: Date;
   end: Date;
   kind?: 'all' | 'one_shot' | 'continuous';
 }
 
+/**
+ * Monta WHERE adicional para filtrar campaign_recipients pelos atributos do lead
+ * destinatário. Retorna `sql``` vazio quando nenhum filtro foi passado, o que
+ * preserva o comportamento original quando o usuário não escolhe recorte.
+ *
+ * Usado por aggregate/timeseries/top — sempre via subquery EXISTS contra
+ * `leads l` para evitar precisar incluir JOIN explicito em cada query.
+ */
+function leadFilterClause(alias: string, f: ReportLeadFilters): SQL {
+  if (!f.imbp && !f.segment && !f.city) return sql``;
+  const conds: SQL[] = [];
+  if (f.imbp) conds.push(sql`l.imbp = ${f.imbp}`);
+  if (f.segment) conds.push(sql`l.segment = ${f.segment}`);
+  if (f.city) conds.push(sql`lower(l.city) = lower(${f.city})`);
+  // alias.lead_id é o ID que liga campaign_recipients/deals/etc ao lead
+  return sql`AND EXISTS (
+    SELECT 1 FROM leads l
+    WHERE l.id = ${sql.raw(alias)}.lead_id
+      AND ${sql.join(conds, sql` AND `)}
+  )`;
+}
+
 export async function getCampaignsAggregateStats(input: AggregateStatsInput): Promise<Omit<CampaignsAggregateStats, 'period' | 'kind' | 'compareWith'>> {
   const { start, end } = input;
   const kind = input.kind ?? 'all';
+  const leadCrFilter = leadFilterClause('cr', input);
+  const leadDealFilter = leadFilterClause('d', input);
 
   // SQL fragments reutilizaveis pra filtro de kind via subquery em campaign_recipients.
   const kindCampaignFilter = kind === 'all'
@@ -392,6 +422,7 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
     JOIN campaigns c ON c.id = cr.campaign_id
     WHERE cr.sent_at >= ${start} AND cr.sent_at < ${end}
       ${kindCampaignFilter}
+      ${leadCrFilter}
   `);
   const cc = campaignCountRows.rows[0] as { total: number; completed: number; active: number };
 
@@ -402,6 +433,7 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
     WHERE cr.status = 'sent'
       AND cr.sent_at >= ${start} AND cr.sent_at < ${end}
       ${kindRecipientFilter}
+      ${leadCrFilter}
   `);
   const sent = (sentRows.rows[0] as { sent: number }).sent ?? 0;
 
@@ -412,6 +444,7 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
     WHERE cr.status = 'sent'
       AND cr.sent_at >= ${start} AND cr.sent_at < ${end}
       ${kindRecipientFilter}
+      ${leadCrFilter}
       AND EXISTS (
         SELECT 1 FROM conversations c2
         JOIN messages m ON m.conversation_id = c2.id
@@ -445,6 +478,7 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
       WHERE cr.lead_id = d.lead_id
         ${kindCampaignFilter}
     )
+    ${leadDealFilter}
   `);
   const deal = dealsAgg.rows[0] as { in_deal: number; won: number; lost: number; won_value: string | number };
   const inDeal = deal.in_deal ?? 0;
@@ -466,6 +500,7 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
         WHERE cr.lead_id = d.lead_id
           ${kindCampaignFilter}
       )
+      ${leadDealFilter}
     GROUP BY 1
   `);
   const lostByReason: Record<LossReason, number> = {
@@ -508,10 +543,11 @@ export async function getTopCampaigns(input: {
   end: Date;
   kind?: 'all' | 'one_shot' | 'continuous';
   limit?: number;
-}): Promise<TopCampaign[]> {
+} & ReportLeadFilters): Promise<TopCampaign[]> {
   const { start, end } = input;
   const kind = input.kind ?? 'all';
   const limit = Math.min(50, Math.max(1, input.limit ?? 5));
+  const leadCrFilter = leadFilterClause('cr', input);
 
   const kindFilter = kind === 'all'
     ? sql``
@@ -552,6 +588,7 @@ export async function getTopCampaigns(input: {
     LEFT JOIN deals d ON d.lead_id = cr.lead_id
     WHERE cr.sent_at >= ${start} AND cr.sent_at < ${end}
       ${kindFilter}
+      ${leadCrFilter}
     GROUP BY c.id, c.name, c.status, c.is_continuous
     HAVING COUNT(cr.id) FILTER (WHERE cr.status = 'sent') > 0
     ORDER BY sent DESC
@@ -593,9 +630,11 @@ export async function getCampaignsTimeseries(input: {
   start: Date;
   end: Date;
   kind?: 'all' | 'one_shot' | 'continuous';
-}): Promise<CampaignsTimeseriesBucket[]> {
+} & ReportLeadFilters): Promise<CampaignsTimeseriesBucket[]> {
   const { start, end } = input;
   const kind = input.kind ?? 'all';
+  const leadCrFilter = leadFilterClause('cr', input);
+  const leadDealFilter = leadFilterClause('d', input);
   const kindRecipientFilter = kind === 'all'
     ? sql``
     : kind === 'continuous'
@@ -623,6 +662,7 @@ export async function getCampaignsTimeseries(input: {
     WHERE cr.status = 'sent'
       AND cr.sent_at >= ${start} AND cr.sent_at < ${end}
       ${kindRecipientFilter}
+      ${leadCrFilter}
     GROUP BY 1
   `);
 
@@ -640,6 +680,7 @@ export async function getCampaignsTimeseries(input: {
         WHERE cr.lead_id = d.lead_id
           ${kindCampaignFilter}
       )
+      ${leadDealFilter}
     GROUP BY 1
   `);
 
@@ -869,4 +910,28 @@ export async function getCalibrationMetrics(campaignId: string): Promise<Campaig
     auditBad,
     estimatedRecall,
   };
+}
+
+/**
+ * Lista cidades distintas (com contagem) presentes em leads que aparecem em
+ * algum campaign_recipients. Usado pelo combobox de Cidade no filtro do
+ * relatório — evita listar todas as cidades cadastradas que nunca foram
+ * destinatárias de campanha.
+ *
+ * Ordenado por contagem DESC pra trazer as cidades mais relevantes no topo.
+ */
+export async function listCampaignReportCities(): Promise<Array<{ city: string; count: number }>> {
+  const rows = await db.execute(sql`
+    SELECT l.city AS city, COUNT(DISTINCT l.id)::int AS count
+    FROM leads l
+    WHERE l.city IS NOT NULL AND length(trim(l.city)) > 0
+      AND EXISTS (SELECT 1 FROM campaign_recipients cr WHERE cr.lead_id = l.id)
+    GROUP BY l.city
+    ORDER BY count DESC, l.city ASC
+    LIMIT 500
+  `);
+  return (rows.rows as Array<{ city: string; count: number }>).map((r) => ({
+    city: r.city,
+    count: r.count ?? 0,
+  }));
 }

@@ -32,6 +32,7 @@ interface RawDealRow {
   enteredCurrentStageAt: Date;
   isStale: boolean;
   aiSummary: string | null;
+  campaigns: Array<{ id: string; name: string; sentAt: string }>;
 }
 
 function toPublic(row: RawDealRow): PublicDeal {
@@ -56,10 +57,28 @@ function toPublic(row: RawDealRow): PublicDeal {
     isStale: Boolean(row.isStale),
     enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
     aiSummary: row.aiSummary,
+    campaigns: row.campaigns ?? [],
     createdAt: row.deal.createdAt.toISOString(),
     updatedAt: row.deal.updatedAt.toISOString(),
   };
 }
+
+// Resumo das campanhas em que o lead do deal aparece como recipient com
+// sent_at preenchido. Mesma forma usada em leadsService.ts.
+//
+// IMPORTANTE: Drizzle renderiza ${deals.leadId} dentro deste subquery de
+// projeção JSON como "lead_id" sem qualificação, colidindo com cr.lead_id após
+// o JOIN — gerando "column reference is ambiguous". Usamos sql.raw com o nome
+// qualificado ("deals.lead_id") pra forçar a referencia certa. No EXISTS do
+// filtro (contexto WHERE) ${deals.leadId} funciona normalmente.
+const campaignsSql = sql<Array<{ id: string; name: string; sentAt: string }>>`COALESCE(
+  (SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'sentAt', cr.sent_at)
+                   ORDER BY cr.sent_at DESC)
+   FROM campaign_recipients cr
+   JOIN campaigns c ON c.id = cr.campaign_id
+   WHERE cr.lead_id = ${sql.raw('deals.lead_id')} AND cr.sent_at IS NOT NULL),
+  '[]'::json
+)`;
 
 // Resumo mais recente da IA para o lead do deal (varre conversas do lead e
 // pega o handoff_summary mais recente não-vazio). Surface fica no card do
@@ -114,6 +133,7 @@ const isStaleSql = sql<boolean>`(
 export async function listBoard(input: {
   ownerFilter: 'mine' | 'all' | 'unassigned' | string;
   q?: string;
+  campaignIds?: string[];
   currentUserId: string;
 }): Promise<BoardResponse> {
   const conds: SQL[] = [];
@@ -144,6 +164,22 @@ export async function listBoard(input: {
     if (search) conds.push(search);
   }
 
+  if (input.campaignIds && input.campaignIds.length > 0) {
+    // OR semantics: deal cujo lead aparece como recipient sent_at IS NOT NULL
+    // em qualquer das campanhas filtradas. sql.join binda os UUIDs como
+    // parâmetros (a forma inline `IN ${array}` do drizzle não funciona aqui).
+    const ids = sql.join(
+      input.campaignIds.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    conds.push(sql`EXISTS (
+      SELECT 1 FROM campaign_recipients cr
+      WHERE cr.lead_id = ${deals.leadId}
+        AND cr.sent_at IS NOT NULL
+        AND cr.campaign_id IN (${ids})
+    )`);
+  }
+
   const where = and(...conds);
 
   const rows = await db
@@ -154,6 +190,7 @@ export async function listBoard(input: {
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
+      campaigns: campaignsSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -197,6 +234,7 @@ export async function listHistory(input: {
   lossReason?: LossReason;
   from?: Date;
   to?: Date;
+  campaignIds?: string[];
   page?: number;
   currentUserId: string;
 }): Promise<{ items: PublicDeal[]; total: number; page: number; pageSize: number }> {
@@ -226,6 +264,19 @@ export async function listHistory(input: {
     if (search) conds.push(search);
   }
 
+  if (input.campaignIds && input.campaignIds.length > 0) {
+    const ids = sql.join(
+      input.campaignIds.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    conds.push(sql`EXISTS (
+      SELECT 1 FROM campaign_recipients cr
+      WHERE cr.lead_id = ${deals.leadId}
+        AND cr.sent_at IS NOT NULL
+        AND cr.campaign_id IN (${ids})
+    )`);
+  }
+
   const where = and(...conds);
 
   const [{ total }] = await db
@@ -242,6 +293,7 @@ export async function listHistory(input: {
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
+      campaigns: campaignsSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -272,6 +324,7 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
+      campaigns: campaignsSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -313,6 +366,7 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
       enteredCurrentStageAt: enteredStageSql,
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
+      campaigns: campaignsSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))

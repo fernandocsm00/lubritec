@@ -131,7 +131,7 @@ import { createCampaign as createCampaignService } from '../services/campaignsSe
 import { createWhatsappInstance } from './helpers';
 
 describe('createCampaign + cooldown', () => {
-  it('separa elegíveis (pending) de bloqueados (skipped cooldown_24h)', async () => {
+  it('insere apenas elegíveis; bloqueados por cooldown ficam de fora da campanha', async () => {
     const u = await createUser({ role: 'comercial', email: 'cc1@x.com' });
     const ok = await createLead({ phone: '5511900060001', status: 'frio' });
     const blocked = await createLead({ phone: '5511900060002', status: 'frio' });
@@ -153,25 +153,27 @@ describe('createCampaign + cooldown', () => {
       instanceId: inst.id,
     });
 
+    // Apenas o lead elegível entra como destinatário; o bloqueado é silenciosamente
+    // excluído pra não aparecer como IGNORADO na lista da campanha (decisão 2026-05-28).
     const recs = await db.select().from(campaignRecipients)
       .where(eq(campaignRecipients.campaignId, c.id));
-    expect(recs).toHaveLength(2);
-    const pendingR = recs.find((r) => r.leadId === ok.id);
-    const skippedR = recs.find((r) => r.leadId === blocked.id);
-    expect(pendingR?.status).toBe('pending');
-    expect(skippedR?.status).toBe('skipped');
-    expect(skippedR?.failureReason).toBe(COOLDOWN_REASON);
+    expect(recs).toHaveLength(1);
+    expect(recs[0].leadId).toBe(ok.id);
+    expect(recs[0].status).toBe('pending');
 
     const [campRow] = await db.select().from(campaigns).where(eq(campaigns.id, c.id));
-    expect(campRow.audienceTotal).toBe(2);
-    expect(campRow.skippedCount).toBe(1);
+    expect(campRow.audienceTotal).toBe(1);
+    expect(campRow.skippedCount).toBe(0);
   });
 });
 
 import { listCampaigns, getCampaignById } from '../services/campaignsService';
 
 describe('PublicCampaign.skippedByCooldown', () => {
-  it('createCampaign retorna skippedByCooldown', async () => {
+  it('createCampaign retorna excludedByCooldownCount no campo skippedByCooldown', async () => {
+    // Bloqueados não são mais inseridos como recipients (vide decisão 2026-05-28),
+    // mas o retorno do createCampaign ainda informa quantos foram excluídos do
+    // filtro original pra que o frontend possa avisar o vendedor.
     const u = await createUser({ role: 'comercial', email: 'pc1@x.com' });
     await createLead({ phone: '5511900110001', status: 'frio' });
     const blocked = await createLead({ phone: '5511900110002', status: 'frio' });
@@ -192,15 +194,22 @@ describe('PublicCampaign.skippedByCooldown', () => {
       instanceId: inst.id,
     });
 
+    // skippedByCooldown no momento da criação = quantos o filtro pegou mas foram
+    // descartados por cooldown (informativo, não materializado em recipients).
     expect(c.skippedByCooldown).toBe(1);
-    expect(c.skippedCount).toBe(1);
+    // skippedCount agora reflete só os pulos materializados via dispatcher (0 aqui).
+    expect(c.skippedCount).toBe(0);
 
+    // Após a criação, listagens e getById derivam skippedByCooldown da tabela
+    // campaign_recipients (rows com failure_reason='cooldown_24h'). Como não
+    // inserimos mais essas rows na criação, esses retornos serão 0 — só vão
+    // crescer se o safety-net do dispatcher pular alguém.
     const fetched = await getCampaignById(c.id);
-    expect(fetched.skippedByCooldown).toBe(1);
+    expect(fetched.skippedByCooldown).toBe(0);
 
     const list = await listCampaigns({});
     const found = list.items.find((x) => x.id === c.id);
-    expect(found?.skippedByCooldown).toBe(1);
+    expect(found?.skippedByCooldown).toBe(0);
   });
 });
 

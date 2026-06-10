@@ -15,9 +15,21 @@ const ownerFilter = z.union([
   z.string().uuid(),
 ]);
 
+// zod v4: `.optional()` precisa ficar FORA do z.preprocess. Se ficar dentro,
+// o campo continua obrigatório no parent z.object e a chave ausente vira
+// erro "expected nonoptional, received undefined" — derrubando QUALQUER
+// chamada sem campaignIds. Mesma armadilha aplica no leadsController.
+const campaignIdsSchema = z
+  .preprocess(
+    (v) => (typeof v === 'string' ? v.split(',').filter(Boolean) : v),
+    z.array(z.string().uuid()),
+  )
+  .optional();
+
 const boardQuery = z.object({
   owner: ownerFilter.optional(),
   q: z.string().optional(),
+  campaignIds: campaignIdsSchema,
 });
 
 const historyQuery = z.object({
@@ -27,6 +39,7 @@ const historyQuery = z.object({
   lossReason: z.enum(LOSS_REASONS).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  campaignIds: campaignIdsSchema,
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });
 
@@ -38,6 +51,7 @@ export async function boardHandler(req: Request, res: Response, next: NextFuncti
       // marcar checkbox "Apenas meus deals" na UI pra filtrar pelos seus.
       ownerFilter: params.owner ?? 'all',
       q: params.q,
+      campaignIds: params.campaignIds,
       currentUserId: req.user!.userId,
     });
     res.json(result);
@@ -54,6 +68,7 @@ export async function historyHandler(req: Request, res: Response, next: NextFunc
       lossReason: params.lossReason,
       from: params.from ? new Date(params.from) : undefined,
       to: params.to ? new Date(params.to) : undefined,
+      campaignIds: params.campaignIds,
       page: params.page,
       currentUserId: req.user!.userId,
     });

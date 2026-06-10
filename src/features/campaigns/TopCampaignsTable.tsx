@@ -1,21 +1,27 @@
 import { Link } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trophy, Zap } from 'lucide-react';
-import { useTopCampaigns, type ReportPeriod, type CampaignKind } from './api';
+import {
+  useTopCampaigns,
+  type ReportPeriod,
+  type CampaignKind,
+  type ReportLeadFilters,
+} from './api';
 import { formatCurrency, CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUS_TONES } from './helpers';
 
 interface Props {
   period: ReportPeriod;
   kind: CampaignKind;
   limit?: number;
+  filters?: ReportLeadFilters;
 }
 
 /**
  * Tabela das top N campanhas no periodo, ranqueadas por mensagens enviadas.
  * Cada linha tem link pra detalhe da campanha. Replied/won destacam visualmente.
  */
-export function TopCampaignsTable({ period, kind, limit = 5 }: Props) {
-  const { data, isLoading, isError } = useTopCampaigns({ period, kind, limit });
+export function TopCampaignsTable({ period, kind, limit = 5, filters }: Props) {
+  const { data, isLoading, isError } = useTopCampaigns({ period, kind, limit, filters });
 
   if (isError) {
     return (
