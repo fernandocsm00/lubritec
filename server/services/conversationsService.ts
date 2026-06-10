@@ -2,6 +2,7 @@
 import { conversations, messages, leads, users, whatsappInstance, campaigns } from '../db/schema';
 import { eq, and, or, ilike, asc, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
+import { toCanonicalBrPhone } from '../lib/phoneBR';
 import type {
   PublicConversation,
   ConversationCounts,
@@ -443,6 +444,11 @@ export async function markRead(
 // ---------------------------------------------------------------------------
 
 import { uazapiClient } from './whatsapp/uazapi/client';
+import { resolveProvider } from './whatsapp/providerRegistry';
+import {
+  ProviderError,
+  OutOfSessionWindowError,
+} from './whatsapp/provider';
 
 export interface SendInput {
   conversationId: string;
@@ -472,17 +478,37 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     ? `*${sender.name}:*\n${input.body}`
     : input.body ?? null;
 
-  // Chama UazAPI primeiro — só persiste se sucesso.
-  let uazapiResp;
+  // Envia pelo provider da instância da conversa (não assume UazAPI default —
+  // conversas Meta Cloud quebravam aqui antes deste fix).
+  const provider = await resolveProvider(conv.instanceId);
+  let sendResult: { providerMsgId: string; rawPayload: unknown };
   try {
-    uazapiResp = await uazapiClient.sendMessage({
-      to: conv.phone,
-      kind: input.kind,
-      text: outboundBody ?? undefined,
-      mediaUrl: input.mediaUrl ? toAbsoluteMediaUrl(input.mediaUrl, input.appBaseUrl) : undefined,
-      mediaMime: input.mediaMime ?? undefined,
-    });
-  } catch {
+    if (input.kind === 'text') {
+      sendResult = await provider.sendText({
+        to: conv.phone,
+        text: outboundBody ?? '',
+      });
+    } else {
+      if (!input.mediaUrl) {
+        throw new HttpError(400, 'mediaUrl is required for media messages');
+      }
+      sendResult = await provider.sendMedia({
+        to: conv.phone,
+        kind: input.kind,
+        mediaUrl: toAbsoluteMediaUrl(input.mediaUrl, input.appBaseUrl),
+        mediaMime: input.mediaMime ?? undefined,
+        caption: outboundBody ?? undefined,
+      });
+    }
+  } catch (err) {
+    if (err instanceof OutOfSessionWindowError) {
+      throw new HttpError(409,
+        'Janela de 24h fechada — para reabrir, envie um template HSM aprovado.');
+    }
+    if (err instanceof ProviderError) {
+      throw new HttpError(502, `Falha no provedor (${err.provider}): ${err.message}`);
+    }
+    if (err instanceof HttpError) throw err;
     throw new HttpError(502, 'WhatsApp gateway unavailable');
   }
 
@@ -499,9 +525,9 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         mediaUrl: input.mediaUrl ?? null,
         mediaMime: input.mediaMime ?? null,
         sentByUserId: input.userId,
-        providerMsgId: uazapiResp.messageId,
-        provider: 'uazapi',
-        rawPayload: uazapiResp.rawPayload as object,
+        providerMsgId: sendResult.providerMsgId,
+        provider: provider.kind,
+        rawPayload: sendResult.rawPayload as object,
         sentAt,
       })
       .returning();
@@ -698,8 +724,12 @@ async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
 // Start conversation (cria lead+conversa se preciso, depois envia 1ª mensagem)
 // ---------------------------------------------------------------------------
 
-function normalizePhone(raw: string): string {
-  return raw.replace(/\D/g, '');
+// Canoniza pro formato E.164 BR com o nono dígito (mesma regra do webhook
+// inbound e do import CSV). Sem isso, "Nova conversa" criada com o número
+// digitado sem o 9 gera lead/conv distintos do que o webhook entrega com 9
+// quando o cliente responde — duplicando o contato na inbox.
+function normalizePhone(raw: string): string | null {
+  return toCanonicalBrPhone(raw);
 }
 
 export interface StartConversationInput {
@@ -722,10 +752,14 @@ export async function startConversation(
   input: StartConversationInput,
 ): Promise<StartConversationResult> {
   const phone = normalizePhone(input.phone);
-  // E.164 brasileiro válido: 10 a 15 dígitos. Validação de domínio fica no schema do controller.
-  if (phone.length < 10 || phone.length > 15) {
+  if (!phone) {
     throw new HttpError(400, 'Telefone inválido');
   }
+
+  // Resolve a instância default antes do lookup pra que o filtro de
+  // conversation seja (instance_id, phone) — alinhado com o UNIQUE index
+  // e com o webhook inbound.
+  const instanceId = await getDefaultInstanceId();
 
   // 1. Lead — find ou create (com proteção a race igual ao webhook ingest).
   let leadId: string;
@@ -769,14 +803,13 @@ export async function startConversation(
   const foundConv = await db
     .select({ id: conversations.id })
     .from(conversations)
-    .where(eq(conversations.phone, phone))
+    .where(and(eq(conversations.instanceId, instanceId), eq(conversations.phone, phone)))
     .limit(1);
   if (foundConv.length) {
     conversationId = foundConv[0].id;
   } else {
     try {
       const now = new Date();
-      const instanceId = await getDefaultInstanceId();
       const [createdConv] = await db
         .insert(conversations)
         .values({
@@ -798,7 +831,7 @@ export async function startConversation(
         const retry = await db
           .select({ id: conversations.id })
           .from(conversations)
-          .where(eq(conversations.phone, phone))
+          .where(and(eq(conversations.instanceId, instanceId), eq(conversations.phone, phone)))
           .limit(1);
         if (!retry.length) throw err;
         conversationId = retry[0].id;
