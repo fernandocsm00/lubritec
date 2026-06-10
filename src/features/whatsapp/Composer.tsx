@@ -7,6 +7,16 @@ import { EmojiPicker } from './EmojiPicker';
 import { TemplatePicker } from './TemplatePicker';
 import { MediaUpload, type MediaUploadHandle } from './MediaUpload';
 import { useSendMessage } from './api';
+import { ApiError } from '@/lib/apiClient';
+
+function sendErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    // Backend já manda mensagens prontas pro usuário (ex.: janela 24h fechada,
+    // erro do provedor). Repassa direto em vez de mostrar fallback genérico.
+    if (err.message && err.message !== 'Request failed') return err.message;
+  }
+  return fallback;
+}
 
 interface Props { conversationId: string }
 
@@ -21,8 +31,8 @@ export function Composer({ conversationId }: Props) {
     try {
       await send.mutateAsync({ kind: 'text', body });
       setText('');
-    } catch {
-      toast.error('Falha ao enviar mensagem.');
+    } catch (err) {
+      toast.error(sendErrorMessage(err, 'Falha ao enviar mensagem.'));
     }
   }
 
@@ -35,8 +45,8 @@ export function Composer({ conversationId }: Props) {
         body: input.caption,
       });
       toast.success('Mídia enviada.');
-    } catch {
-      toast.error('Falha ao enviar mídia.');
+    } catch (err) {
+      toast.error(sendErrorMessage(err, 'Falha ao enviar mídia.'));
     }
   }
 
