@@ -11,11 +11,52 @@ import type {
   DashboardWhatsappStats,
 } from '../../shared/types';
 
+/**
+ * Recortes opcionais por atributos do lead. Quando nenhum vem preenchido,
+ * o dashboard agrega normalmente (mesmo comportamento de sempre).
+ * Filtra apenas KPIs/funil relacionados a leads — métricas de WhatsApp,
+ * IA e atividades recentes seguem agregadas (são da operação inteira).
+ */
+export interface DashboardLeadFilters {
+  imbp?: string;
+  segment?: string;
+  city?: string;
+}
+
+function hasAnyLeadFilter(f?: DashboardLeadFilters): boolean {
+  return !!(f && (f.imbp || f.segment || f.city));
+}
+
+/** WHERE adicional p/ subquery EXISTS contra leads.id. */
+function leadFilterExists(alias: string, f?: DashboardLeadFilters) {
+  if (!hasAnyLeadFilter(f)) return sql``;
+  const conds = [] as ReturnType<typeof sql>[];
+  if (f!.imbp) conds.push(sql`l.imbp = ${f!.imbp}`);
+  if (f!.segment) conds.push(sql`l.segment = ${f!.segment}`);
+  if (f!.city) conds.push(sql`lower(l.city) = lower(${f!.city})`);
+  return sql` AND EXISTS (
+    SELECT 1 FROM leads l
+    WHERE l.id = ${sql.raw(alias)}.lead_id
+      AND ${sql.join(conds, sql` AND `)}
+  )`;
+}
+
+/** Filtros aplicados diretamente na tabela leads (sem subquery). */
+function leadFilterDirect(f?: DashboardLeadFilters) {
+  if (!hasAnyLeadFilter(f)) return sql``;
+  const conds = [] as ReturnType<typeof sql>[];
+  if (f!.imbp) conds.push(sql`${leads.imbp} = ${f!.imbp}`);
+  if (f!.segment) conds.push(sql`${leads.segment} = ${f!.segment}`);
+  if (f!.city) conds.push(sql`lower(${leads.city}) = lower(${f!.city})`);
+  return sql` AND ${sql.join(conds, sql` AND `)}`;
+}
+
 interface SummaryArgs {
   view: DashboardView;
   period: PeriodKey;
   userId?: string;     // required when view='me'
   now?: Date;          // override for tests
+  leadFilters?: DashboardLeadFilters;
 }
 
 function pctChange(value: number, prev: number): number {
@@ -28,29 +69,54 @@ function ppDiff(value: number, prev: number): number {
   return Math.round(value - prev);
 }
 
-async function salesKpi(start: Date, end: Date, ownerUserId: string | null) {
-  const where = ownerUserId
-    ? and(eq(deals.stage, 'ganho'), gte(deals.closedAt!, start), lt(deals.closedAt!, end), eq(deals.ownerUserId, ownerUserId))
-    : and(eq(deals.stage, 'ganho'), gte(deals.closedAt!, start), lt(deals.closedAt!, end));
-  const [row] = await db
-    .select({
-      sum: sql<string>`coalesce(sum(${deals.proposalValue}), 0)`,
-      cnt: sql<number>`count(*)::int`,
-    })
-    .from(deals)
-    .where(where);
-  return { value: Number(row.sum), count: row.cnt };
+async function salesKpi(start: Date, end: Date, ownerUserId: string | null, leadFilters?: DashboardLeadFilters) {
+  const filter = leadFilterExists('deals', leadFilters);
+  const ownerSql = ownerUserId ? sql`AND ${deals.ownerUserId} = ${ownerUserId}` : sql``;
+  const [row] = await db.execute<{ sum: string; cnt: number }>(sql`
+    SELECT coalesce(sum(${deals.proposalValue}), 0) as sum, count(*)::int as cnt
+    FROM ${deals}
+    WHERE ${deals.stage} = 'ganho'
+      AND ${deals.closedAt} >= ${start}
+      AND ${deals.closedAt} < ${end}
+      ${ownerSql}
+      ${filter}
+  `).then((r) => ((r as any).rows ?? r) as { sum: string; cnt: number }[]);
+  return { value: Number(row.sum), count: Number(row.cnt) };
 }
 
-async function lostCount(start: Date, end: Date, ownerUserId: string | null) {
-  const where = ownerUserId
-    ? and(eq(deals.stage, 'perdido'), gte(deals.closedAt!, start), lt(deals.closedAt!, end), eq(deals.ownerUserId, ownerUserId))
-    : and(eq(deals.stage, 'perdido'), gte(deals.closedAt!, start), lt(deals.closedAt!, end));
-  const [row] = await db.select({ cnt: sql<number>`count(*)::int` }).from(deals).where(where);
-  return row.cnt;
+async function lostCount(start: Date, end: Date, ownerUserId: string | null, leadFilters?: DashboardLeadFilters) {
+  const filter = leadFilterExists('deals', leadFilters);
+  const ownerSql = ownerUserId ? sql`AND ${deals.ownerUserId} = ${ownerUserId}` : sql``;
+  const [row] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(*)::int as cnt
+    FROM ${deals}
+    WHERE ${deals.stage} = 'perdido'
+      AND ${deals.closedAt} >= ${start}
+      AND ${deals.closedAt} < ${end}
+      ${ownerSql}
+      ${filter}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
+  return Number(row.cnt);
 }
 
-async function proposalsCount(start: Date, end: Date, actorUserId: string | null) {
+async function proposalsCount(start: Date, end: Date, actorUserId: string | null, leadFilters?: DashboardLeadFilters) {
+  // dealActivities.deal_id → deals.lead_id. Pra filtrar por lead, juntamos
+  // deals quando algum lead filter está ativo.
+  if (hasAnyLeadFilter(leadFilters)) {
+    const actorSql = actorUserId ? sql`AND da.actor_user_id = ${actorUserId}` : sql``;
+    const filter = leadFilterExists('d', leadFilters);
+    const [row] = await db.execute<{ cnt: number }>(sql`
+      SELECT count(*)::int as cnt
+      FROM ${dealActivities} da
+      JOIN ${deals} d ON d.id = da.deal_id
+      WHERE da.kind = 'created'
+        AND da.created_at >= ${start}
+        AND da.created_at < ${end}
+        ${actorSql}
+        ${filter}
+    `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
+    return Number(row.cnt);
+  }
   const where = actorUserId
     ? and(eq(dealActivities.kind, 'created'), gte(dealActivities.createdAt, start), lt(dealActivities.createdAt, end), eq(dealActivities.actorUserId, actorUserId))
     : and(eq(dealActivities.kind, 'created'), gte(dealActivities.createdAt, start), lt(dealActivities.createdAt, end));
@@ -58,26 +124,37 @@ async function proposalsCount(start: Date, end: Date, actorUserId: string | null
   return row.cnt;
 }
 
-async function funnelOrg(start: Date, end: Date) {
-  const [newLeadsRow] = await db
-    .select({ cnt: sql<number>`count(*)::int` })
-    .from(leads)
-    .where(and(gte(leads.createdAt, start), lt(leads.createdAt, end)));
+async function funnelOrg(start: Date, end: Date, leadFilters?: DashboardLeadFilters) {
+  // Filtros aplicam direto em leads (newLeads) ou via subquery EXISTS contra
+  // leads pelas tabelas downstream (conversations/deals — usam lead_id).
+  const fLeads = hasAnyLeadFilter(leadFilters) ? leadFilterDirect(leadFilters) : sql``;
+  const fConv = leadFilterExists('conversations', leadFilters);
+  const fDeals = leadFilterExists('deals', leadFilters);
 
-  const [withConvRow] = await db
-    .select({ cnt: sql<number>`count(distinct ${conversations.leadId})::int` })
-    .from(conversations)
-    .where(and(gte(conversations.createdAt, start), lt(conversations.createdAt, end)));
+  const [newLeadsRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(*)::int as cnt FROM ${leads}
+    WHERE ${leads.createdAt} >= ${start} AND ${leads.createdAt} < ${end}
+    ${fLeads}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
 
-  const [withPropRow] = await db
-    .select({ cnt: sql<number>`count(distinct ${deals.leadId})::int` })
-    .from(deals)
-    .where(and(gte(deals.createdAt, start), lt(deals.createdAt, end)));
+  const [withConvRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(distinct ${conversations.leadId})::int as cnt FROM ${conversations}
+    WHERE ${conversations.createdAt} >= ${start} AND ${conversations.createdAt} < ${end}
+    ${fConv}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
 
-  const [wonRow] = await db
-    .select({ cnt: sql<number>`count(*)::int` })
-    .from(deals)
-    .where(and(eq(deals.stage, 'ganho'), gte(deals.closedAt!, start), lt(deals.closedAt!, end)));
+  const [withPropRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(distinct ${deals.leadId})::int as cnt FROM ${deals}
+    WHERE ${deals.createdAt} >= ${start} AND ${deals.createdAt} < ${end}
+    ${fDeals}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
+
+  const [wonRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(*)::int as cnt FROM ${deals}
+    WHERE ${deals.stage} = 'ganho'
+      AND ${deals.closedAt} >= ${start} AND ${deals.closedAt} < ${end}
+    ${fDeals}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
 
   const newLeads = newLeadsRow.cnt;
   const withConversation = withConvRow.cnt;
@@ -94,21 +171,41 @@ async function funnelOrg(start: Date, end: Date) {
   };
 }
 
-async function funnelMe(start: Date, end: Date, userId: string) {
-  const [respRow] = await db
-    .select({ cnt: sql<number>`count(distinct ${messages.conversationId})::int` })
-    .from(messages)
-    .where(and(eq(messages.sentByUserId, userId), gte(messages.sentAt, start), lt(messages.sentAt, end)));
+async function funnelMe(start: Date, end: Date, userId: string, leadFilters?: DashboardLeadFilters) {
+  const fDeals = leadFilterExists('deals', leadFilters);
+  // messages.conversationId → conversations.leadId. Filtra via subquery EXISTS.
+  const fMsgs = hasAnyLeadFilter(leadFilters)
+    ? sql` AND EXISTS (
+        SELECT 1 FROM conversations c
+        JOIN leads l ON l.id = c.lead_id
+        WHERE c.id = ${messages.conversationId}
+          ${leadFilters!.imbp ? sql`AND l.imbp = ${leadFilters!.imbp}` : sql``}
+          ${leadFilters!.segment ? sql`AND l.segment = ${leadFilters!.segment}` : sql``}
+          ${leadFilters!.city ? sql`AND lower(l.city) = lower(${leadFilters!.city})` : sql``}
+      )`
+    : sql``;
 
-  const [propRow] = await db
-    .select({ cnt: sql<number>`count(*)::int` })
-    .from(deals)
-    .where(and(eq(deals.ownerUserId, userId), gte(deals.createdAt, start), lt(deals.createdAt, end)));
+  const [respRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(distinct ${messages.conversationId})::int as cnt FROM ${messages}
+    WHERE ${messages.sentByUserId} = ${userId}
+      AND ${messages.sentAt} >= ${start} AND ${messages.sentAt} < ${end}
+    ${fMsgs}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
 
-  const [wonRow] = await db
-    .select({ cnt: sql<number>`count(*)::int` })
-    .from(deals)
-    .where(and(eq(deals.ownerUserId, userId), eq(deals.stage, 'ganho'), gte(deals.closedAt!, start), lt(deals.closedAt!, end)));
+  const [propRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(*)::int as cnt FROM ${deals}
+    WHERE ${deals.ownerUserId} = ${userId}
+      AND ${deals.createdAt} >= ${start} AND ${deals.createdAt} < ${end}
+    ${fDeals}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
+
+  const [wonRow] = await db.execute<{ cnt: number }>(sql`
+    SELECT count(*)::int as cnt FROM ${deals}
+    WHERE ${deals.ownerUserId} = ${userId}
+      AND ${deals.stage} = 'ganho'
+      AND ${deals.closedAt} >= ${start} AND ${deals.closedAt} < ${end}
+    ${fDeals}
+  `).then((r) => ((r as any).rows ?? r) as { cnt: number }[]);
 
   const respondedConversations = respRow.cnt;
   const myProposals = propRow.cnt;
@@ -272,15 +369,16 @@ export async function attention(args: { view: DashboardView; userId?: string }):
 export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
   const period = resolvePeriod(args.period, args.now);
   const owner = args.view === 'me' ? args.userId! : null;
+  const lf = args.leadFilters;
 
   // KPIs (current + previous in parallel)
   const [salesCur, salesPrev, lostCur, lostPrev, propsCur, propsPrev] = await Promise.all([
-    salesKpi(period.start, period.end, owner),
-    salesKpi(period.prevStart, period.prevEnd, owner),
-    lostCount(period.start, period.end, owner),
-    lostCount(period.prevStart, period.prevEnd, owner),
-    proposalsCount(period.start, period.end, owner),
-    proposalsCount(period.prevStart, period.prevEnd, owner),
+    salesKpi(period.start, period.end, owner, lf),
+    salesKpi(period.prevStart, period.prevEnd, owner, lf),
+    lostCount(period.start, period.end, owner, lf),
+    lostCount(period.prevStart, period.prevEnd, owner, lf),
+    proposalsCount(period.start, period.end, owner, lf),
+    proposalsCount(period.prevStart, period.prevEnd, owner, lf),
   ]);
 
   const winRateCur  = salesCur.count + lostCur === 0 ? 0 : Math.round((salesCur.count / (salesCur.count + lostCur)) * 100);
@@ -290,11 +388,13 @@ export async function summary(args: SummaryArgs): Promise<DashboardSummary> {
   const avgTicketPrev = salesPrev.count === 0 ? 0 : Math.round(salesPrev.value / salesPrev.count);
 
   // Independent secondary aggregations — fire in parallel (was 4 sequential round-trips)
+  // Pipeline aberto / leaderboard / recentes seguem agregados (visão global do
+  // estado atual, não da janela filtrada) — só o funil e KPIs respeitam filtros.
   const [goal, funnel, pipeline, leaderOrRecent] = await Promise.all([
     goalFn(args.view, args.period, salesCur.value),
     args.view === 'org'
-      ? funnelOrg(period.start, period.end)
-      : funnelMe(period.start, period.end, args.userId!),
+      ? funnelOrg(period.start, period.end, lf)
+      : funnelMe(period.start, period.end, args.userId!, lf),
     pipelineOpenFn(owner),
     args.view === 'org'
       ? leaderboardFn(period.start, period.end)
@@ -337,6 +437,7 @@ interface MacroFunnelArgs {
   rangeStart?: Date;
   rangeEnd?: Date;
   now?: Date;
+  leadFilters?: DashboardLeadFilters;
 }
 
 export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacroFunnel> {
@@ -356,23 +457,37 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
     label = period.label;
   }
 
+  const lf = args.leadFilters;
   // Counts cumulativos por stage — uma query.
-  const [row] = await db
-    .select({
-      total: sql<number>`count(*)::int`,
-      incomplete: sql<number>`count(*) filter (where ${leads.flowStage} = 'incomplete')::int`,
-      complete: sql<number>`count(*) filter (where ${leads.flowStage} in ('complete','dispatched','engaged','qualified','handed_off'))::int`,
-      dispatched: sql<number>`count(*) filter (where ${leads.flowStage} in ('dispatched','engaged','qualified','handed_off'))::int`,
-      engaged: sql<number>`count(*) filter (where ${leads.flowStage} in ('engaged','qualified','handed_off'))::int`,
-      qualified: sql<number>`count(*) filter (where ${leads.flowStage} in ('qualified','handed_off'))::int`,
-      handedOff: sql<number>`count(*) filter (where ${leads.flowStage} = 'handed_off')::int`,
-      lost: sql<number>`count(*) filter (where ${leads.flowStage} = 'lost')::int`,
-    })
-    .from(leads)
-    .where(and(gte(leads.createdAt, start), lt(leads.createdAt, end)));
+  const filterDirect = leadFilterDirect(lf);
+  const [row] = await db.execute<{
+    total: number; incomplete: number; complete: number; dispatched: number;
+    engaged: number; qualified: number; handed_off: number; lost: number;
+  }>(sql`
+    SELECT
+      count(*)::int as total,
+      count(*) filter (where ${leads.flowStage} = 'incomplete')::int as incomplete,
+      count(*) filter (where ${leads.flowStage} in ('complete','dispatched','engaged','qualified','handed_off'))::int as complete,
+      count(*) filter (where ${leads.flowStage} in ('dispatched','engaged','qualified','handed_off'))::int as dispatched,
+      count(*) filter (where ${leads.flowStage} in ('engaged','qualified','handed_off'))::int as engaged,
+      count(*) filter (where ${leads.flowStage} in ('qualified','handed_off'))::int as qualified,
+      count(*) filter (where ${leads.flowStage} = 'handed_off')::int as handed_off,
+      count(*) filter (where ${leads.flowStage} = 'lost')::int as lost
+    FROM ${leads}
+    WHERE ${leads.createdAt} >= ${start} AND ${leads.createdAt} < ${end}
+    ${filterDirect}
+  `).then((r) => ((r as any).rows ?? r) as any[]);
+  const handedOff = row.handed_off;
 
   // Tempo médio em cada etapa — janela LEAD por lead, computa diff até a próxima
   // transição. Cohort restrita aos leads criados no mesmo período.
+  const durFilter = hasAnyLeadFilter(lf)
+    ? sql`
+        ${lf!.imbp ? sql`AND l.imbp = ${lf!.imbp}` : sql``}
+        ${lf!.segment ? sql`AND l.segment = ${lf!.segment}` : sql``}
+        ${lf!.city ? sql`AND lower(l.city) = lower(${lf!.city})` : sql``}
+      `
+    : sql``;
   const durationRows = await db.execute<{
     stage: string;
     avg_seconds: string | number;
@@ -387,6 +502,7 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
       FROM ${leadStageTransitions} t
       JOIN ${leads} l ON l.id = t.lead_id
       WHERE l.created_at >= ${start} AND l.created_at < ${end}
+      ${durFilter}
     )
     SELECT
       to_stage as stage,
@@ -417,7 +533,7 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
       dispatched: { count: row.dispatched, pctOfTotal: pct(row.dispatched), convFromPrev: conv(row.dispatched, row.complete) },
       engaged:    { count: row.engaged,    pctOfTotal: pct(row.engaged),    convFromPrev: conv(row.engaged, row.dispatched) },
       qualified:  { count: row.qualified,  pctOfTotal: pct(row.qualified),  convFromPrev: conv(row.qualified, row.engaged) },
-      handedOff:  { count: row.handedOff,  pctOfTotal: pct(row.handedOff),  convFromPrev: conv(row.handedOff, row.qualified) },
+      handedOff:  { count: handedOff,      pctOfTotal: pct(handedOff),      convFromPrev: conv(handedOff, row.qualified) },
     },
     sidelines: {
       incomplete: { count: row.incomplete, pctOfTotal: pct(row.incomplete) },

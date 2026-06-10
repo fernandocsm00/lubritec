@@ -8,6 +8,8 @@ import {
 } from '@/components/ui/select';
 import { CampaignList } from '@/features/campaigns/CampaignList';
 import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
+import { CampaignReportFilters } from '@/features/campaigns/CampaignReportFilters';
+import type { ReportLeadFilters } from '@/features/campaigns/api';
 import { CAMPAIGN_STATUSES } from '@shared/types';
 import type { CampaignStatus } from '@/features/campaigns/types';
 import { CAMPAIGN_STATUS_LABELS } from '@/features/campaigns/helpers';
@@ -21,6 +23,10 @@ export default function CampaignsPage() {
       ? (rawStatus as CampaignStatus)
       : undefined;
   const [searchInput, setSearchInput] = useState(q);
+  // Filtros por atributos do lead destinatário — só afetam a barra agregada
+  // (CampaignsReportBar). A lista de campanhas em si não filtra por isso porque
+  // campanhas não têm IMBP/Segmento próprios.
+  const [leadFilters, setLeadFilters] = useState<ReportLeadFilters>({});
 
   function patch(updates: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
@@ -51,7 +57,11 @@ export default function CampaignsPage() {
         </div>
       </div>
 
-      <CampaignsReportBar />
+      <div className="mb-3">
+        <CampaignReportFilters value={leadFilters} onChange={setLeadFilters} />
+      </div>
+
+      <CampaignsReportBar filters={leadFilters} />
 
       <div className="flex gap-2 mb-4 flex-wrap">
         <Input

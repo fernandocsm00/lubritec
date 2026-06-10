@@ -1,12 +1,27 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { summary, attention, whatsappStats, macroFunnel } from '../services/dashboardService';
+import { summary, attention, whatsappStats, macroFunnel, type DashboardLeadFilters } from '../services/dashboardService';
 import { getAiMetricsSummary } from '../services/aiMetrics';
 import { resolvePeriod } from '../lib/period';
+import { IMBP_VALUES, SEGMENT_VALUES } from '../../shared/types';
+
+// Filtros opcionais por atributos do lead destinatário/origem. Aplicados em
+// /summary e /macro-funnel. Não afetam WhatsApp/IA/atividades.
+const leadFiltersShape = {
+  imbp: z.enum(IMBP_VALUES).optional(),
+  segment: z.enum(SEGMENT_VALUES).optional(),
+  city: z.string().trim().min(1).max(120).optional(),
+};
+
+function pickLeadFilters(q: { imbp?: string; segment?: string; city?: string }): DashboardLeadFilters | undefined {
+  if (!q.imbp && !q.segment && !q.city) return undefined;
+  return { imbp: q.imbp, segment: q.segment, city: q.city };
+}
 
 const summaryQuery = z.object({
   view: z.enum(['org', 'me']),
   period: z.enum(['today', '7d', 'month', '30d', 'quarter']),
+  ...leadFiltersShape,
 });
 
 const attentionQuery = z.object({
@@ -18,6 +33,7 @@ const macroFunnelQuery = z
     period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
     from: z.string().datetime().optional(),
     to: z.string().datetime().optional(),
+    ...leadFiltersShape,
   })
   .refine(
     (d) => !!d.period || (!!d.from && !!d.to),
@@ -34,7 +50,12 @@ export async function summaryHandler(req: Request, res: Response, next: NextFunc
     if (q.view === 'org' && req.user!.role !== 'admin') {
       return res.status(403).json({ error: 'admin only' });
     }
-    res.json(await summary({ view: q.view, period: q.period, userId: req.user!.userId }));
+    res.json(await summary({
+      view: q.view,
+      period: q.period,
+      userId: req.user!.userId,
+      leadFilters: pickLeadFilters(q),
+    }));
   } catch (e) { next(e); }
 }
 
@@ -91,6 +112,7 @@ export async function macroFunnelHandler(req: Request, res: Response, next: Next
       period: q.period,
       rangeStart: q.from ? new Date(q.from) : undefined,
       rangeEnd: q.to ? new Date(q.to) : undefined,
+      leadFilters: pickLeadFilters(q),
     }));
   } catch (e) { next(e); }
 }

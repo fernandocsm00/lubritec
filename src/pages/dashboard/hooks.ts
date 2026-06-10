@@ -1,11 +1,11 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import type { DashboardView, DashboardPeriod } from '@shared/types';
-import { fetchSummary, fetchAttention, fetchWhatsapp, fetchMacroFunnel, fetchAiMetrics } from './api';
+import { fetchSummary, fetchAttention, fetchWhatsapp, fetchMacroFunnel, fetchAiMetrics, type DashboardLeadFilters } from './api';
 
-export function useDashboardSummary(view: DashboardView, period: DashboardPeriod) {
+export function useDashboardSummary(view: DashboardView, period: DashboardPeriod, filters?: DashboardLeadFilters) {
   return useQuery({
-    queryKey: ['dashboard', 'summary', view, period],
-    queryFn: () => fetchSummary(view, period),
+    queryKey: ['dashboard', 'summary', view, period, filters?.imbp, filters?.segment, filters?.city],
+    queryFn: () => fetchSummary(view, period, filters),
     staleTime: 60_000,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
@@ -35,6 +35,7 @@ export interface MacroFunnelQueryArgs {
   period?: DashboardPeriod;
   from?: string;  // ISO datetime
   to?: string;    // ISO datetime
+  filters?: DashboardLeadFilters;
 }
 
 export function useDashboardAiMetrics(args: MacroFunnelQueryArgs, enabled: boolean) {
@@ -49,8 +50,9 @@ export function useDashboardAiMetrics(args: MacroFunnelQueryArgs, enabled: boole
 }
 
 export function useDashboardMacroFunnel(args: MacroFunnelQueryArgs, enabled: boolean) {
+  const periodKey = args.from && args.to ? `${args.from}|${args.to}` : (args.period ?? '30d');
   return useQuery({
-    queryKey: ['dashboard', 'macro-funnel', args.from && args.to ? `${args.from}|${args.to}` : (args.period ?? '30d')],
+    queryKey: ['dashboard', 'macro-funnel', periodKey, args.filters?.imbp, args.filters?.segment, args.filters?.city],
     queryFn: () => fetchMacroFunnel(args),
     staleTime: 60_000,
     refetchInterval: 60_000,

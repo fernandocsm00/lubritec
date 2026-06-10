@@ -9,6 +9,8 @@ import {
   useDashboardWhatsapp,
   useDashboardMacroFunnel,
 } from './hooks';
+import type { DashboardLeadFilters } from './api';
+import { CampaignReportFilters } from '@/features/campaigns/CampaignReportFilters';
 import { ViewToggle } from './components/ViewToggle';
 import { PeriodPicker } from './components/PeriodPicker';
 import { BlockSkeleton } from './components/BlockSkeleton';
@@ -48,11 +50,12 @@ export default function DashboardPage() {
 
   const [view, setView] = useState<DashboardView>(isAdmin ? 'org' : 'me');
   const [period, setPeriod] = useState<DashboardPeriod>('month');
+  const [leadFilters, setLeadFilters] = useState<DashboardLeadFilters>({});
 
-  const summary = useDashboardSummary(view, period);
+  const summary = useDashboardSummary(view, period, leadFilters);
   const attention = useDashboardAttention(view);
   const whatsapp = useDashboardWhatsapp(view === 'org');
-  const macroFunnel = useDashboardMacroFunnel({ period }, isAdmin && view === 'org');
+  const macroFunnel = useDashboardMacroFunnel({ period, filters: leadFilters }, isAdmin && view === 'org');
 
   const isRefreshing =
     summary.isFetching ||
@@ -91,6 +94,11 @@ export default function DashboardPage() {
             <RefreshCcw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
+      </div>
+
+      {/* Filtros por atributos do lead — afetam KPIs e funil (não tocam WhatsApp/IA). */}
+      <div className="-mt-1">
+        <CampaignReportFilters value={leadFilters} onChange={setLeadFilters} />
       </div>
 
       {/* 1. Status Ribbon */}

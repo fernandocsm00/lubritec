@@ -10,6 +10,8 @@ import {
   useDashboardMacroFunnel,
   useDashboardAiMetrics,
 } from './hooks';
+import type { DashboardLeadFilters } from './api';
+import { CampaignReportFilters } from '@/features/campaigns/CampaignReportFilters';
 import { ViewToggle } from './components/ViewToggle';
 import { PeriodPicker } from './components/PeriodPicker';
 import { BlockSkeleton } from './components/BlockSkeleton';
@@ -47,9 +49,10 @@ export default function DashboardDetailsPage() {
   const [period, setPeriod] = useState<DashboardPeriod>('month');
   const [funnelCustomFrom, setFunnelCustomFrom] = useState<string>('');
   const [funnelCustomTo, setFunnelCustomTo] = useState<string>('');
+  const [leadFilters, setLeadFilters] = useState<DashboardLeadFilters>({});
   const useCustomRange = !!funnelCustomFrom && !!funnelCustomTo;
 
-  const summary = useDashboardSummary(view, period);
+  const summary = useDashboardSummary(view, period, leadFilters);
   const attention = useDashboardAttention(view);
   const whatsapp = useDashboardWhatsapp(view === 'org');
   const funnelArgs = useCustomRange
@@ -96,6 +99,9 @@ export default function DashboardDetailsPage() {
           </button>
         </div>
       </div>
+
+      {/* Filtros por atributos do lead — KPIs + funil; não afeta WhatsApp/IA. */}
+      <CampaignReportFilters value={leadFilters} onChange={setLeadFilters} />
 
       {/* KPI ROW detalhado */}
       <section>
