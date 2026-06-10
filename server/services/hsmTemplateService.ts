@@ -116,6 +116,69 @@ export async function createTemplate(input: CreateLocalInput) {
   return row;
 }
 
+export interface UpdateLocalInput {
+  instanceId: string;
+  templateId: string;
+  name: string;
+  language: string;
+  category: HsmCategory;
+  components: HsmComponent[];
+  submitNow: boolean;
+}
+
+export async function updateTemplate(input: UpdateLocalInput) {
+  if (!/^[a-z0-9_]+$/.test(input.name)) {
+    throw new HttpError(422, 'name must be snake_case (lowercase + digits + underscore)');
+  }
+  const [existing] = await db.select().from(whatsappHsmTemplates)
+    .where(and(
+      eq(whatsappHsmTemplates.id, input.templateId),
+      eq(whatsappHsmTemplates.instanceId, input.instanceId),
+    )).limit(1);
+  if (!existing) throw new HttpError(404, 'Template not found');
+  if (existing.status !== 'DRAFT') {
+    throw new HttpError(409,
+      `Apenas templates em rascunho podem ser editados (status atual: ${existing.status}). ` +
+      `Para alterar um template aprovado, crie uma nova versão com nome diferente.`);
+  }
+
+  const variableCount = countBodyVariables(input.components);
+  let metaTemplateId: string | null = null;
+  let status: HsmStatus = 'DRAFT';
+
+  if (input.submitNow) {
+    const cfg = await loadMetaCfg(input.instanceId);
+    try {
+      const res = await createOnMeta({
+        wabaId: cfg.wabaId,
+        accessToken: decryptSecret(cfg.accessToken),
+        name: input.name,
+        language: input.language,
+        category: input.category,
+        components: input.components,
+      });
+      metaTemplateId = res.metaTemplateId;
+      status = 'PENDING';
+    } catch (err) {
+      if (err instanceof MetaGraphError) {
+        throw new HttpError(422, `Meta template creation failed: ${err.message}`);
+      }
+      throw err;
+    }
+  }
+
+  const [updated] = await db.update(whatsappHsmTemplates).set({
+    name: input.name,
+    language: input.language,
+    category: input.category,
+    components: input.components,
+    variableCount,
+    ...(input.submitNow ? { status, metaTemplateId, lastSyncedAt: new Date() } : {}),
+    updatedAt: new Date(),
+  }).where(eq(whatsappHsmTemplates.id, input.templateId)).returning();
+  return updated;
+}
+
 export async function getTemplateById(templateId: string) {
   const [row] = await db.select().from(whatsappHsmTemplates)
     .where(eq(whatsappHsmTemplates.id, templateId)).limit(1);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, RefreshCw, Loader2, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Trash2, Pencil } from 'lucide-react';
 import { useInstancesList } from '../api';
 import { useTemplates, useDeleteTemplate, useSyncTemplates } from './api';
 import { TemplateStatusBadge } from './TemplateStatusBadge';
@@ -11,6 +11,7 @@ export function TemplatesListPage() {
   const metaInstances = (instances?.items ?? []).filter((i) => i.provider === 'meta_cloud');
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<HsmTemplateRecord | null>(null);
 
   // Pick the first Meta instance as default when data loads
   const effectiveInstanceId = selectedInstanceId ?? metaInstances[0]?.id ?? null;
@@ -66,7 +67,7 @@ export function TemplatesListPage() {
             Sincronizar
           </button>
           <button
-            onClick={() => setEditorOpen(true)}
+            onClick={() => { setEditingTemplate(null); setEditorOpen(true); }}
             disabled={!effectiveInstanceId}
             className="inline-flex items-center gap-2 px-4 py-2 bg-lc-navy text-white rounded hover:opacity-90 disabled:opacity-50 text-sm"
           >
@@ -111,6 +112,16 @@ export function TemplatesListPage() {
                   <div className="text-xs text-red-600 mt-1">Rejeitado: {tpl.rejectionReason}</div>
                 )}
               </div>
+              {tpl.status === 'DRAFT' && (
+                <button
+                  onClick={() => { setEditingTemplate(tpl); setEditorOpen(true); }}
+                  className="p-2 rounded text-zinc-600 hover:bg-zinc-100"
+                  aria-label="Editar rascunho"
+                  title="Editar rascunho"
+                >
+                  <Pencil size={16} />
+                </button>
+              )}
               <button
                 onClick={() => handleDelete(tpl)}
                 className="p-2 rounded text-red-600 hover:bg-red-50"
@@ -127,7 +138,8 @@ export function TemplatesListPage() {
         <TemplateEditor
           open={editorOpen}
           instanceId={effectiveInstanceId}
-          onClose={() => setEditorOpen(false)}
+          template={editingTemplate}
+          onClose={() => { setEditorOpen(false); setEditingTemplate(null); }}
         />
       )}
     </section>

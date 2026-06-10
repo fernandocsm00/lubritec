@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { useCreateTemplate } from './api';
+import { useCreateTemplate, useUpdateTemplate } from './api';
 import { TemplateComponentsEditor } from './TemplateComponentsEditor';
 import { TemplatePreview } from './TemplatePreview';
 import { HSM_CATEGORIES } from '@shared/types';
-import type { HsmComponent, HsmCategory } from './types';
+import type { HsmComponent, HsmCategory, HsmTemplateRecord } from './types';
 
 interface Props {
   open: boolean;
   instanceId: string;
+  /** Quando passado, abre em modo edição (só funciona pra status === 'DRAFT'). */
+  template?: HsmTemplateRecord | null;
   onClose: () => void;
 }
 
@@ -18,7 +20,8 @@ const LANGUAGES = [
   { value: 'es_LA', label: 'Español (Latinoamérica)' },
 ];
 
-export function TemplateEditor({ open, instanceId, onClose }: Props) {
+export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
+  const isEdit = !!template;
   const [name, setName] = useState('');
   const [language, setLanguage] = useState('pt_BR');
   const [category, setCategory] = useState<HsmCategory>('MARKETING');
@@ -27,6 +30,23 @@ export function TemplateEditor({ open, instanceId, onClose }: Props) {
   ]);
 
   const create = useCreateTemplate(instanceId);
+  const update = useUpdateTemplate(instanceId);
+  const mutation = isEdit ? update : create;
+
+  // Carrega valores do template ao abrir em modo edit.
+  useEffect(() => {
+    if (open && template) {
+      setName(template.name);
+      setLanguage(template.language);
+      setCategory(template.category);
+      setComponents((template.components ?? []) as HsmComponent[]);
+    } else if (open && !template) {
+      setName('');
+      setLanguage('pt_BR');
+      setCategory('MARKETING');
+      setComponents([{ type: 'BODY', text: '' }]);
+    }
+  }, [open, template]);
 
   if (!open) return null;
 
@@ -36,6 +56,7 @@ export function TemplateEditor({ open, instanceId, onClose }: Props) {
     setCategory('MARKETING');
     setComponents([{ type: 'BODY', text: '' }]);
     create.reset();
+    update.reset();
   };
 
   const handleClose = () => {
@@ -49,17 +70,24 @@ export function TemplateEditor({ open, instanceId, onClose }: Props) {
   const canSave = nameValid && hasBody;
 
   const submit = (asDraft: boolean) => {
-    create.mutate(
-      { name, language, category, components, submitNow: !asDraft },
-      { onSuccess: () => handleClose() },
-    );
+    const body = { name, language, category, components, submitNow: !asDraft };
+    if (isEdit && template) {
+      update.mutate(
+        { templateId: template.id, body },
+        { onSuccess: () => handleClose() },
+      );
+    } else {
+      create.mutate(body, { onSuccess: () => handleClose() });
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
         <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold">Novo template HSM</h2>
+          <h2 className="text-lg font-semibold">
+            {isEdit ? `Editar rascunho — ${template?.name}` : 'Novo template HSM'}
+          </h2>
           <button onClick={handleClose} className="p-1 hover:bg-zinc-100 rounded">
             <X size={20} />
           </button>
@@ -112,9 +140,9 @@ export function TemplateEditor({ open, instanceId, onClose }: Props) {
 
             <TemplateComponentsEditor components={components} onChange={setComponents} />
 
-            {create.error && (
+            {mutation.error && (
               <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
-                {create.error instanceof Error ? create.error.message : String(create.error)}
+                {mutation.error instanceof Error ? mutation.error.message : String(mutation.error)}
               </div>
             )}
           </div>
@@ -132,17 +160,17 @@ export function TemplateEditor({ open, instanceId, onClose }: Props) {
           </button>
           <button
             onClick={() => submit(true)}
-            disabled={!canSave || create.isPending}
+            disabled={!canSave || mutation.isPending}
             className="px-4 py-2 border border-zinc-300 rounded hover:bg-zinc-50 disabled:opacity-50 text-sm"
           >
-            Salvar rascunho
+            {isEdit ? 'Salvar alterações' : 'Salvar rascunho'}
           </button>
           <button
             onClick={() => submit(false)}
-            disabled={!canSave || create.isPending}
+            disabled={!canSave || mutation.isPending}
             className="px-4 py-2 bg-lc-navy text-white rounded disabled:opacity-50 text-sm"
           >
-            {create.isPending ? 'Enviando...' : 'Enviar para aprovação'}
+            {mutation.isPending ? 'Enviando...' : 'Enviar para aprovação'}
           </button>
         </footer>
       </div>

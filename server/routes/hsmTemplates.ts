@@ -4,6 +4,7 @@ import { requireRole } from '../middleware/requireRole';
 import {
   listHandler,
   createHandler,
+  updateHandler,
   deleteHandler,
 } from '../controllers/hsmTemplatesController';
 
@@ -13,6 +14,7 @@ const adminOnly = [authGuard, requireRole('admin')];
 
 router.get('/', ...adminOnly, listHandler);
 router.post('/', ...adminOnly, createHandler);
+router.patch('/:tid', ...adminOnly, updateHandler);
 router.delete('/:tid', ...adminOnly, deleteHandler);
 
 export default router;

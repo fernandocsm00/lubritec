@@ -24,6 +24,17 @@ export function useCreateTemplate(instanceId: string) {
   });
 }
 
+export function useUpdateTemplate(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { templateId: string; body: CreateHsmTemplateRequest }) =>
+      api<HsmTemplateRecord>(`/whatsapp/instances/${instanceId}/templates/${args.templateId}`, {
+        method: 'PATCH', body: JSON.stringify(args.body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: TEMPLATES_KEY(instanceId) }),
+  });
+}
+
 export function useDeleteTemplate(instanceId: string) {
   const qc = useQueryClient();
   return useMutation({
