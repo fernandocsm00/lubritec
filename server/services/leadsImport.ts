@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { ImportReport, Imbp, Segment } from '@shared/types';
 import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT } from '@shared/types';
-import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
+import { parseTaxIdLenient } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -289,15 +289,17 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       if (cleaned2.length >= 8) phone2 = cleaned2;
     }
 
-    const cnpj = normalizeCnpj((obj.cnpj ?? '').trim());
-    if (!cnpj) {
+    const rawTaxId = (obj.cnpj ?? '').trim();
+    if (!rawTaxId || !rawTaxId.replace(/\D/g, '')) {
       rejected.push({ line, reason: 'CNPJ vazio' });
       continue;
     }
-    if (!isValidTaxId(cnpj)) {
+    const parsed = parseTaxIdLenient(rawTaxId);
+    if (!parsed) {
       rejected.push({ line, reason: 'CPF/CNPJ inválido (dígitos verificadores)' });
       continue;
     }
+    const cnpj = parsed.value; // canônico (11 dig CPF ou 14 dig CNPJ)
     if (cnpjsSeen.has(cnpj)) {
       rejected.push({ line, reason: 'CPF/CNPJ duplicado no arquivo' });
       continue;
