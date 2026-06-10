@@ -94,3 +94,41 @@ export function formatTaxId(raw: string | null | undefined): string {
   if (type === 'cnpj') return formatCnpj(raw);
   return raw;
 }
+
+export interface ParsedTaxId {
+  value: string;
+  type: TaxIdType;
+}
+
+/**
+ * Parsing leniente pra dados de CSV bagunçados. Diferente de isValidTaxId
+ * (estrito), aceita CPFs com leading zeros que ficaram com 14 dígitos —
+ * caso comum quando Excel/planilha padroniza CPF como número de largura fixa.
+ *
+ * Returns o canônico (CPF 11 dig, CNPJ 14 dig) com o tipo, ou null se inválido.
+ *
+ * Passos:
+ *  1. Strip non-digits.
+ *  2. 11 dig + CPF check válido → cpf.
+ *  3. 14 dig + CNPJ check válido → cnpj.
+ *  4. 14 dig + CNPJ check FALHOU + últimos 11 dig CPF válido → cpf (canônico 11 dig).
+ *  5. Caso contrário → null.
+ */
+export function parseTaxIdLenient(raw: string): ParsedTaxId | null {
+  const digits = normalizeTaxId(raw);
+
+  if (digits.length === 11 && isValidCpfFormat(digits)) {
+    return { value: digits, type: 'cpf' };
+  }
+  if (digits.length === 14 && isValidCnpjFormat(digits)) {
+    return { value: digits, type: 'cnpj' };
+  }
+  // 14 dig que falhou como CNPJ → tenta interpretar como CPF mascarado com leading zeros
+  if (digits.length === 14) {
+    const last11 = digits.slice(-11);
+    if (isValidCpfFormat(last11)) {
+      return { value: last11, type: 'cpf' };
+    }
+  }
+  return null;
+}
