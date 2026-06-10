@@ -1,9 +1,10 @@
 import { useSearchParams } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 
-const WhatsappConnectionTab = lazy(() => import('./WhatsappConnectionTab'));
-const OrganizationTab = lazy(() => import('./OrganizationTab'));
-const AiTab = lazy(() => import('./AiTab'));
+const WhatsappConnectionTab = lazyWithRetry(() => import('./WhatsappConnectionTab'));
+const OrganizationTab = lazyWithRetry(() => import('./OrganizationTab'));
+const AiTab = lazyWithRetry(() => import('./AiTab'));
 
 const Loader = () => <div className="p-6 text-muted-foreground text-sm">Carregando…</div>;
 

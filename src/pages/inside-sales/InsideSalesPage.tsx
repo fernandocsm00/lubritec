@@ -1,10 +1,11 @@
 import { useSearchParams } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 
-const KanbanBoard = lazy(() =>
+const KanbanBoard = lazyWithRetry(() =>
   import('@/features/inside-sales/KanbanBoard').then((m) => ({ default: m.KanbanBoard })),
 );
-const HistoryPage = lazy(() => import('./HistoryPage'));
+const HistoryPage = lazyWithRetry(() => import('./HistoryPage'));
 
 const Loader = () => <div className="p-6 text-muted-foreground text-sm">Carregando…</div>;
 

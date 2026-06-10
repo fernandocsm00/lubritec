@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { leads, deals, type NewLead } from '../db/schema';
+import { leads, deals, conversations, campaignRecipients, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
@@ -341,8 +341,17 @@ export async function markLeadLost(input: {
 // ---------------------------------------------------------------------------
 
 export async function deleteLead(id: string): Promise<void> {
-  const [row] = await db.delete(leads).where(eq(leads.id, id)).returning({ id: leads.id });
-  if (!row) throw new HttpError(404, 'Lead not found');
+  // Tres FKs apontam pra leads com onDelete: restrict (campaign_recipients,
+  // deals, conversations). Pra permitir delete via UI, limpamos os dependentes
+  // em ordem dentro de uma transacao. messages e sla_events cascateiam de
+  // conversations; ai_call_logs e demais FKs ja sao set null/cascade.
+  await db.transaction(async (tx) => {
+    await tx.delete(campaignRecipients).where(eq(campaignRecipients.leadId, id));
+    await tx.delete(deals).where(eq(deals.leadId, id));
+    await tx.delete(conversations).where(eq(conversations.leadId, id));
+    const [row] = await tx.delete(leads).where(eq(leads.id, id)).returning({ id: leads.id });
+    if (!row) throw new HttpError(404, 'Lead not found');
+  });
 }
 
 // ---------------------------------------------------------------------------
