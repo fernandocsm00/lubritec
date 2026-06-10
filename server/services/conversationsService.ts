@@ -506,7 +506,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         'Janela de 24h fechada — para reabrir, envie um template HSM aprovado.');
     }
     if (err instanceof ProviderError) {
-      throw new HttpError(502, `Falha no provedor (${err.provider}): ${err.message}`);
+      throw new HttpError(502, `Falha no provedor (${err.providerKind}): ${err.message}`);
     }
     if (err instanceof HttpError) throw err;
     throw new HttpError(502, 'WhatsApp gateway unavailable');
