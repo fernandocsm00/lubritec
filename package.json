@@ -15,6 +15,7 @@
     "migrate": "tsx server/scripts/migrate.ts",
     "migrate:encrypt-creds": "tsx server/scripts/encryptWhatsappCreds.ts",
     "seed": "tsx server/scripts/seed.ts",
+    "merge-duplicate-phones": "tsx server/scripts/mergeDuplicatePhones.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down"
   },
