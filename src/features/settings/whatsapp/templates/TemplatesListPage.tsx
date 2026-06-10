@@ -1,10 +1,32 @@
 import { useState } from 'react';
-import { Plus, RefreshCw, Loader2, Trash2, Pencil } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Trash2, Pencil, Clock, AlertCircle } from 'lucide-react';
 import { useInstancesList } from '../api';
 import { useTemplates, useDeleteTemplate, useSyncTemplates } from './api';
 import { TemplateStatusBadge } from './TemplateStatusBadge';
 import { TemplateEditor } from './TemplateEditor';
 import type { HsmTemplateRecord } from './types';
+
+// Templates em PENDING há muito tempo são suspeitos — geralmente Meta resolve
+// em até algumas horas; > 48h sugere webhook quebrado ou caso pra abrir
+// suporte na Meta. O sync manual valida; este threshold só dispara o aviso.
+const PENDING_STUCK_HOURS = 48;
+
+function relativeSync(iso: string | null): string {
+  if (!iso) return 'nunca';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return 'agora';
+  if (diffMin < 60) return `há ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `há ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  return diffD === 1 ? 'ontem' : `há ${diffD} dias`;
+}
+
+function hoursSince(iso: string | null): number {
+  if (!iso) return Infinity;
+  return (Date.now() - new Date(iso).getTime()) / 3_600_000;
+}
 
 export function TemplatesListPage() {
   const { data: instances } = useInstancesList();
@@ -96,10 +118,12 @@ export function TemplatesListPage() {
 
       {data && data.items.length > 0 && (
         <div className="space-y-2">
-          {data.items.map((tpl) => (
+          {data.items.map((tpl) => {
+            const pendingStuck = tpl.status === 'PENDING' && hoursSince(tpl.lastSyncedAt) > PENDING_STUCK_HOURS;
+            return (
             <div key={tpl.id} className="border border-zinc-200 rounded-lg p-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-sm font-medium">{tpl.name}</span>
                   <TemplateStatusBadge status={tpl.status} />
                   <span className="text-xs text-zinc-500">{tpl.language}</span>
@@ -107,9 +131,21 @@ export function TemplatesListPage() {
                   {tpl.variableCount > 0 && (
                     <span className="text-xs text-zinc-500">· {tpl.variableCount} variáveis</span>
                   )}
+                  <span
+                    className="inline-flex items-center gap-1 text-xs text-zinc-400 ml-auto"
+                    title={tpl.lastSyncedAt ? `Sincronizado com a Meta em ${new Date(tpl.lastSyncedAt).toLocaleString('pt-BR')}` : 'Nunca sincronizado com a Meta'}
+                  >
+                    <Clock size={11} /> Sync {relativeSync(tpl.lastSyncedAt)}
+                  </span>
                 </div>
                 {tpl.rejectionReason && (
                   <div className="text-xs text-red-600 mt-1">Rejeitado: {tpl.rejectionReason}</div>
+                )}
+                {pendingStuck && (
+                  <div className="text-xs text-amber-700 mt-1 flex items-center gap-1">
+                    <AlertCircle size={12} />
+                    Em aprovação há mais de {PENDING_STUCK_HOURS}h — clique em Sincronizar ou verifique direto no Business Manager da Meta.
+                  </div>
                 )}
               </div>
               {tpl.status === 'DRAFT' && (
@@ -130,7 +166,8 @@ export function TemplatesListPage() {
                 <Trash2 size={16} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
