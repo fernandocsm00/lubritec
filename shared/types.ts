@@ -122,6 +122,13 @@ export type LeadEnrichmentResult =
   | 'cnpj_inactive'            // CNPJ baixado / inapto
   | 'api_error';               // erro transiente da BrasilAPI
 
+export interface LeadCampaignSummary {
+  id: string;
+  name: string;
+  /** ISO timestamp do `campaign_recipients.sent_at`. Lista vem ordenada desc. */
+  sentAt: string;
+}
+
 export interface PublicLead {
   id: string;
   name: string;
@@ -141,6 +148,7 @@ export interface PublicLead {
   hasDeal: boolean;
   /** Ultimo resultado de enriquecimento BrasilAPI (null se nunca foi enriquecido). */
   lastEnrichmentResult: LeadEnrichmentResult | null;
+  campaigns: LeadCampaignSummary[];
   createdAt: string;
   updatedAt: string;
 }
@@ -313,6 +321,7 @@ export interface PublicDeal {
   isStale: boolean;
   enteredCurrentStageAt: string;
   aiSummary: string | null;
+  campaigns: LeadCampaignSummary[];
   createdAt: string;
   updatedAt: string;
 }
