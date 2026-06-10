@@ -3,10 +3,12 @@ import {
   isValidCnpjFormat,
   isValidCpfFormat,
   isValidTaxId,
+  parseTaxIdLenient,
   formatCnpj,
   formatCpf,
   formatTaxId,
   detectTaxIdType,
+  type ParsedTaxId,
 } from '../lib/cnpj';
 
 // CPFs reais matematicamente validos (digito verificador OK)
@@ -85,5 +87,68 @@ describe('formatTaxId', () => {
   });
   it('tamanho invalido => retorna como veio', () => {
     expect(formatTaxId('abc')).toBe('abc');
+  });
+});
+
+describe('parseTaxIdLenient', () => {
+  it('CPF formatado válido (passo 2)', () => {
+    expect(parseTaxIdLenient('111.444.777-35')).toEqual({
+      value: '11144477735',
+      type: 'cpf',
+    } satisfies ParsedTaxId);
+  });
+
+  it('CPF só dígitos válido (passo 2)', () => {
+    expect(parseTaxIdLenient(VALID_CPF_1)).toEqual({
+      value: VALID_CPF_1,
+      type: 'cpf',
+    } satisfies ParsedTaxId);
+  });
+
+  it('CNPJ formatado válido (passo 3)', () => {
+    expect(parseTaxIdLenient('11.444.777/0001-61')).toEqual({
+      value: '11444777000161',
+      type: 'cnpj',
+    } satisfies ParsedTaxId);
+  });
+
+  it('CPF mascarado com 3 zeros (passo 4) — caso reportado', () => {
+    // 01850379092 é CPF válido. 00001850379092 (14 dig) com leading zeros
+    // deve cair no passo 4 e ser aceito como CPF.
+    expect(parseTaxIdLenient('00001850379092')).toEqual({
+      value: '01850379092',
+      type: 'cpf',
+    } satisfies ParsedTaxId);
+  });
+
+  it('CPF mascarado com 3 leading zeros pra outro CPF válido (passo 4)', () => {
+    // 11144477735 é CPF válido. 00011144477735 (14 dig com 3 leading zeros)
+    // → últimos 11 são "11144477735" → CPF válido.
+    expect(parseTaxIdLenient('00011144477735')).toEqual({
+      value: '11144477735',
+      type: 'cpf',
+    } satisfies ParsedTaxId);
+  });
+
+  it('CNPJ com 1 dígito errado e últimos 11 não-CPF → null', () => {
+    // 11222333000180 NÃO é CNPJ válido (último dig 0 deveria ser 1).
+    // Últimos 11 dígitos = "22333000180" → NÃO é CPF válido.
+    expect(parseTaxIdLenient('11222333000180')).toBeNull();
+  });
+
+  it('all-zeros (14 dig) → null', () => {
+    // 14 zeros falha CNPJ (all-same). Últimos 11 zeros falha CPF (all-same).
+    expect(parseTaxIdLenient('00000000000000')).toBeNull();
+  });
+
+  it('string sem dígitos → null', () => {
+    expect(parseTaxIdLenient('---')).toBeNull();
+    expect(parseTaxIdLenient('')).toBeNull();
+  });
+
+  it('comprimento errado (nem CPF nem CNPJ nem mascarado) → null', () => {
+    expect(parseTaxIdLenient('1234567')).toBeNull();
+    expect(parseTaxIdLenient('123456789012')).toBeNull();   // 12 dig
+    expect(parseTaxIdLenient('1234567890123')).toBeNull();  // 13 dig
   });
 });
