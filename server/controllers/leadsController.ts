@@ -88,17 +88,10 @@ const listQuery = z.object({
   flowStage: z.enum(LEAD_FLOW_STAGES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
   withIssues: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-  campaignIds: z.string().optional().transform((v) => {
-    if (!v) return undefined;
-    const parts = v.split(',').filter(Boolean);
-    // Validates each UUID; throws if any is malformed.
-    for (const p of parts) {
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p)) {
-        throw new Error(`Invalid UUID in campaignIds: ${p}`);
-      }
-    }
-    return parts;
-  }),
+  campaignIds: z.preprocess(
+    (v) => (typeof v === 'string' ? v.split(',').filter(Boolean) : v),
+    z.array(z.string().uuid()).optional(),
+  ),
   sort: z.enum(['name', 'created_at']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),

@@ -1,9 +1,18 @@
 import { describe, it, expect } from 'vitest';
+import request from 'supertest';
 import { listLeads } from '../services/leadsService';
+import { createApp } from '../app';
 import { createUser, createLead, createCampaign, createCampaignRecipient } from './helpers';
 
 async function admin() {
   return createUser({ email: `a${Math.random().toString(36).slice(2, 8)}@x.com`, password: 'pw12345', role: 'admin' });
+}
+
+async function loginAs(email: string, role: 'admin' | 'comercial' | 'recepcao' = 'admin') {
+  await createUser({ email, password: 'pw12345', role });
+  const app = createApp();
+  const res = await request(app).post('/api/auth/login').send({ email, password: 'pw12345' });
+  return { token: res.body.accessToken as string, app };
 }
 
 describe('listLeads — agregacao de campaigns e filtro campaignIds', () => {
@@ -63,5 +72,15 @@ describe('listLeads — agregacao de campaigns e filtro campaignIds', () => {
 
     const r = await listLeads({ campaignIds: [camp.id] });
     expect(r.items).toHaveLength(0);
+  });
+});
+
+describe('GET /api/leads — validação de campaignIds', () => {
+  it('400 quando campaignIds contém UUID malformado', async () => {
+    const { token, app } = await loginAs(`bad${Math.random().toString(36).slice(2, 8)}@x.com`);
+    const res = await request(app)
+      .get('/api/leads?campaignIds=not-a-uuid')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(400);
   });
 });
