@@ -2,7 +2,7 @@ import { db } from '../db/client';
 import { leads, deals, conversations, campaignRecipients, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, LeadCampaignSummary, Imbp, Segment } from '@shared/types';
 import { IMBP_TO_SEGMENT } from '@shared/types';
 import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
@@ -27,6 +27,7 @@ function normalizePhone(raw: string): string {
 function toPublic(row: typeof leads.$inferSelect & {
   hasDeal?: boolean;
   lastEnrichmentResult?: LeadEnrichmentResult | string | null;
+  campaigns?: LeadCampaignSummary[];
 }): PublicLead {
   // Defensivo: result_status no DB pode ter strings antigas/desconhecidas;
   // so retornamos os valores que o tipo conhece, resto vira null.
@@ -54,6 +55,7 @@ function toPublic(row: typeof leads.$inferSelect & {
     flowStage: row.flowStage,
     hasDeal: row.hasDeal ?? false,
     lastEnrichmentResult: result,
+    campaigns: row.campaigns ?? [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -388,6 +390,7 @@ export async function listLeads(params: {
   flowStage?: LeadFlowStage;
   pipeline?: 'yes' | 'no';
   withIssues?: boolean;
+  campaignIds?: string[];
   sort?: SortKey;
   order?: 'asc' | 'desc';
   page?: number;
@@ -412,6 +415,21 @@ export async function listLeads(params: {
     const issuesArr = ISSUE_STATUSES.map((s) => `'${s}'`).join(',');
     conditions.push(sql`(${LATEST_ENRICHMENT_RESULT_SQL}) IN (${sql.raw(issuesArr)})`);
   }
+  if (params.campaignIds && params.campaignIds.length > 0) {
+    // OR semantics: lead que tem recipient com sent_at IS NOT NULL em qualquer
+    // das campanhas filtradas. Usa EXISTS pra evitar duplicação de rows. Joins
+    // os UUIDs em placeholders nominais pra Drizzle bindar parametrizado.
+    const ids = sql.join(
+      params.campaignIds.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM campaign_recipients cr
+      WHERE cr.lead_id = ${leads.id}
+        AND cr.sent_at IS NOT NULL
+        AND cr.campaign_id IN (${ids})
+    )`);
+  }
   if (params.q) {
     const escaped = params.q.replace(/[%_\\]/g, '\\$&');
     const pat = `%${escaped}%`;
@@ -429,11 +447,24 @@ export async function listLeads(params: {
     .from(leads)
     .where(where);
 
+  // OBS: drizzle renderiza ${leads.id} como "id" (unqualified) dentro do sql
+  // template, o que conflita com campaigns.id no JOIN. Usamos sql.raw com o
+  // nome qualificado pra forçar leads.id no escopo certo.
+  const campaignsSql = sql<Array<{ id: string; name: string; sentAt: string }>>`COALESCE(
+    (SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'sentAt', cr.sent_at)
+                     ORDER BY cr.sent_at DESC)
+     FROM campaign_recipients cr
+     JOIN campaigns c ON c.id = cr.campaign_id
+     WHERE cr.lead_id = ${sql.raw('leads.id')} AND cr.sent_at IS NOT NULL),
+    '[]'::json
+  )`;
+
   const rows = await db
     .select({
       lead: leads,
       hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`,
       lastEnrichmentResult: LATEST_ENRICHMENT_RESULT_SQL,
+      campaigns: campaignsSql,
     })
     .from(leads)
     .where(where)
@@ -446,6 +477,7 @@ export async function listLeads(params: {
       ...r.lead,
       hasDeal: Boolean(r.hasDeal),
       lastEnrichmentResult: r.lastEnrichmentResult,
+      campaigns: (r.campaigns ?? []) as LeadCampaignSummary[],
     })),
     total,
     page,
