@@ -293,6 +293,18 @@ describe('importLeadsFromCsv', () => {
     const csv = `nome\nA\n`;
     await expect(importLeadsFromCsv(Buffer.from(csv))).rejects.toMatchObject({ status: 400 });
   });
+
+  it('aceita CPF mascarado como CNPJ (14 dig com leading zeros)', async () => {
+    // 00001850379092 = 4 zeros + 01850379092 (CPF válido). Caso real reportado
+    // por Fernando — Excel/planilha pad CPF a 14 dígitos pra ficar como CNPJ.
+    const csv = `name,cnpj\nSuelen Toller Melo,00001850379092\n`;
+    const report = await importLeadsFromCsv(Buffer.from(csv));
+    expect(report.inserted).toBe(1);
+    expect(report.rejected).toEqual([]);
+    const list = await listLeads({ q: '01850379092' });
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0].cnpj).toBe('01850379092'); // canônico (11 dig CPF)
+  });
 });
 
 describe('closeLeadNoDeal', () => {
