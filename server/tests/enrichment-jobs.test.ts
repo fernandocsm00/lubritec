@@ -158,7 +158,8 @@ describe('processNextEnrichment', () => {
     expect(r.resultStatus).toBe('phone_found');
 
     const [updatedLead] = await db.select().from(leads).where(eq(leads.id, lead.id));
-    expect(updatedLead.phone).toBe('555499456069');
+    // Telefone canonizado pra E.164 BR com o 9º dígito (5499456069 → 55 54 9 9456069).
+    expect(updatedLead.phone).toBe('5554999456069');
     expect(updatedLead.flowStage).toBe('complete');
 
     const updatedJob = await getCurrentJob();

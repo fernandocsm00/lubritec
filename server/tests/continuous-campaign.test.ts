@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { campaigns, campaignRecipients, leads, messages, orgSettings } from '../db/schema';
@@ -9,7 +9,14 @@ import {
   sweepContinuousReenroll,
   upsertContinuousCampaign,
 } from '../services/continuousCampaign';
-import { createUser, createLead, createConversation, createMessage, createCampaign } from './helpers';
+import { createUser, createLead, createConversation, createMessage, createCampaign, createWhatsappInstance } from './helpers';
+
+// upsertContinuousCampaign / enrollLeadInContinuous resolvem a instância default
+// (o setup trunca whatsapp_instance a cada teste). Sem isso: 400 "Nenhuma
+// instância WhatsApp padrão configurada".
+beforeEach(async () => {
+  await createWhatsappInstance({ isDefault: true });
+});
 
 async function setDispatchWindow(opts: {
   startHour?: number;
@@ -254,6 +261,7 @@ describe('enrollment + cooldown', () => {
       status: 'running',
       messageBody: 'oi',
       createdByUserId: u.id,
+      isContinuous: true,
     });
 
     const r = await enrollLeadInContinuous(lead.id);
@@ -275,6 +283,7 @@ describe('sweepContinuousReenroll', () => {
       status: 'running',
       messageBody: 'oi',
       createdByUserId: u.id,
+      isContinuous: true,
     });
 
     // Lead bouncou por cooldown (mensagem outbound recente).

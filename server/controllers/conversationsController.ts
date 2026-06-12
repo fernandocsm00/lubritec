@@ -180,6 +180,12 @@ export async function sendMessageHandler(req: Request, res: Response, next: Next
   } catch (e) { next(e); }
 }
 
+const startHsmVariableSchema = z.object({
+  index: z.number().int().min(1),
+  source: z.enum(['static', 'lead_field']),
+  value: z.string(),
+});
+
 const startBody = z
   .object({
     phone: z.string().min(1).max(32),
@@ -188,8 +194,14 @@ const startBody = z
     body: z.string().max(4000).optional(),
     mediaUrl: mediaUrlSchema.optional(),
     mediaMime: z.string().max(120).optional(),
+    instanceId: z.string().uuid().optional(),
+    hsmTemplateId: z.string().uuid().optional(),
+    hsmVariables: z.array(startHsmVariableSchema).optional(),
   })
   .superRefine((d, ctx) => {
+    // Quando dispara template HSM, o conteúdo vem do template — texto/mídia
+    // não são exigidos. As validações de texto/mídia só valem fora desse caso.
+    if (d.hsmTemplateId) return;
     if (d.kind === 'text' && !d.body) {
       ctx.addIssue({ code: 'custom', message: 'body is required for kind=text', path: ['body'] });
     }
@@ -210,6 +222,9 @@ export async function startConversationHandler(req: Request, res: Response, next
       mediaUrl: data.mediaUrl ?? null,
       mediaMime: data.mediaMime ?? null,
       appBaseUrl: `${req.protocol}://${req.get('host')}`,
+      instanceId: data.instanceId ?? null,
+      hsmTemplateId: data.hsmTemplateId ?? null,
+      hsmVariables: data.hsmVariables ?? null,
     });
     res.json(result);
   } catch (e) { next(e); }

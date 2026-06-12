@@ -299,6 +299,7 @@ export async function createCampaign(opts: {
   instanceId?: string;
   hsmTemplateId?: string | null;
   hsmVariables?: unknown[];
+  isContinuous?: boolean;
 }) {
   const instanceId = opts.instanceId ?? await getOrCreateDefaultInstance();
   const [c] = await db.insert(campaigns).values({
@@ -322,6 +323,7 @@ export async function createCampaign(opts: {
     instanceId,
     hsmTemplateId: opts.hsmTemplateId ?? null,
     hsmVariables: opts.hsmVariables ?? [],
+    ...(opts.isContinuous ? { isContinuous: true } : {}),
   }).returning();
   return c;
 }

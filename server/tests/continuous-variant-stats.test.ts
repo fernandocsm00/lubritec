@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { campaigns, campaignRecipients, conversations, messages, leads } from '../db/schema';
@@ -9,7 +9,14 @@ import {
   createConversation,
   createCampaignRecipient,
   createMessage,
+  createWhatsappInstance,
 } from './helpers';
+
+// upsertContinuousCampaign resolve a instância default (o setup trunca
+// whatsapp_instance a cada teste).
+beforeEach(async () => {
+  await createWhatsappInstance({ isDefault: true });
+});
 
 describe('getVariantStats', () => {
   it('vazio quando não há recipients', async () => {

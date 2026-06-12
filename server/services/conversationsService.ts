@@ -3,6 +3,7 @@ import { conversations, messages, leads, users, whatsappInstance, campaigns } fr
 import { eq, and, or, ilike, asc, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
+import { getTemplateById, resolveHsmVariables } from './hsmTemplateService';
 import type {
   PublicConversation,
   ConversationCounts,
@@ -10,6 +11,9 @@ import type {
   PublicMessage,
   ConversationQueue,
   MessageKind,
+  CampaignHsmVariable,
+  HsmComponent,
+  HsmBody,
 } from '@shared/types';
 
 const PAGE_SIZE = 50;
@@ -734,11 +738,34 @@ export interface StartConversationInput {
   mediaUrl?: string | null;
   mediaMime?: string | null;
   appBaseUrl?: string;
+  /** Instância WhatsApp da qual disparar. Omitido = instância default
+   * (retrocompatível com o fluxo antigo de número único). */
+  instanceId?: string | null;
+  /** Template HSM aprovado a disparar — obrigatório quando a instância é
+   * meta_cloud (número oficial não inicia conversa com texto livre). */
+  hsmTemplateId?: string | null;
+  /** Mapeamento das variáveis do template (mesmo formato das campanhas). */
+  hsmVariables?: CampaignHsmVariable[] | null;
 }
 
 export interface StartConversationResult {
   conversation: PublicConversation;
   message: PublicMessage;
+}
+
+/** Substitui {{n}} no BODY do template pelos valores resolvidos — usado só
+ * pra gravar um body legível na inbox (o envio real vai via sendTemplate). */
+function renderHsmBody(
+  components: HsmComponent[],
+  resolved: Array<{ index: number; value: string }>,
+): string {
+  const body = components.find((c): c is HsmBody => c.type === 'BODY');
+  if (!body) return '';
+  let text = body.text;
+  for (const r of resolved) {
+    text = text.replaceAll(`{{${r.index}}}`, r.value);
+  }
+  return text;
 }
 
 export async function startConversation(
@@ -749,10 +776,44 @@ export async function startConversation(
     throw new HttpError(400, 'Telefone inválido');
   }
 
-  // Resolve a instância default antes do lookup pra que o filtro de
-  // conversation seja (instance_id, phone) — alinhado com o UNIQUE index
-  // e com o webhook inbound.
-  const instanceId = await getDefaultInstanceId();
+  // Resolve a instância (escolhida ou default) ANTES do lookup pra que o filtro
+  // de conversation seja (instance_id, phone) — alinhado com o UNIQUE index e
+  // com o webhook inbound. Omitir instanceId mantém o comportamento antigo.
+  const targetInstanceId = input.instanceId ?? (await getDefaultInstanceId());
+  const [instance] = await db
+    .select()
+    .from(whatsappInstance)
+    .where(eq(whatsappInstance.id, targetInstanceId))
+    .limit(1);
+  if (!instance) throw new HttpError(404, 'Instância WhatsApp não encontrada');
+  if (instance.isArchived) throw new HttpError(400, 'Instância WhatsApp arquivada');
+  const instanceId = instance.id;
+  const isMeta = instance.provider === 'meta_cloud';
+
+  // Valida o casamento provider × payload ANTES de criar lead/conversa (fail
+  // fast, sem efeitos colaterais). No fluxo normal o modal já impede esses
+  // casos; isto protege contra payload forjado.
+  if (isMeta && !input.hsmTemplateId) {
+    throw new HttpError(
+      400,
+      'Número oficial (Meta Cloud) exige um template HSM aprovado para iniciar conversa.',
+    );
+  }
+  if (!isMeta && input.hsmTemplateId) {
+    throw new HttpError(400, 'Templates HSM só se aplicam a números oficiais (Meta Cloud).');
+  }
+
+  // Carrega e valida o template HSM antecipadamente (mesma razão: fail fast).
+  let hsmTemplate: Awaited<ReturnType<typeof getTemplateById>> | null = null;
+  if (isMeta) {
+    hsmTemplate = await getTemplateById(input.hsmTemplateId!);
+    if (!hsmTemplate || hsmTemplate.instanceId !== instanceId) {
+      throw new HttpError(404, 'Template HSM não encontrado para esta instância.');
+    }
+    if (hsmTemplate.status !== 'APPROVED') {
+      throw new HttpError(400, `Template HSM não está aprovado (status: ${hsmTemplate.status}).`);
+    }
+  }
 
   // 1. Lead — find ou create (com proteção a race igual ao webhook ingest).
   let leadId: string;
@@ -834,17 +895,111 @@ export async function startConversation(
     }
   }
 
-  // 3. Reusa o sendMessage existente — ele já faz auto-claim, pipeline integration, etc.
-  const message = await sendMessage({
-    conversationId,
-    userId: input.userId,
-    kind: input.kind,
-    body: input.body ?? null,
-    mediaUrl: input.mediaUrl ?? null,
-    mediaMime: input.mediaMime ?? null,
-    appBaseUrl: input.appBaseUrl,
-  });
+  // 3. Envio da primeira mensagem.
+  let message: PublicMessage;
+  if (isMeta) {
+    // Número oficial: dispara o template HSM. Espelha o persist do dispatcher
+    // de campanha (sendTemplate + insert), em vez de passar pelo sendMessage
+    // genérico (que só sabe texto/mídia).
+    message = await sendFirstHsmTemplate({
+      conversationId,
+      instanceId,
+      leadId,
+      phone,
+      userId: input.userId,
+      template: hsmTemplate!,
+      variables: input.hsmVariables ?? [],
+    });
+  } else {
+    // Número não oficial: reusa o sendMessage existente — ele já faz
+    // auto-claim, pipeline integration, etc.
+    message = await sendMessage({
+      conversationId,
+      userId: input.userId,
+      kind: input.kind,
+      body: input.body ?? null,
+      mediaUrl: input.mediaUrl ?? null,
+      mediaMime: input.mediaMime ?? null,
+      appBaseUrl: input.appBaseUrl,
+    });
+  }
 
   const conversation = await getConversationById(conversationId, input.userId);
   return { conversation, message };
+}
+
+/** Dispara um template HSM como primeira mensagem de uma conversa Meta Cloud e
+ * persiste a mensagem outbound. O lead já existe (resolvemos as variáveis
+ * lead_field contra ele). */
+async function sendFirstHsmTemplate(args: {
+  conversationId: string;
+  instanceId: string;
+  leadId: string;
+  phone: string;
+  userId: string;
+  template: NonNullable<Awaited<ReturnType<typeof getTemplateById>>>;
+  variables: CampaignHsmVariable[];
+}): Promise<PublicMessage> {
+  const [leadRow] = await db.select().from(leads).where(eq(leads.id, args.leadId)).limit(1);
+  const resolved = resolveHsmVariables(args.variables, { lead: leadRow ?? {} });
+
+  const provider = await resolveProvider(args.instanceId);
+
+  let sendResult: { providerMsgId: string; rawPayload: unknown };
+  try {
+    sendResult = await provider.sendTemplate({
+      to: args.phone,
+      templateName: args.template.name,
+      language: args.template.language,
+      variables: resolved,
+    });
+  } catch (err) {
+    if (err instanceof ProviderError) {
+      throw new HttpError(502, `Falha no provedor (${err.providerKind}): ${err.message}`);
+    }
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(502, 'WhatsApp gateway unavailable');
+  }
+
+  const renderedBody = renderHsmBody(args.template.components as HsmComponent[], resolved);
+  const sentAt = new Date();
+
+  const [conv] = await db.select().from(conversations).where(eq(conversations.id, args.conversationId)).limit(1);
+
+  const [inserted] = await db.transaction(async (tx) => {
+    const [m] = await tx
+      .insert(messages)
+      .values({
+        conversationId: args.conversationId,
+        direction: 'out',
+        kind: 'text',
+        body: renderedBody || args.template.name,
+        sentByUserId: args.userId,
+        providerMsgId: sendResult.providerMsgId,
+        provider: 'meta_cloud',
+        rawPayload: {
+          hsm: true,
+          templateId: args.template.id,
+          templateName: args.template.name,
+          variables: resolved,
+          raw: sendResult.rawPayload,
+        } as object,
+        sentAt,
+      })
+      .returning();
+
+    await tx
+      .update(conversations)
+      .set({
+        lastMessageAt: sentAt,
+        assignedTo: conv?.assignedTo ?? args.userId,
+        status: conv?.assignedTo ? conv.status : 'em_atendimento',
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, args.conversationId));
+
+    return [m];
+  });
+
+  return loadPublicMessage(inserted.id);
 }

@@ -6,8 +6,16 @@ import { deals } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { createUser, createLead, createConversation } from './helpers';
 
+// O UazapiProvider chama sendUazapiMessage() direto (não via uazapiClient).
+// Compartilha a mesma vi.fn entre os dois nomes pra os testes controlarem o envio.
+const { sendUazapiMessageMock } = vi.hoisted(() => ({ sendUazapiMessageMock: vi.fn() }));
 vi.mock('../services/whatsapp/uazapi/client', () => ({
-  uazapiClient: { sendMessage: vi.fn() },
+  sendUazapiMessage: sendUazapiMessageMock,
+  uazapiClient: {
+    sendMessage: sendUazapiMessageMock,
+    deleteMessage: vi.fn(),
+    editMessage: vi.fn(),
+  },
   UazapiError: class extends Error {
     constructor(public status: number, public body: string) { super(`UazAPI ${status}`); }
   },

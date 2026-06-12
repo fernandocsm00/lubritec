@@ -96,6 +96,12 @@ export interface StartConversationInput {
   body?: string;
   mediaUrl?: string;
   mediaMime?: string;
+  /** Instância de envio. Omitido = número default (retrocompatível). */
+  instanceId?: string;
+  /** Template HSM aprovado — obrigatório quando a instância é Meta Cloud. */
+  hsmTemplateId?: string;
+  /** Mapeamento das variáveis do template (mesmo formato das campanhas). */
+  hsmVariables?: Array<{ index: number; source: 'static' | 'lead_field'; value: string }>;
 }
 
 export interface StartConversationResult {
