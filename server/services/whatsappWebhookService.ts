@@ -26,6 +26,18 @@ export interface NormalizedInbound {
   rawPayload: unknown;
 }
 
+/**
+ * Sentinela interno: mensagem duplicada detectada DENTRO da transação (via
+ * ON CONFLICT no unique idx_messages_provider_msgid). Lançar aborta o tx
+ * inteiro — incluindo o bump de unread_count — e o caller traduz pra
+ * { status: 'duplicate' }.
+ */
+class DuplicateMessageError extends Error {
+  constructor() {
+    super('duplicate provider_msg_id');
+  }
+}
+
 function normalizePhone(raw: string): string {
   // Normaliza para a forma canonica BR (com 55 + 9 prefix). Inbound WhatsApp
   // as vezes vem sem o 9 do celular -- sem isso geramos lead/conversation
@@ -106,7 +118,14 @@ export async function ingestInboundMessage(
   let stageTransition: { from: LeadFlowStage | null; to: LeadFlowStage } | null = null;
 
   await db.transaction(async (tx) => {
-    // 1. Match ou cria lead. Em caso de race (UNIQUE violation), refaz a query.
+    // 0. Advisory lock transacional por telefone: serializa webhooks simultâneos
+    // do MESMO número (ex.: duas mensagens chegando em <100ms). Sem isso, ambos
+    // veem "lead não existe" e criam dois leads duplicados — leads.phone NÃO é
+    // unique desde a migration 014 (CNPJ é o identificador B2B), então o banco
+    // não protege sozinho. O lock é liberado automaticamente no commit/rollback.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${phone}))`);
+
+    // 1. Match ou cria lead (serializado pelo advisory lock acima).
     let leadId: string;
     const found = await tx
       .select({ id: leads.id, name: leads.name, flowStage: leads.flowStage })
@@ -130,35 +149,29 @@ export async function ingestInboundMessage(
         await tx.update(leads).set(updates).where(eq(leads.id, leadId));
       }
     } else {
-      try {
-        const [created] = await tx
-          .insert(leads)
-          .values({
-            name: input.leadName ?? phone,
-            phone,
-            source: 'whatsapp',
-            status: 'frio',
-            // Lead novo via inbound: já interagiu por definição.
-            flowStage: 'engaged',
-          })
-          .returning({ id: leads.id });
-        leadId = created.id;
-        stageTransition = { from: null, to: 'engaged' };
-      } catch (err) {
-        const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
-        if (pgErr?.code === '23505') {
-          const retry = await tx.select({ id: leads.id }).from(leads).where(eq(leads.phone, phone)).limit(1);
-          if (!retry.length) throw err;
-          leadId = retry[0].id;
-        } else {
-          throw err;
-        }
-      }
+      const [created] = await tx
+        .insert(leads)
+        .values({
+          name: input.leadName ?? phone,
+          phone,
+          source: 'whatsapp',
+          status: 'frio',
+          // Lead novo via inbound: já interagiu por definição.
+          flowStage: 'engaged',
+        })
+        .returning({ id: leads.id });
+      leadId = created.id;
+      stageTransition = { from: null, to: 'engaged' };
     }
 
     // 2. Upsert conversation by (instance_id, phone) — fixed from previous bug
     // that matched by phone only, ignoring instance boundaries.
-    const existingConv = await tx
+    // AI eligibility: só mensagens de texto disparam IA — usado pra marcar
+    // pending_ai_response como "rede de segurança" (se o processo morrer antes
+    // da IA responder, o aiPendingWorker reprocessa).
+    const aiEligible = input.kind === 'text' && !!input.text;
+
+    let existingConv = await tx
       .select()
       .from(conversations)
       .where(
@@ -190,12 +203,36 @@ export async function ingestInboundMessage(
           lastMessageAt: sentAt,
           lastInboundAt: sentAt,
           unreadCount: 1,
+          pendingAiResponse: initialQueue === 'ia' && aiEligible,
         })
+        .onConflictDoNothing({ target: [conversations.instanceId, conversations.phone] })
         .returning({ id: conversations.id });
-      conversationId = created.id;
+      if (created) {
+        conversationId = created.id;
+      } else {
+        // Race: outro webhook criou a conversa entre o select e o insert.
+        // Re-seleciona e cai no fluxo de conversa existente abaixo.
+        existingConv = await tx
+          .select()
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.instanceId, input.instanceId),
+              eq(conversations.phone, phone),
+            ),
+          )
+          .limit(1);
+        if (!existingConv.length) {
+          throw new Error(`conversation upsert race: (${input.instanceId}, ${phone}) conflicted but not found`);
+        }
+        conversationId = existingConv[0].id;
+      }
     } else {
+      conversationId = existingConv[0].id;
+    }
+
+    if (existingConv.length > 0) {
       const c = existingConv[0];
-      conversationId = c.id;
       const newStatus =
         c.status === 'encerrada' ? 'aguardando_atendimento' as const : c.status;
       await tx
@@ -206,6 +243,11 @@ export async function ingestInboundMessage(
           lastInboundAt: sentAt,
           unreadCount: sql`${conversations.unreadCount} + 1`,
           updatedAt: new Date(),
+          // Rede de segurança da IA: se a conversa está na fila IA e a mensagem
+          // é texto, marca pending. processInboundWithAi limpa ao concluir; se o
+          // processo cair no meio (delay humanizado, Gemini), o aiPendingWorker
+          // reprocessa em até ~3min.
+          ...(c.queue === 'ia' && aiEligible ? { pendingAiResponse: true } : {}),
         })
         .where(eq(conversations.id, c.id));
     }
@@ -214,7 +256,11 @@ export async function ingestInboundMessage(
     // Body aceita texto inclusive em kinds nao-text — extractInbound usa isso
     // pra repassar label fallback (ex: "🎞️ Figurinha") quando nao da pra
     // renderizar o anexo, evitando bubble vazio no chat.
-    await tx.insert(messages).values({
+    // ON CONFLICT DO NOTHING (unique parcial idx_messages_provider_msgid):
+    // o check de duplicata no topo é só fast-path FORA do tx — dois webhooks
+    // duplicados simultâneos passam por ele juntos. A fonte de verdade é o
+    // unique do banco: se não inseriu, aborta o tx (rollback do unread bump).
+    const [insertedMsg] = await tx.insert(messages).values({
       conversationId,
       direction: 'in',
       kind: input.kind,
@@ -225,11 +271,18 @@ export async function ingestInboundMessage(
       provider: input.provider,
       rawPayload: input.rawPayload as object,
       sentAt,
-    });
+    })
+      .onConflictDoNothing()
+      .returning({ id: messages.id });
+    if (!insertedMsg) throw new DuplicateMessageError();
 
     outConversationId = conversationId;
     outLeadId = leadId;
+  }).catch((err) => {
+    if (err instanceof DuplicateMessageError) return;
+    throw err;
   });
+  if (!outConversationId) return { status: 'duplicate' };
 
   // Audit trail fora do tx (best-effort).
   const st = stageTransition as { from: LeadFlowStage | null; to: LeadFlowStage } | null;

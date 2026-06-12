@@ -17,6 +17,23 @@ import type { OrgSettings } from '../db/schema';
 export const PROMPT_VERSION = 'v1-2026-05-26';
 
 const MAX_HISTORY = 20;
+// Tempo alvo de resposta da IA — simula leitura/digitacao humana. Proporcional
+// ao tamanho da resposta: base (leitura) + por-char (digitacao), com teto. Medido
+// desde a entrada do pipeline ate o envio, descontando o que o Gemini ja gastou.
+// Override total via env AI_REPLY_MIN_MS (valor fixo em ms; tests setam 0 pra
+// desabilitar). Defaults equivalem a ~200 wpm de digitacao + 5s de leitura.
+const AI_REPLY_BASE_MS = 5_000;
+const AI_REPLY_PER_CHAR_MS = 50;
+const AI_REPLY_MAX_MS = 60_000;
+
+function aiReplyTargetMs(replyLength: number): number {
+  const override = process.env.AI_REPLY_MIN_MS;
+  if (override !== undefined) {
+    const n = Number(override);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return Math.min(AI_REPLY_MAX_MS, AI_REPLY_BASE_MS + AI_REPLY_PER_CHAR_MS * replyLength);
+}
 const QUALIFY_TAG = '[QUALIFICADO]';
 const NOT_QUALIFY_TAG = '[NAO_QUALIFICADO]';
 const SUMMARY_OPEN = '[RESUMO]';
@@ -218,6 +235,7 @@ export interface ProcessResult {
  *      → se Gemini sinalizou QUALIFICADO → move pra Comercial + lead.flowStage=qualified
  */
 export async function processInboundWithAi(input: ProcessInput): Promise<ProcessResult> {
+  const pipelineStartedAt = Date.now();
   const settings = await loadOrgSettingsRow();
   if (!settings || !settings.aiEnabled) {
     return { status: 'ai_disabled' };
@@ -235,6 +253,14 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     .where(eq(conversations.id, input.conversationId))
     .limit(1);
   if (!conv || conv.queue !== 'ia') {
+    // Humano moveu a conversa entre a ingestão e o processamento — limpa o
+    // flag de rede de segurança pra não ficar pendurado.
+    if (conv?.pendingAiResponse) {
+      await db
+        .update(conversations)
+        .set({ pendingAiResponse: false, updatedAt: new Date() })
+        .where(eq(conversations.id, conv.id));
+    }
     return { status: 'queue_not_ia' };
   }
 
@@ -245,11 +271,26 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   const hoursCheck = isAiBusinessHours(new Date(), settings);
   if (!hoursCheck.ok && !detectHumanIntent(input.inboundText)) {
     const afterMsg = settings.aiAfterHoursMsg.trim();
-    const alreadyPending = conv.pendingAiResponse === true;
     let sentReply: string | undefined;
-    // Se ja esta pending, nao manda aiAfterHoursMsg de novo — evita duplicar
-    // quando cliente envia varias mensagens em sequencia fora do horario.
-    if (afterMsg && !alreadyPending) {
+    // Dedupe da aiAfterHoursMsg: NAO usa pendingAiResponse (que agora eh setado
+    // ja na ingestao, como rede de seguranca contra crash) — checa se o ultimo
+    // outbound da conversa ja foi um aviso fora-do-horario nas ultimas 12h.
+    // Evita duplicar quando cliente envia varias mensagens na mesma noite.
+    let alreadySentAfterHours = false;
+    if (afterMsg) {
+      const [lastOut] = await db
+        .select({ rawPayload: messages.rawPayload, sentAt: messages.sentAt })
+        .from(messages)
+        .where(and(eq(messages.conversationId, input.conversationId), eq(messages.direction, 'out')))
+        .orderBy(desc(messages.sentAt))
+        .limit(1);
+      const raw = lastOut?.rawPayload as { afterHours?: boolean } | null;
+      alreadySentAfterHours =
+        !!raw?.afterHours &&
+        !!lastOut?.sentAt &&
+        lastOut.sentAt.getTime() > Date.now() - 12 * 60 * 60_000;
+    }
+    if (afterMsg && !alreadySentAfterHours) {
       try {
         const sendResp = await uazapiClient.sendMessage({
           to: input.phone,
@@ -272,7 +313,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
         console.warn('[ai-after-hours] failed to send afterHoursMsg:', err instanceof Error ? err.message : err);
       }
     }
-    if (!alreadyPending) {
+    if (!conv.pendingAiResponse) {
       await db
         .update(conversations)
         .set({ pendingAiResponse: true, updatedAt: new Date() })
@@ -285,7 +326,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   if (detectHumanIntent(input.inboundText)) {
     await db
       .update(conversations)
-      .set({ queue: 'recepcao', status: 'aguardando_atendimento', updatedAt: new Date() })
+      .set({ queue: 'recepcao', status: 'aguardando_atendimento', pendingAiResponse: false, updatedAt: new Date() })
       .where(eq(conversations.id, input.conversationId));
     // Registra no log mesmo sem chamar Gemini — pra métrica "human intent rate".
     await recordAiCall({
@@ -399,6 +440,14 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   const { cleanReply, qualification, summary } = parseQualificationTag(rawReply);
   if (!cleanReply) {
     return { status: 'gemini_error', errorMessage: 'reply was empty after stripping tag' };
+  }
+
+  // Delay humanizado antes do envio — alvo proporcional ao tamanho da resposta,
+  // descontando o que ja foi gasto no pipeline (Gemini, IO etc).
+  const elapsedMs = Date.now() - pipelineStartedAt;
+  const remainingMs = aiReplyTargetMs(cleanReply.length) - elapsedMs;
+  if (remainingMs > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
   }
 
   // Envia via UazAPI.

@@ -1,6 +1,6 @@
 ﻿import { db } from '../db/client';
 import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings } from '../db/schema';
-import { and, eq, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { isWithinDispatchWindow, pickVariant, sweepContinuousReenroll } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -12,8 +12,40 @@ import type { ConversationQueue, CampaignHsmVariable } from '@shared/types';
 
 let timer: NodeJS.Timeout | null = null;
 let isProcessing = false;
+let lastTickAt: Date | null = null;
 
 const TICK_INTERVAL_MS = 60_000;
+// Retry de falha transiente: total de tentativas por recipient (1 original + 2 retries).
+const MAX_SEND_ATTEMPTS = 3;
+const RETRY_BASE_MS = 2 * 60_000; // backoff: 2min, 4min
+// Re-checa status da campanha (pause/cancel) a cada N envios — antes era a cada
+// envio, gerando N queries extras por batch sem necessidade.
+const STATUS_CHECK_EVERY = 10;
+// 'sending' órfão: claim feito por um processo que morreu antes de concluir.
+const STALE_SENDING_MS = 10 * 60_000;
+
+/** Timestamp do último tick concluído — exposto pro healthcheck. */
+export function getDispatcherLastTickAt(): Date | null {
+  return lastTickAt;
+}
+
+/**
+ * Falha que vale retry: provider fora do ar (5xx), rate limit (429) ou erro de
+ * rede. Erros 4xx e de negócio (lead sem phone, template reprovado) são
+ * permanentes — retry só desperdiçaria tentativas.
+ */
+function isTransientSendError(err: unknown): boolean {
+  const status = (err as { status?: unknown })?.status;
+  if (typeof status === 'number') return status >= 500 || status === 429;
+  const code = String(
+    (err as { cause?: { code?: string } })?.cause?.code ?? (err as { code?: string })?.code ?? '',
+  );
+  if (['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET'].includes(code)) {
+    return true;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /fetch failed|socket hang up|network|timed? ?out/i.test(msg);
+}
 
 export function startDispatcher() {
   if (timer) return;
@@ -35,6 +67,30 @@ export async function tick(): Promise<void> {
   if (isProcessing) return;
   isProcessing = true;
   try {
+    // Recupera claims órfãos: recipients presos em 'sending' há >10min são de um
+    // processo que morreu durante o envio. NÃO voltam pra 'pending' — a mensagem
+    // PODE ter sido entregue antes do crash, e re-enviar arriscaria mensagem
+    // duplicada pro cliente (risco de ban do chip). Marca failed pra auditoria.
+    const stale = await db.update(campaignRecipients).set({
+      status: 'failed',
+      failureReason: 'interrompido: processo reiniciou durante o envio',
+      updatedAt: new Date(),
+    }).where(and(
+      eq(campaignRecipients.status, 'sending'),
+      lt(campaignRecipients.updatedAt, new Date(Date.now() - STALE_SENDING_MS)),
+    )).returning({ campaignId: campaignRecipients.campaignId });
+    if (stale.length > 0) {
+      const byCampaign = new Map<string, number>();
+      for (const s of stale) byCampaign.set(s.campaignId, (byCampaign.get(s.campaignId) ?? 0) + 1);
+      for (const [campaignId, n] of byCampaign) {
+        await db.update(campaigns).set({
+          failedCount: sql`${campaigns.failedCount} + ${n}`,
+          updatedAt: new Date(),
+        }).where(eq(campaigns.id, campaignId));
+      }
+      console.warn(`[campaigns] ${stale.length} recipient(s) órfãos em 'sending' marcados como failed`);
+    }
+
     // Promove scheduled → running
     await db.update(campaigns).set({
       status: 'running',
@@ -66,6 +122,7 @@ export async function tick(): Promise<void> {
     } catch (e) {
       console.warn('[continuous-reenroll] sweep failed:', e);
     }
+    lastTickAt = new Date();
   } finally {
     isProcessing = false;
   }
@@ -73,37 +130,87 @@ export async function tick(): Promise<void> {
 
 export async function processCampaign(c: Campaign): Promise<void> {
   const limit = c.ratePerMinute;
-  const recipients = await db.select()
-    .from(campaignRecipients)
-    .where(and(
-      eq(campaignRecipients.campaignId, c.id),
-      eq(campaignRecipients.status, 'pending'),
-    ))
-    .limit(limit);
+
+  // Claim atômico: SELECT ... FOR UPDATE SKIP LOCKED + UPDATE status='sending'
+  // na mesma transação. Duas instâncias do app (ou dois ticks sobrepostos num
+  // deploy) nunca reivindicam o mesmo recipient — sem isso a mesma campanha
+  // podia disparar em dobro pros mesmos leads.
+  // Recipients com next_attempt_at no futuro estão aguardando backoff de retry.
+  const recipients = await db.transaction(async (tx) => {
+    const rows = await tx.select()
+      .from(campaignRecipients)
+      .where(and(
+        eq(campaignRecipients.campaignId, c.id),
+        eq(campaignRecipients.status, 'pending'),
+        or(
+          isNull(campaignRecipients.nextAttemptAt),
+          lte(campaignRecipients.nextAttemptAt, new Date()),
+        ),
+      ))
+      .orderBy(campaignRecipients.createdAt)
+      .limit(limit)
+      .for('update', { skipLocked: true });
+    if (rows.length > 0) {
+      await tx.update(campaignRecipients)
+        .set({ status: 'sending', updatedAt: new Date() })
+        .where(inArray(campaignRecipients.id, rows.map((r) => r.id)));
+    }
+    return rows;
+  });
 
   if (recipients.length === 0) {
     if (c.isContinuous) {
       await maybeEmitCooldownAlert(c);
       return;
     }
-    await db.update(campaigns).set({
-      status: 'completed',
-      completedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(campaigns.id, c.id));
+    // Só completa quando não sobrou NADA pendente — inclusive retries agendados
+    // (next_attempt_at futuro), que o claim acima não retorna.
+    const [pendingLeft] = await db.select({ n: sql<number>`count(*)::int` })
+      .from(campaignRecipients)
+      .where(and(
+        eq(campaignRecipients.campaignId, c.id),
+        inArray(campaignRecipients.status, ['pending', 'sending']),
+      ));
+    if (pendingLeft.n === 0) {
+      await db.update(campaigns).set({
+        status: 'completed',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(campaigns.id, c.id));
+    }
     await maybeEmitCooldownAlert(c);
     return;
   }
 
   const intervalMs = Math.max(100, Math.floor(60_000 / limit));
 
-  for (const r of recipients) {
-    const [fresh] = await db.select({ status: campaigns.status })
-      .from(campaigns).where(eq(campaigns.id, c.id));
-    if (!fresh || fresh.status !== 'running') break;
+  let cursor = 0;
+  try {
+    for (; cursor < recipients.length; cursor++) {
+      // Re-checa pause/cancel a cada N envios (não a cada envio — era 1 query
+      // extra por recipient). Pior caso: até N mensagens saem após o pause.
+      if (cursor % STATUS_CHECK_EVERY === 0) {
+        const [fresh] = await db.select({ status: campaigns.status })
+          .from(campaigns).where(eq(campaigns.id, c.id));
+        if (!fresh || fresh.status !== 'running') break;
+      }
 
-    await sendOne(c, r);
-    await sleep(intervalMs);
+      await sendOne(c, recipients[cursor]);
+      await sleep(intervalMs);
+    }
+  } finally {
+    // Devolve pra 'pending' os claims que não chegaram a ser processados
+    // (pause/cancel no meio do batch ou erro inesperado). Filtra por status
+    // 'sending' pra não sobrescrever os que o sendOne já resolveu.
+    const unsent = recipients.slice(cursor).map((r) => r.id);
+    if (unsent.length > 0) {
+      await db.update(campaignRecipients)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(and(
+          inArray(campaignRecipients.id, unsent),
+          eq(campaignRecipients.status, 'sending'),
+        ));
+    }
   }
 
   await maybeEmitCooldownAlert(c);
@@ -285,8 +392,25 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
       });
     }
   } catch (err) {
+    // Falha transiente (provider 5xx/429, rede): devolve pra 'pending' com
+    // backoff exponencial em vez de queimar o recipient — instabilidade de
+    // minutos no UazAPI deixava de entregar mensagens definitivamente.
+    const attempt = r.attemptCount + 1;
+    if (isTransientSendError(err) && attempt < MAX_SEND_ATTEMPTS) {
+      const delayMs = RETRY_BASE_MS * 2 ** (attempt - 1);
+      await db.update(campaignRecipients).set({
+        status: 'pending',
+        attemptCount: attempt,
+        nextAttemptAt: new Date(Date.now() + delayMs),
+        failureReason: `tentativa ${attempt}/${MAX_SEND_ATTEMPTS} falhou (transiente, retry em ${Math.round(delayMs / 60_000)}min): ${String(err).slice(0, 400)}`,
+        updatedAt: new Date(),
+      }).where(eq(campaignRecipients.id, r.id));
+      return;
+    }
+
     await db.update(campaignRecipients).set({
       status: 'failed',
+      attemptCount: attempt,
       failureReason: String(err).slice(0, 500),
       updatedAt: new Date(),
     }).where(eq(campaignRecipients.id, r.id));

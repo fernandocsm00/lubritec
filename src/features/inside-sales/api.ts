@@ -32,7 +32,9 @@ export function useBoard(filters: BoardFilters) {
   return useQuery({
     queryKey: ['deals', 'board', filters],
     queryFn: () => api<BoardResponse>(`/deals${buildBoardQuery(filters)}`),
-    refetchInterval: 5_000,
+    // 15s (era 5s): kanban não precisa de near-real-time e o refetch durante
+    // drag-and-drop causava re-render de todas as colunas.
+    refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
 }

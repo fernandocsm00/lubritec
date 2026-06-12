@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { authGuard } from '../middleware/authGuard';
 import { multerConversationMedia } from '../middleware/multerConversationMedia';
+import { validateUploadMagicBytes } from '../middleware/validateUploadMagicBytes';
 import {
   listHandler,
   countsHandler,
@@ -39,6 +40,7 @@ router.post(
       next();
     });
   },
+  validateUploadMagicBytes,
   uploadMediaHandler,
 );
 router.get('/:id', authGuard, getHandler);

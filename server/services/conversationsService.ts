@@ -118,18 +118,11 @@ export async function listConversations(input: ListInput): Promise<{
       lead: leads,
       assignee: users,
       campaignName: campaigns.name,
-      lastMsgBody: sql<string | null>`(
-        SELECT m.body FROM messages m
-        WHERE m.conversation_id = ${conversations.id}
-        ORDER BY m.sent_at DESC LIMIT 1
-      )`,
-      lastMsgKind: sql<string | null>`(
-        SELECT m.kind FROM messages m
-        WHERE m.conversation_id = ${conversations.id}
-        ORDER BY m.sent_at DESC LIMIT 1
-      )`,
-      lastMsgDir: sql<string | null>`(
-        SELECT m.direction FROM messages m
+      // Uma única subquery correlata (jsonb) em vez de três idênticas — eram
+      // 3 index scans em messages POR CONVERSA por página (150 com PAGE_SIZE=50).
+      lastMsg: sql<{ body: string | null; kind: string; direction: string } | null>`(
+        SELECT jsonb_build_object('body', m.body, 'kind', m.kind, 'direction', m.direction)
+        FROM messages m
         WHERE m.conversation_id = ${conversations.id}
         ORDER BY m.sent_at DESC LIMIT 1
       )`,
@@ -168,10 +161,10 @@ export async function listConversations(input: ListInput): Promise<{
       originCampaignId: r.conv.originCampaignId,
       originCampaignName: r.campaignName ?? null,
       lastMessagePreview: previewFromMessage({
-        body: r.lastMsgBody,
-        kind: r.lastMsgKind ?? 'text',
+        body: r.lastMsg?.body ?? null,
+        kind: r.lastMsg?.kind ?? 'text',
       }),
-      lastMessageDirection: (r.lastMsgDir as 'in' | 'out' | null) ?? null,
+      lastMessageDirection: (r.lastMsg?.direction as 'in' | 'out' | null) ?? null,
       lastMessageAt: r.conv.lastMessageAt.toISOString(),
       lastInboundAt: r.conv.lastInboundAt?.toISOString() ?? null,
       unreadCount: r.conv.unreadCount,

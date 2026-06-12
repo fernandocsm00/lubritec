@@ -308,6 +308,10 @@ export const campaignRecipients = pgTable('campaign_recipients', {
   conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
   messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
   failureReason: text('failure_reason'),
+  // Retry com backoff (migration 034): tentativas já feitas + quando a próxima
+  // pode rodar. attempt_count só cresce em falha TRANSIENTE do provider.
+  attemptCount: integer('attempt_count').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

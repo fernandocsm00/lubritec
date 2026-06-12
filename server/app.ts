@@ -28,10 +28,29 @@ export function createApp() {
   app.set('trust proxy', 1);
 
   // helmet sets security headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc.).
-  // CSP is disabled because the Vite-built SPA uses inline styles (Tailwind generates them)
-  // and would require a thorough audit to ship CSP without breaking the UI.
-  // Tighten contentSecurityPolicy if/when we audit every callsite.
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // CSP só em produção: o dev server do Vite injeta scripts inline/HMR que a
+  // policy quebraria. 'unsafe-inline' em style-src é necessário (Tailwind/Motion
+  // geram estilos inline); script-src fica restrito a 'self' — que é o que
+  // importa contra XSS. img/media liberam https: porque mídias inbound do
+  // WhatsApp apontam pra CDN do provider.
+  const isProd = process.env.NODE_ENV === 'production';
+  app.use(helmet({
+    contentSecurityPolicy: isProd
+      ? {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+            mediaSrc: ["'self'", 'data:', 'blob:', 'https:'],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'", 'data:'],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+          },
+        }
+      : false,
+  }));
 
   const corsOrigin = process.env.APP_URL;
   if (process.env.NODE_ENV === 'production' && !corsOrigin) {
@@ -87,6 +106,20 @@ export function createApp() {
       checks.uazapi = { ok: false, latencyMs: Date.now() - uazStart, error: e instanceof Error ? e.message : 'unknown' };
     }
 
+    // Dispatcher de campanhas: se o último tick tem >5min (tick é a cada 60s),
+    // o worker morreu silenciosamente — campanhas travam sem nenhum sintoma.
+    // Não-fatal pro ready (DB é o gate), mas visível pra monitoramento.
+    try {
+      const { getDispatcherLastTickAt } = await import('./services/campaignsDispatcher');
+      const lastTick = getDispatcherLastTickAt();
+      checks.dispatcher = {
+        ok: lastTick !== null && Date.now() - lastTick.getTime() < 5 * 60_000,
+        error: lastTick ? undefined : 'no_tick_yet',
+      };
+    } catch (e) {
+      checks.dispatcher = { ok: false, error: e instanceof Error ? e.message : 'unknown' };
+    }
+
     // Overall: DB must be up. UazAPI being down is degraded, not failed.
     const overallOk = checks.db.ok;
     res.status(overallOk ? 200 : 503).json({ ok: overallOk, checks });
@@ -103,7 +136,16 @@ export function createApp() {
   app.use('/api/whatsapp/instances', whatsappInstancesRouter);
   app.use('/api/whatsapp/instances/:instanceId/templates', hsmTemplatesRouter);
   app.use('/api/org-settings', orgSettingsRoutes);
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  // Uploads são "capability URLs": filename = crypto.randomBytes(16) (128 bits,
+  // não-enumerável) — mesmo modelo de link do WhatsApp/Drive. Auth por header
+  // não funciona aqui (<img src> não envia Authorization e o provider WhatsApp
+  // baixa a mídia desta URL ao disparar campanha). dotfiles/index bloqueados;
+  // a validação de conteúdo (magic bytes) acontece no upload.
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+    dotfiles: 'deny',
+    index: false,
+    maxAge: '1d',
+  }));
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/campaigns', campaignRoutes);
   app.use('/api/notifications', notificationsRoutes);

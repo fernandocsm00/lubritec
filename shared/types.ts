@@ -428,7 +428,7 @@ export const CAMPAIGN_STATUSES = [
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 
 export const CAMPAIGN_RECIPIENT_STATUSES = [
-  'pending', 'sent', 'failed', 'skipped',
+  'pending', 'sending', 'sent', 'failed', 'skipped',
 ] as const;
 export type CampaignRecipientStatus = (typeof CAMPAIGN_RECIPIENT_STATUSES)[number];
 

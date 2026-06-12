@@ -1,5 +1,9 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
+
+// Zera o delay humanizado da IA — pra suite nao esperar 30s por reply.
+process.env.AI_REPLY_MIN_MS = '0';
+
 import { db } from '../db/client';
 import { conversations, messages, leads, orgSettings } from '../db/schema';
 import {

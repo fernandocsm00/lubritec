@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { conversations, messages } from '../db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, lt } from 'drizzle-orm';
 import { isAiBusinessHours } from '../lib/businessHours';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { processInboundWithAi } from './aiAtendimento';
@@ -62,18 +62,42 @@ export async function processPending(): Promise<{ processed: number; skipped: nu
     return { processed: 0, skipped: 0 };
   }
 
+  // Pega só conversas cujo último inbound tem >=3min: além do caso fora-do-horário,
+  // o flag agora é setado na INGESTÃO de todo inbound de texto na fila IA (rede de
+  // segurança contra crash no meio do pipeline). O fire-and-forget do webhook pode
+  // levar até ~2min (Gemini + delay humanizado de até 60s) — sem esse threshold o
+  // worker roubaria a conversa em voo e o cliente receberia resposta dupla.
+  const pickupThreshold = new Date(Date.now() - 3 * 60_000);
   const pending = await db
-    .select({ id: conversations.id, leadId: conversations.leadId, phone: conversations.phone })
+    .select({
+      id: conversations.id,
+      leadId: conversations.leadId,
+      phone: conversations.phone,
+      lastInboundAt: conversations.lastInboundAt,
+    })
     .from(conversations)
     .where(and(
       eq(conversations.pendingAiResponse, true),
       eq(conversations.queue, 'ia'),
+      lt(conversations.lastInboundAt, pickupThreshold),
     ))
     .limit(MAX_PER_TICK);
 
   let processed = 0;
   let skipped = 0;
+  const staleThreshold = Date.now() - 24 * 60 * 60_000;
   for (const conv of pending) {
+    // Inbound com mais de 24h (ex.: IA ficou desligada dias e foi religada):
+    // responder agora seria mensagem zumbi — limpa o flag e deixa pro humano.
+    if (conv.lastInboundAt && conv.lastInboundAt.getTime() < staleThreshold) {
+      await db
+        .update(conversations)
+        .set({ pendingAiResponse: false, updatedAt: new Date() })
+        .where(eq(conversations.id, conv.id));
+      console.warn(`[ai-pending-worker] conv ${conv.id}: inbound >24h, flag limpo sem resposta da IA`);
+      skipped++;
+      continue;
+    }
     // Pega a ultima mensagem inbound da conversa.
     const [lastInbound] = await db
       .select({ body: messages.body })

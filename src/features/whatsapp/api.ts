@@ -35,11 +35,17 @@ function buildQuery(filters: ConversationFilters): string {
   return s ? `?${s}` : '';
 }
 
+// Polling da lista/contadores: 15s (era 5s). Todo usuário logado paga esses dois
+// pollings o tempo inteiro — a 5s, 5 atendentes geravam ~120 req/min só aqui.
+// A thread aberta tem polling próprio mais rápido (useMessages), então a
+// percepção de "tempo real" na conversa ativa não muda.
+const LIST_POLL_MS = 15_000;
+
 export function useConversations(filters: ConversationFilters) {
   return useQuery({
     queryKey: ['conversations', filters],
     queryFn: () => api<ListResult>(`/conversations${buildQuery(filters)}`),
-    refetchInterval: 5_000,
+    refetchInterval: LIST_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }
@@ -48,7 +54,7 @@ export function useConversationCounts() {
   return useQuery({
     queryKey: ['conversations', 'counts'],
     queryFn: () => api<ConversationCounts>('/conversations/counts'),
-    refetchInterval: 5_000,
+    refetchInterval: LIST_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }
@@ -75,7 +81,10 @@ export function useMessages(conversationId: string | null) {
     queryKey: ['messages', conversationId],
     queryFn: () => api<MessagesResult>(`/conversations/${conversationId}/messages`),
     enabled: !!conversationId,
-    refetchInterval: 2_500,
+    // 5s (era 2.5s): só a conversa ABERTA poll este endpoint, mas 2.5s dobrava
+    // a carga sem ganho perceptível — mensagem própria aparece na hora via
+    // invalidate do useSendMessage; inbound chega em <=5s.
+    refetchInterval: 5_000,
     refetchIntervalInBackground: false,
   });
 }
@@ -121,9 +130,28 @@ export function useSendMessage(conversationId: string) {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    onSuccess: () => {
+    onSuccess: (msg) => {
       qc.invalidateQueries({ queryKey: ['messages', conversationId] });
-      qc.invalidateQueries({ queryKey: ['conversations'] });
+      // Patch local em vez de invalidar TODAS as listas de conversas — o
+      // refetch completo a cada mensagem enviada causava flicker e perda de
+      // scroll na sidebar. Atualiza preview/timestamp da conversa em cache;
+      // o polling periódico reconcilia ordenação e o resto.
+      qc.setQueriesData<ListResult>({ queryKey: ['conversations'] }, (old) => {
+        if (!old || !Array.isArray((old as ListResult).items)) return old;
+        return {
+          ...old,
+          items: old.items.map((c) =>
+            c.id === conversationId
+              ? {
+                  ...c,
+                  lastMessagePreview: msg.body ?? c.lastMessagePreview,
+                  lastMessageDirection: 'out' as const,
+                  lastMessageAt: msg.sentAt ?? c.lastMessageAt,
+                }
+              : c,
+          ),
+        };
+      });
     },
   });
 }

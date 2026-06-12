@@ -38,7 +38,19 @@ import { RefreshCcw } from 'lucide-react';
  * AiMetricsCard, AttentionList textual. Estao acessiveis via "Ver detalhes".
  */
 
-function RightSection({ view, summary }: { view: DashboardView; summary: DashboardSummary | undefined }) {
+function RightSection({
+  view,
+  summary,
+  error,
+  onRetry,
+}: {
+  view: DashboardView;
+  summary: DashboardSummary | undefined;
+  error: boolean;
+  onRetry: () => void;
+}) {
+  // Sem o check de erro, falha na query deixava skeleton infinito aqui.
+  if (!summary && error) return <BlockError onRetry={onRetry} />;
   if (!summary) return <BlockSkeleton height={200} />;
   if (view === 'org') return <Leaderboard data={summary.leaderboard ?? []} />;
   return <RecentActivities data={summary.recentActivities ?? []} />;
@@ -137,7 +149,12 @@ export default function DashboardPage() {
 
       {/* 4. Split: Leaderboard ou Atividades recentes */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <RightSection view={view} summary={summary.data} />
+        <RightSection
+          view={view}
+          summary={summary.data}
+          error={!!summary.error}
+          onRetry={() => summary.refetch()}
+        />
         {/* Lado direito: link pra detalhes operacionais (KPIs detalhados,
             pipeline aberto, WhatsApp stats, IA metricas, atencao textual) */}
         {isAdmin && view === 'org' && (
