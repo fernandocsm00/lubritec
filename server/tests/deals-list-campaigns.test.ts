@@ -5,6 +5,7 @@ import {
   createLead,
   createCampaign,
   createCampaignRecipient,
+  createConversation,
   createDeal,
 } from './helpers';
 
@@ -21,7 +22,7 @@ const userCtx = {
   currentUserId: '00000000-0000-0000-0000-000000000000',
 };
 
-describe('listBoard — agregacao de campaigns e filtro campaignIds', () => {
+describe('listBoard — agregacao de campaigns (recipients) e campanha de origem', () => {
   it('attaches empty campaigns when deal lead has no sent recipient', async () => {
     const lead = await createLead({ name: 'No camp', phone: '5554911111111' });
     await createDeal({ leadId: lead.id, stage: 'lead_no_comercial' });
@@ -53,7 +54,34 @@ describe('listBoard — agregacao de campaigns e filtro campaignIds', () => {
     expect(deal!.campaigns.map((c) => c.name)).toEqual(['Recente', 'Antiga']);
   });
 
-  it('filters board by campaignIds (OR)', async () => {
+  it('expoe originCampaignId/Name a partir da conversa de origem', async () => {
+    const u = await admin();
+    const lead = await createLead({ name: 'Origem X', phone: '5554900111222' });
+    await createDeal({ leadId: lead.id, stage: 'lead_no_comercial' });
+    const camp = await createCampaign({ name: 'Reativacao Maio', createdByUserId: u.id });
+    await createConversation({
+      leadId: lead.id,
+      originKind: 'campaign',
+      originCampaignId: camp.id,
+    });
+    const r = await listBoard(userCtx);
+    const deal = r.stages.lead_no_comercial.find((d) => d.lead.name === 'Origem X');
+    expect(deal!.originCampaignId).toBe(camp.id);
+    expect(deal!.originCampaignName).toBe('Reativacao Maio');
+  });
+
+  it('originCampaign nulo quando o deal nao veio de campanha', async () => {
+    const lead = await createLead({ name: 'Sem campanha', phone: '5554900333444' });
+    await createDeal({ leadId: lead.id, stage: 'lead_no_comercial' });
+    const r = await listBoard(userCtx);
+    const deal = r.stages.lead_no_comercial.find((d) => d.lead.name === 'Sem campanha');
+    expect(deal!.originCampaignId).toBeNull();
+    expect(deal!.originCampaignName).toBeNull();
+  });
+});
+
+describe('listBoard — filtro por campanha de ORIGEM', () => {
+  it('filtra o board pela campanha de origem (OR), nao por recipients', async () => {
     const u = await admin();
     const leadA = await createLead({ name: 'In A', phone: '5554933333333' });
     const leadB = await createLead({ name: 'In B', phone: '5554944444444' });
@@ -63,29 +91,42 @@ describe('listBoard — agregacao de campaigns e filtro campaignIds', () => {
     await createDeal({ leadId: leadN.id, stage: 'lead_no_comercial' });
     const campA = await createCampaign({ name: 'A', createdByUserId: u.id });
     const campB = await createCampaign({ name: 'B', createdByUserId: u.id });
-    await createCampaignRecipient({
-      campaignId: campA.id,
-      leadId: leadA.id,
-      status: 'sent',
-      sentAt: new Date(),
-    });
-    await createCampaignRecipient({
-      campaignId: campB.id,
-      leadId: leadB.id,
-      status: 'sent',
-      sentAt: new Date(),
-    });
+    await createConversation({ leadId: leadA.id, originKind: 'campaign', originCampaignId: campA.id });
+    await createConversation({ leadId: leadB.id, originKind: 'campaign', originCampaignId: campB.id });
+    // leadN: conversa organica (sem campanha) — nao deve casar o filtro.
+    await createConversation({ leadId: leadN.id, originKind: 'organic' });
+
     const r = await listBoard({ ...userCtx, campaignIds: [campA.id, campB.id] });
     const names = r.stages.lead_no_comercial.map((d) => d.lead.name).sort();
     expect(names).toEqual(['In A', 'In B']);
   });
+
+  it('originCampaigns lista so campanhas que originaram algum card e ignora o proprio filtro', async () => {
+    const u = await admin();
+    const leadA = await createLead({ name: 'LA', phone: '5554900555666' });
+    const leadB = await createLead({ name: 'LB', phone: '5554900777888' });
+    await createDeal({ leadId: leadA.id, stage: 'lead_no_comercial' });
+    await createDeal({ leadId: leadB.id, stage: 'lead_no_comercial' });
+    const campA = await createCampaign({ name: 'AAA', createdByUserId: u.id });
+    const campB = await createCampaign({ name: 'BBB', createdByUserId: u.id });
+    await createCampaign({ name: 'CCC sem card', createdByUserId: u.id }); // nao origina ninguem
+    await createConversation({ leadId: leadA.id, originKind: 'campaign', originCampaignId: campA.id });
+    await createConversation({ leadId: leadB.id, originKind: 'campaign', originCampaignId: campB.id });
+
+    // Mesmo filtrando por A, o dropdown continua oferecendo A e B (nao encolhe);
+    // CCC nao aparece porque nao originou nenhum card.
+    const r = await listBoard({ ...userCtx, campaignIds: [campA.id] });
+    expect(r.originCampaigns.map((c) => c.name).sort()).toEqual(['AAA', 'BBB']);
+    // O board em si traz apenas o card originado por A.
+    expect(r.stages.lead_no_comercial.map((d) => d.lead.name)).toEqual(['LA']);
+  });
 });
 
-describe('listHistory — campaigns', () => {
-  it('attaches campaigns and filters by campaignIds', async () => {
+describe('listHistory — campaigns e filtro por origem', () => {
+  it('attaches campaigns (recipients) e filtra por campanha de origem', async () => {
     const u = await admin();
     const lead = await createLead({ name: 'Won', phone: '5554900000001' });
-    // closedAt must be older than KANBAN_TERMINAL_VISIBLE_DAYS (7 days) to show in history
+    // closedAt mais antigo que KANBAN_TERMINAL_VISIBLE_DAYS (7 dias) pra aparecer no historico.
     const oldClosed = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     await createDeal({ leadId: lead.id, stage: 'ganho', closedAt: oldClosed });
     const camp = await createCampaign({ name: 'A', createdByUserId: u.id });
@@ -95,8 +136,11 @@ describe('listHistory — campaigns', () => {
       status: 'sent',
       sentAt: new Date(),
     });
+    await createConversation({ leadId: lead.id, originKind: 'campaign', originCampaignId: camp.id });
+
     const r = await listHistory({ ...userCtx, campaignIds: [camp.id] });
     expect(r.items).toHaveLength(1);
     expect(r.items[0].campaigns.map((c) => c.name)).toEqual(['A']);
+    expect(r.items[0].originCampaignName).toBe('A');
   });
 });

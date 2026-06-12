@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { deals, dealActivities, leads, users, conversations } from '../db/schema';
+import { deals, dealActivities, leads, users, conversations, campaigns } from '../db/schema';
 import {
   eq, and, or, ilike, desc, sql, inArray, gte, lte,
   type SQL,
@@ -33,6 +33,7 @@ interface RawDealRow {
   isStale: boolean;
   aiSummary: string | null;
   campaigns: Array<{ id: string; name: string; sentAt: string }>;
+  originCampaign: { id: string; name: string } | null;
 }
 
 function toPublic(row: RawDealRow): PublicDeal {
@@ -58,6 +59,8 @@ function toPublic(row: RawDealRow): PublicDeal {
     enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
     aiSummary: row.aiSummary,
     campaigns: row.campaigns ?? [],
+    originCampaignId: row.originCampaign?.id ?? null,
+    originCampaignName: row.originCampaign?.name ?? null,
     createdAt: row.deal.createdAt.toISOString(),
     updatedAt: row.deal.updatedAt.toISOString(),
   };
@@ -78,6 +81,21 @@ const campaignsSql = sql<Array<{ id: string; name: string; sentAt: string }>>`CO
    JOIN campaigns c ON c.id = cr.campaign_id
    WHERE cr.lead_id = ${sql.raw('deals.lead_id')} AND cr.sent_at IS NOT NULL),
   '[]'::json
+)`;
+
+// Campanha que ORIGINOU o contato — mesma fonte que o badge da conversa
+// (conversations.origin_campaign_id). Pega a conversa originada de campanha mais
+// recente do lead. Mesmo cuidado de qualificação do campaignsSql: usa
+// sql.raw('deals.lead_id') porque cv.lead_id colidiria com lead_id não-qualificado.
+const originCampaignSql = sql<{ id: string; name: string } | null>`(
+  SELECT json_build_object('id', ca.id, 'name', ca.name)
+  FROM conversations cv
+  JOIN campaigns ca ON ca.id = cv.origin_campaign_id
+  WHERE cv.lead_id = ${sql.raw('deals.lead_id')}
+    AND cv.origin_kind = 'campaign'
+    AND cv.origin_campaign_id IS NOT NULL
+  ORDER BY cv.created_at DESC
+  LIMIT 1
 )`;
 
 // Resumo mais recente da IA para o lead do deal (varre conversas do lead e
@@ -164,23 +182,12 @@ export async function listBoard(input: {
     if (search) conds.push(search);
   }
 
-  if (input.campaignIds && input.campaignIds.length > 0) {
-    // OR semantics: deal cujo lead aparece como recipient sent_at IS NOT NULL
-    // em qualquer das campanhas filtradas. sql.join binda os UUIDs como
-    // parâmetros (a forma inline `IN ${array}` do drizzle não funciona aqui).
-    const ids = sql.join(
-      input.campaignIds.map((id) => sql`${id}`),
-      sql`, `,
-    );
-    conds.push(sql`EXISTS (
-      SELECT 1 FROM campaign_recipients cr
-      WHERE cr.lead_id = ${deals.leadId}
-        AND cr.sent_at IS NOT NULL
-        AND cr.campaign_id IN (${ids})
-    )`);
-  }
+  // O filtro de campanha fica SEPARADO das demais condições (owner/busca/stage)
+  // pra que a lista de opções do dropdown seja calculada ignorando-o — senão,
+  // ao selecionar uma campanha, as outras sumiriam do select.
+  const campaignFilter = originCampaignFilter(input.campaignIds);
 
-  const where = and(...conds);
+  const where = campaignFilter ? and(...conds, campaignFilter) : and(...conds);
 
   const rows = await db
     .select({
@@ -191,12 +198,31 @@ export async function listBoard(input: {
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
+      originCampaign: originCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
     .leftJoin(users, eq(deals.ownerUserId, users.id))
     .where(where)
     .orderBy(desc(deals.updatedAt));
+
+  // Opções de campanha de origem: distintas entre os deals do escopo atual
+  // (owner/busca/stage), SEM aplicar o filtro de campanha.
+  const originCampaigns = await db
+    .selectDistinct({ id: campaigns.id, name: campaigns.name })
+    .from(deals)
+    .leftJoin(leads, eq(deals.leadId, leads.id))
+    .innerJoin(
+      conversations,
+      and(
+        eq(conversations.leadId, deals.leadId),
+        eq(conversations.originKind, 'campaign'),
+        sql`${conversations.originCampaignId} IS NOT NULL`,
+      ),
+    )
+    .innerJoin(campaigns, eq(campaigns.id, conversations.originCampaignId))
+    .where(and(...conds))
+    .orderBy(campaigns.name);
 
   const stages: BoardResponse['stages'] = {
     lead_no_comercial: [],
@@ -220,7 +246,21 @@ export async function listBoard(input: {
     totals[pub.stage].valueSum += pub.proposalValue ?? 0;
   }
 
-  return { stages, totals };
+  return { stages, totals, originCampaigns };
+}
+
+// EXISTS por campanha de ORIGEM (conversations.origin_campaign_id) — alinhado
+// com o badge do card e com o filtro de campanha do Inbox. Retorna null quando
+// não há filtro. Usado por listBoard e listHistory.
+function originCampaignFilter(campaignIds: string[] | undefined): SQL | null {
+  if (!campaignIds || campaignIds.length === 0) return null;
+  const ids = sql.join(campaignIds.map((id) => sql`${id}`), sql`, `);
+  return sql`EXISTS (
+    SELECT 1 FROM conversations cv
+    WHERE cv.lead_id = ${deals.leadId}
+      AND cv.origin_kind = 'campaign'
+      AND cv.origin_campaign_id IN (${ids})
+  )`;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,18 +304,8 @@ export async function listHistory(input: {
     if (search) conds.push(search);
   }
 
-  if (input.campaignIds && input.campaignIds.length > 0) {
-    const ids = sql.join(
-      input.campaignIds.map((id) => sql`${id}`),
-      sql`, `,
-    );
-    conds.push(sql`EXISTS (
-      SELECT 1 FROM campaign_recipients cr
-      WHERE cr.lead_id = ${deals.leadId}
-        AND cr.sent_at IS NOT NULL
-        AND cr.campaign_id IN (${ids})
-    )`);
-  }
+  const campaignFilter = originCampaignFilter(input.campaignIds);
+  if (campaignFilter) conds.push(campaignFilter);
 
   const where = and(...conds);
 
@@ -294,6 +324,7 @@ export async function listHistory(input: {
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
+      originCampaign: originCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -325,6 +356,7 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
+      originCampaign: originCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -367,6 +399,7 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
+      originCampaign: originCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))

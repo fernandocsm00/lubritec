@@ -1,5 +1,5 @@
 import { useDraggable } from '@dnd-kit/core';
-import { Bot } from 'lucide-react';
+import { Bot, Megaphone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { avatarInitials, formatCurrency, relativeTime, LOSS_REASON_LABELS } from './helpers';
@@ -74,6 +74,19 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
           {formatCnpj(deal.lead.cnpj)}
         </span>
       </div>
+
+      {/* Campanha de origem — mesma fonte/estilo do badge da conversa. */}
+      {deal.originCampaignName && (
+        <div className="mb-2">
+          <span
+            className="inline-flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-full"
+            title={`Campanha de origem: ${deal.originCampaignName}`}
+          >
+            <Megaphone className="h-2.5 w-2.5 shrink-0" />
+            <span className="truncate">{deal.originCampaignName}</span>
+          </span>
+        </div>
+      )}
 
       <div className="flex items-center gap-1.5 mb-2.5 min-w-0">
         {deal.owner ? (

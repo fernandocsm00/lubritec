@@ -322,6 +322,10 @@ export interface PublicDeal {
   enteredCurrentStageAt: string;
   aiSummary: string | null;
   campaigns: LeadCampaignSummary[];
+  // Campanha que ORIGINOU o contato — mesma fonte que o badge da conversa
+  // (conversations.origin_campaign_id). null quando o deal não veio de campanha.
+  originCampaignId: string | null;
+  originCampaignName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -343,6 +347,9 @@ export interface DealStageTotal {
 export interface BoardResponse {
   stages: Record<DealStage, PublicDeal[]>;
   totals: Record<DealStage, DealStageTotal>;
+  // Campanhas que originaram ao menos um card no escopo atual (owner+busca,
+  // ignorando o próprio filtro de campanha) — alimenta o multi-select do Kanban.
+  originCampaigns: Array<{ id: string; name: string }>;
 }
 
 // ---------------------------------------------------------------------------

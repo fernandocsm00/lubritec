@@ -18,12 +18,14 @@ export type OwnerFilter = 'mine' | 'all' | 'unassigned' | string; // string = UU
 export interface BoardFilters {
   owner?: OwnerFilter;
   q?: string;
+  campaignIds?: string[];
 }
 
 function buildBoardQuery(f: BoardFilters): string {
   const u = new URLSearchParams();
   if (f.owner) u.set('owner', f.owner);
   if (f.q) u.set('q', f.q);
+  if (f.campaignIds && f.campaignIds.length > 0) u.set('campaignIds', f.campaignIds.join(','));
   const s = u.toString();
   return s ? `?${s}` : '';
 }

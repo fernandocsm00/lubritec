@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -15,6 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/features/auth/store';
 import { useBoard, useChangeStage, useAssignableUsers, type OwnerFilter } from './api';
@@ -39,6 +47,11 @@ export function KanbanBoard() {
   const owner: OwnerFilter = (searchParams.get('owner') as OwnerFilter) || 'all';
   const onlyMine = owner === 'mine';
   const q = searchParams.get('q') ?? '';
+  const campaignIdsParam = searchParams.get('campaignIds') ?? '';
+  const campaignIds = useMemo(
+    () => campaignIdsParam.split(',').filter(Boolean),
+    [campaignIdsParam],
+  );
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
   const [searchInput, setSearchInput] = useState(q);
   const { data: assignableUsers } = useAssignableUsers();
@@ -64,9 +77,22 @@ export function KanbanBoard() {
     setSearchParams(next, { replace: true });
   }
 
-  const filters = useMemo(() => ({ owner, q: q || undefined }), [owner, q]);
+  const filters = useMemo(
+    () => ({ owner, q: q || undefined, campaignIds: campaignIds.length ? campaignIds : undefined }),
+    [owner, q, campaignIds],
+  );
   const { data, isLoading, isError } = useBoard(filters);
   const changeStage = useChangeStage();
+
+  // Opções de campanha = só as que originaram algum card (vem do board, já
+  // calculado ignorando o filtro de campanha pra a lista não encolher).
+  const campaignOptions = data?.originCampaigns ?? [];
+  function toggleCampaign(id: string) {
+    const set = new Set(campaignIds);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    patch({ campaignIds: set.size ? Array.from(set).join(',') : null });
+  }
 
   function handleDragEnd(e: DragEndEvent) {
     const dealId = e.active.id as string;
@@ -163,6 +189,42 @@ export function KanbanBoard() {
             )}
           </SelectContent>
         </Select>
+        {(campaignOptions.length > 0 || campaignIds.length > 0) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
+                <Megaphone className="h-4 w-4" />
+                {campaignIds.length > 0 ? `Campanha (${campaignIds.length})` : 'Campanha'}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64 max-h-72 overflow-y-auto">
+              {campaignOptions.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Nenhuma campanha de origem.
+                </div>
+              ) : (
+                campaignOptions.map((c) => (
+                  <DropdownMenuCheckboxItem
+                    key={c.id}
+                    checked={campaignIds.includes(c.id)}
+                    onCheckedChange={() => toggleCampaign(c.id)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    <span className="truncate">{c.name}</span>
+                  </DropdownMenuCheckboxItem>
+                ))
+              )}
+              {campaignIds.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => patch({ campaignIds: null })}>
+                    Limpar filtro
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <label className="flex items-center gap-2 text-xs text-foreground select-none cursor-pointer">
           <input
             type="checkbox"
