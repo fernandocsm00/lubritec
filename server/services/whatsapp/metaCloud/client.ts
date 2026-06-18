@@ -158,6 +158,32 @@ export async function getMediaUrl(input: {
 }
 
 /**
+ * Baixa o binário da mídia inbound a partir da URL resolvida por getMediaUrl.
+ * A URL (lookaside.fbsbx.com) EXIGE o mesmo Bearer token pra baixar e expira em
+ * minutos — por isso não pode ser usada direto num <img> no browser. Baixamos
+ * aqui e o caller persiste localmente (ver inboundMediaStore). Não passa pelo
+ * metaFetch porque a resposta é binária (não JSON) e fica fora do graphBase.
+ */
+export async function downloadMedia(input: {
+  url: string;
+  accessToken: string;
+}): Promise<{ buffer: Buffer; mimeType: string | null }> {
+  const res = await fetch(input.url, {
+    headers: { Authorization: `Bearer ${input.accessToken}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new MetaGraphError(res.status, null, text);
+  }
+  const arrayBuf = await res.arrayBuffer();
+  return {
+    buffer: Buffer.from(arrayBuf),
+    mimeType: res.headers.get('content-type'),
+  };
+}
+
+/**
  * Detection helper for "out of session window" Meta error.
  * https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes/
  * Code 131047 = re-engagement message outside 24h customer service window.

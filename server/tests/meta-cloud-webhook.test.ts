@@ -9,6 +9,7 @@ import {
 import { createWhatsappInstance } from './helpers';
 import { encryptSecret, _resetKeyCache } from '../lib/crypto';
 import textFixture from './fixtures/meta-webhook-text.json';
+import imageFixture from './fixtures/meta-webhook-image.json';
 
 vi.mock('../services/whatsapp/metaCloud/client', () => ({
   getPhoneNumberInfo: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock('../services/whatsapp/metaCloud/client', () => ({
   sendMedia: vi.fn(),
   getMediaUrl: vi.fn().mockResolvedValue({
     url: 'https://lookaside.fbsbx.com/whatsapp_business/.../media',
+    mimeType: 'image/jpeg',
+  }),
+  downloadMedia: vi.fn().mockResolvedValue({
+    buffer: Buffer.from('fake-jpeg-bytes'),
     mimeType: 'image/jpeg',
   }),
   isOutOfSessionError: vi.fn().mockReturnValue(false),
@@ -139,5 +144,28 @@ describe('POST /api/whatsapp/webhook/meta/:instanceId (events)', () => {
     expect(ldRows).toHaveLength(1);
     expect(ldRows[0].phone).toBe('5511988887777');
     expect(ldRows[0].name).toBe('João Silva');
+  });
+
+  it('imagem inbound: baixa a midia e persiste local (nao guarda a URL lookaside da Meta)', async () => {
+    const row = await seedMetaInstance();
+    const body = JSON.stringify(imageFixture);
+    const sig = signBody(body, APP_SECRET);
+    const res = await request(app)
+      .post(`/api/whatsapp/webhook/meta/${row.id}`)
+      .set('X-Hub-Signature-256', sig)
+      .set('Content-Type', 'application/json')
+      .send(body);
+    expect(res.status).toBe(200);
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const [msg] = await db.select().from(messages);
+    expect(msg.kind).toBe('image');
+    expect(msg.body).toBe('Olha o motor'); // caption preservada
+    // A correcao: media_url tem que ser local (servida pelo nosso dominio),
+    // NUNCA a URL lookaside.fbsbx.com (exige Bearer token, quebra no <img>).
+    expect(msg.mediaUrl).toMatch(/^\/uploads\/inbound\//);
+    expect(msg.mediaUrl).not.toContain('lookaside');
+    expect(msg.mediaMime).toBe('image/jpeg');
   });
 });

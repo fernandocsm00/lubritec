@@ -5,7 +5,8 @@ import { eq } from 'drizzle-orm';
 import { decryptSecret } from '../../../lib/crypto';
 import { metaCloudConfigSchema, type MetaCloudConfig } from './configSchema';
 import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebhookService';
-import { getMediaUrl } from './client';
+import { getMediaUrl, downloadMedia } from './client';
+import { persistInboundMedia } from '../inboundMediaStore';
 import type { MessageKind } from '@shared/types';
 import { updateTemplateStatus } from '../../hsmTemplateService';
 import { toCanonicalBrPhone } from '../../../lib/phoneBR';
@@ -116,11 +117,19 @@ async function processOneMessage(
   const media = extractMediaId(msg);
   if (media) {
     try {
+      // A URL da Meta (lookaside) é efêmera e exige Bearer token — inutilizável
+      // direto num <img>. Resolve, baixa o binário com o token AGORA (enquanto a
+      // URL é válida) e persiste local; grava a URL local servida pelo /uploads.
       const { url, mimeType } = await getMediaUrl({ mediaId: media.mediaId, accessToken });
-      mediaUrl = url;
-      mediaMime = mimeType;
+      const { buffer, mimeType: downloadedMime } = await downloadMedia({ url, accessToken });
+      const resolvedMime = downloadedMime ?? mimeType ?? media.mime;
+      mediaUrl = await persistInboundMedia(buffer, resolvedMime);
+      mediaMime = mimeType ?? media.mime;
     } catch (err) {
-      console.warn('[meta-webhook] failed to resolve media URL:', err);
+      // Não grava a URL lookaside como fallback (geraria imagem quebrada). Sem
+      // mediaUrl, a UI mostra só a legenda/texto. O raw_payload guarda o media
+      // id pra um eventual reprocessamento.
+      console.warn('[meta-webhook] failed to download/persist inbound media:', err);
     }
   }
   const normalized: NormalizedInbound = {
