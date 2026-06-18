@@ -16,6 +16,7 @@
     "migrate:encrypt-creds": "tsx server/scripts/encryptWhatsappCreds.ts",
     "seed": "tsx server/scripts/seed.ts",
     "merge-duplicate-phones": "tsx server/scripts/mergeDuplicatePhones.ts",
+    "backfill-meta-inbound-media": "tsx server/scripts/backfillMetaInboundMedia.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down"
   },
