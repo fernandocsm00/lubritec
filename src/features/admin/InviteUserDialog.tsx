@@ -31,11 +31,25 @@ import { useInviteUser } from './api';
 import { translateError } from './translateError';
 import { ROLES } from '@shared/types';
 
-const schema = z.object({
-  name: z.string().min(2, 'Nome muito curto'),
-  email: z.string().email('Email inválido'),
-  role: z.enum(ROLES),
-});
+const schema = z
+  .object({
+    name: z.string().min(2, 'Nome muito curto'),
+    email: z.string().email('Email inválido'),
+    role: z.enum(ROLES),
+    // 'invite' = envia email com link de cadastro (usuário define a própria senha).
+    // 'password' = admin define a senha agora; nasce ativo, sem email.
+    mode: z.enum(['invite', 'password']),
+    password: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === 'password' && (!data.password || data.password.length < 8)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['password'],
+        message: 'Mínimo 8 caracteres',
+      });
+    }
+  });
 
 type FormData = z.infer<typeof schema>;
 
@@ -49,13 +63,24 @@ export function InviteUserDialog({
   const invite = useInviteUser();
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', email: '', role: 'comercial' },
+    defaultValues: { name: '', email: '', role: 'comercial', mode: 'invite', password: '' },
   });
+
+  const mode = form.watch('mode');
 
   async function onSubmit(values: FormData) {
     try {
-      await invite.mutateAsync(values);
-      toast.success(`Convite enviado para ${values.email}`);
+      await invite.mutateAsync({
+        name: values.name,
+        email: values.email,
+        role: values.role,
+        password: values.mode === 'password' ? values.password : undefined,
+      });
+      toast.success(
+        values.mode === 'password'
+          ? `Usuário ${values.email} criado com acesso liberado`
+          : `Convite enviado para ${values.email}`,
+      );
       form.reset();
       onOpenChange(false);
     } catch (e) {
@@ -67,9 +92,11 @@ export function InviteUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Convidar usuário</DialogTitle>
+          <DialogTitle>Novo usuário</DialogTitle>
           <DialogDescription>
-            Um email com o link de cadastro será enviado.
+            {mode === 'password'
+              ? 'O usuário será criado já ativo com a senha definida — nenhum email é enviado.'
+              : 'Um email com o link de cadastro será enviado.'}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -122,6 +149,54 @@ export function InviteUserDialog({
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="mode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Como liberar o acesso</FormLabel>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={field.value === 'invite' ? 'default' : 'outline'}
+                      onClick={() => field.onChange('invite')}
+                    >
+                      Convite por email
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={field.value === 'password' ? 'default' : 'outline'}
+                      onClick={() => field.onChange('password')}
+                    >
+                      Definir senha agora
+                    </Button>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            {mode === 'password' && (
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Senha</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Mínimo 8 caracteres"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <DialogFooter>
               <Button
                 type="button"
@@ -132,7 +207,11 @@ export function InviteUserDialog({
                 Cancelar
               </Button>
               <Button type="submit" disabled={invite.isPending}>
-                {invite.isPending ? 'Enviando…' : 'Enviar convite'}
+                {invite.isPending
+                  ? 'Salvando…'
+                  : mode === 'password'
+                    ? 'Criar usuário'
+                    : 'Enviar convite'}
               </Button>
             </DialogFooter>
           </form>

@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import {
   inviteUser,
+  createUserWithPassword,
   listUsers,
   listAssignableUsers,
   listConversationAssignees,
@@ -19,6 +20,10 @@ const inviteSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
   role: z.enum(ROLES),
+  // Quando presente, o usuario e criado JA ativo com essa senha e NENHUM email
+  // e enviado (plataforma interna, admin avisa por outro canal). Ausente = fluxo
+  // de convite por email. min(8) espelha a politica de setup/troca de senha.
+  password: z.string().min(8).optional(),
 });
 
 export const updateUserSchema = z
@@ -41,6 +46,24 @@ export const userIdParamsSchema = z.object({
 export async function inviteHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const body = inviteSchema.parse(req.body);
+
+    // Caminho direto: senha definida pelo admin, sem email de convite.
+    if (body.password) {
+      const user = await createUserWithPassword({
+        email: body.email,
+        name: body.name,
+        role: body.role,
+        password: body.password,
+      });
+      res.status(201).json({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
+      return;
+    }
+
     const result = await inviteUser(body);
     try {
       await sendInviteEmail(body.email, body.name, result.tokenId, result.rawToken);

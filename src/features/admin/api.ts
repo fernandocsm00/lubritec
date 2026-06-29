@@ -13,7 +13,7 @@ export function useUsers() {
 export function useInviteUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { email: string; name: string; role: Role }) =>
+    mutationFn: (input: { email: string; name: string; role: Role; password?: string }) =>
       api<{ id: string; email: string; name: string; role: Role }>('/users', {
         method: 'POST',
         body: JSON.stringify(input),

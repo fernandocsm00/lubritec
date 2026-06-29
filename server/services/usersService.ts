@@ -2,6 +2,7 @@ import { db } from '../db/client';
 import { users, authTokens, sessions } from '../db/schema';
 import { eq, and, sql, asc, inArray } from 'drizzle-orm';
 import { generateRawToken, hashToken } from '../lib/tokens';
+import { hashPassword } from '../lib/hash';
 import { HttpError } from '../middleware/errorHandler';
 import type { Role } from '@shared/types';
 
@@ -41,6 +42,41 @@ export async function inviteUser(input: { email: string; name: string; role: Rol
       .returning();
 
     return { tokenId: t.id, rawToken, user };
+  });
+}
+
+/**
+ * Cria usuario JA ativo, com senha definida pelo admin e sem fluxo de email.
+ * Usado pra plataforma interna onde o admin avisa a pessoa por outro canal
+ * (ex: WhatsApp). Ao contrario do convite, ja nasce com passwordHash != null,
+ * entao aparece como "Ativo" (nao "Convite pendente") e pode logar de imediato.
+ */
+export async function createUserWithPassword(input: {
+  email: string;
+  name: string;
+  role: Role;
+  password: string;
+}) {
+  const passwordHash = await hashPassword(input.password);
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(users)
+      .where(eq(users.email, input.email))
+      .limit(1);
+    if (existing) {
+      throw new HttpError(409, 'Email already in use');
+    }
+    const [user] = await tx
+      .insert(users)
+      .values({
+        email: input.email,
+        name: input.name,
+        role: input.role,
+        passwordHash,
+      })
+      .returning();
+    return user;
   });
 }
 

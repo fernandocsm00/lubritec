@@ -197,6 +197,58 @@ describe('POST /api/users — SMTP failure rollback', () => {
   });
 });
 
+describe('POST /api/users — direct create with password (no email)', () => {
+  it('creates an active user with a set password, sends no email, can log in', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const { accessToken } = await loginAs('admin@b.com');
+    vi.mocked(sendInviteEmail).mockClear();
+
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: 'direto@b.com', name: 'Direto', role: 'comercial', password: 'senha-forte-123' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.email).toBe('direto@b.com');
+    // No invite email and no invite token for the direct path.
+    expect(vi.mocked(sendInviteEmail)).not.toHaveBeenCalled();
+    const newUserId = res.body.id;
+    const tokens = await db.select().from(authTokens).where(eq(authTokens.userId, newUserId));
+    expect(tokens).toHaveLength(0);
+
+    // Born active (has_password true) and able to authenticate immediately.
+    const { accessToken: newUserToken } = await loginAs('direto@b.com', 'senha-forte-123');
+    expect(newUserToken).toBeTruthy();
+  });
+
+  it('rejects a password shorter than 8 chars — 400, no user created', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    const { accessToken } = await loginAs('admin@b.com');
+
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: 'curta@b.com', name: 'Curta', role: 'comercial', password: 'short' });
+
+    expect(res.status).toBe(400);
+    const remaining = await db.select().from(users).where(eq(users.email, 'curta@b.com'));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('returns 409 when email already in use', async () => {
+    await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
+    await createUser({ email: 'dup@b.com', password: 'pw12345', role: 'comercial' });
+    const { accessToken } = await loginAs('admin@b.com');
+
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: 'dup@b.com', name: 'Dup', role: 'comercial', password: 'senha-forte-123' });
+
+    expect(res.status).toBe(409);
+  });
+});
+
 describe('POST /api/users/:id/resend-invite', () => {
   it('admin resends invite — old token invalidated, new token created', async () => {
     await createUser({ email: 'admin@b.com', password: 'pw12345', role: 'admin' });
