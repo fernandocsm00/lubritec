@@ -93,7 +93,17 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
       if (!input.metaCloud) {
         throw new HttpError(422, 'metaCloud config required for meta_cloud provider');
       }
-      const { wabaId, phoneNumberId, accessToken, appSecret } = input.metaCloud;
+      // Credenciais coladas do painel da Meta costumam vir com espaços/quebras
+      // de linha. Sem trim, um token com \n quebra o header HTTP do fetch
+      // ("Invalid header value") e o erro vira um 500 opaco. Trim resolve.
+      const wabaId = input.metaCloud.wabaId.trim();
+      const phoneNumberId = input.metaCloud.phoneNumberId.trim();
+      const accessToken = input.metaCloud.accessToken.trim();
+      const appSecret = input.metaCloud.appSecret.trim();
+      if (!wabaId || !phoneNumberId || !accessToken || !appSecret) {
+        throw new HttpError(422,
+          'Todos os campos da Meta Cloud são obrigatórios (WABA ID, Phone Number ID, Access Token, App Secret).');
+      }
 
       // Validate credentials by calling Meta Graph BEFORE inserting any row
       const { getPhoneNumberInfo, MetaGraphError } = await import(
@@ -105,11 +115,14 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
       } catch (err) {
         if (err instanceof MetaGraphError) {
           throw new HttpError(422,
-            `Meta credentials validation failed (HTTP ${err.status}). Check WABA ID, ` +
-            `Phone Number ID, and that the access token has whatsapp_business_messaging permission.`,
+            `Validação das credenciais Meta falhou (HTTP ${err.status}). Verifique WABA ID, ` +
+            `Phone Number ID e se o access token tem as permissões whatsapp_business_management/messaging.`,
           );
         }
-        throw err;
+        // Qualquer outra falha (timeout, DNS, header inválido) NÃO deve virar 500
+        // opaco — devolve 422 com a causa pra UI mostrar algo acionável.
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new HttpError(422, `Não foi possível validar as credenciais Meta: ${detail}`);
       }
 
       const verifyToken = crypto.randomBytes(32).toString('hex');

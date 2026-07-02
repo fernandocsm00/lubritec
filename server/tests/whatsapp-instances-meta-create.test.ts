@@ -87,6 +87,40 @@ describe('POST /api/whatsapp/instances (meta_cloud path)', () => {
       .send({ provider: 'meta_cloud', displayName: 'Missing' });
     expect(res.status).toBe(422);
   });
+
+  it('retorna 422 (não 500) quando a validação falha por erro não-Meta (rede/header)', async () => {
+    vi.mocked(getPhoneNumberInfo).mockRejectedValueOnce(new Error('Invalid header value'));
+    const token = await loginAdmin();
+    const res = await request(app).post('/api/whatsapp/instances')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        provider: 'meta_cloud', displayName: 'NetFail',
+        metaCloud: { wabaId: 'w', phoneNumberId: 'p', accessToken: 'at', appSecret: 'as' },
+      });
+    expect(res.status).toBe(422);
+    expect(await db.select().from(whatsappInstance)).toHaveLength(0);
+  });
+
+  it('faz trim nas credenciais coladas (evita header HTTP inválido por espaço/\\n)', async () => {
+    vi.mocked(getPhoneNumberInfo).mockResolvedValueOnce({
+      id: 'pn', display_phone_number: '+1', verified_name: 'X',
+    });
+    const token = await loginAdmin();
+    const res = await request(app).post('/api/whatsapp/instances')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        provider: 'meta_cloud', displayName: 'Trim',
+        metaCloud: { wabaId: '  w  ', phoneNumberId: ' p\n', accessToken: '  at\n', appSecret: 'as ' },
+      });
+    expect(res.status).toBe(201);
+    expect(vi.mocked(getPhoneNumberInfo)).toHaveBeenCalledWith(
+      expect.objectContaining({ phoneNumberId: 'p', accessToken: 'at' }),
+    );
+    const [row] = await db.select().from(whatsappInstance);
+    const cfg = row.providerConfig as Record<string, unknown>;
+    expect(cfg.wabaId).toBe('w');
+    expect(cfg.phoneNumberId).toBe('p');
+  });
 });
 
 describe('GET /api/whatsapp/instances/:id/webhook-info', () => {
