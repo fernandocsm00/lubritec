@@ -10,7 +10,10 @@ import {
   deleteTemplateOnMeta,
 } from './whatsapp/metaCloud/templates';
 import { MetaGraphError } from './whatsapp/metaCloud/client';
+import { countBodyVariables, sanitizeComponents, validateComponentsForMeta } from './hsmComponents';
 import type { HsmComponent, HsmStatus, HsmCategory, CampaignHsmVariable } from '@shared/types';
+
+export { countBodyVariables, sanitizeComponents, validateComponentsForMeta };
 
 // ── Variable resolution ─────────────────────────────────────────────────────
 
@@ -37,17 +40,6 @@ export function resolveHsmVariables(
   });
 }
 
-/** Count unique {{N}} placeholders in the BODY component of an HSM template. */
-export function countBodyVariables(components: HsmComponent[]): number {
-  for (const c of components) {
-    if (c.type === 'BODY') {
-      const matches = c.text.match(/\{\{\d+\}\}/g);
-      return matches ? new Set(matches).size : 0;
-    }
-  }
-  return 0;
-}
-
 export interface CreateLocalInput {
   instanceId: string;
   createdBy: string;
@@ -72,12 +64,14 @@ export async function createTemplate(input: CreateLocalInput) {
   if (!/^[a-z0-9_]+$/.test(input.name)) {
     throw new HttpError(422, 'name must be snake_case (lowercase + digits + underscore)');
   }
-  const variableCount = countBodyVariables(input.components);
+  const components = sanitizeComponents(input.components);
+  const variableCount = countBodyVariables(components);
 
   let metaTemplateId: string | null = null;
   let status: HsmStatus = 'DRAFT';
 
   if (input.submitNow) {
+    validateComponentsForMeta(components);
     const cfg = await loadMetaCfg(input.instanceId);
     try {
       const res = await createOnMeta({
@@ -86,7 +80,7 @@ export async function createTemplate(input: CreateLocalInput) {
         name: input.name,
         language: input.language,
         category: input.category,
-        components: input.components,
+        components,
       });
       metaTemplateId = res.metaTemplateId;
       status = 'PENDING';
@@ -108,7 +102,7 @@ export async function createTemplate(input: CreateLocalInput) {
     language: input.language,
     category: input.category,
     status,
-    components: input.components,
+    components,
     metaTemplateId,
     variableCount,
     lastSyncedAt: metaTemplateId ? new Date() : null,
@@ -142,11 +136,13 @@ export async function updateTemplate(input: UpdateLocalInput) {
       `Para alterar um template aprovado, crie uma nova versão com nome diferente.`);
   }
 
-  const variableCount = countBodyVariables(input.components);
+  const components = sanitizeComponents(input.components);
+  const variableCount = countBodyVariables(components);
   let metaTemplateId: string | null = null;
   let status: HsmStatus = 'DRAFT';
 
   if (input.submitNow) {
+    validateComponentsForMeta(components);
     const cfg = await loadMetaCfg(input.instanceId);
     try {
       const res = await createOnMeta({
@@ -155,7 +151,7 @@ export async function updateTemplate(input: UpdateLocalInput) {
         name: input.name,
         language: input.language,
         category: input.category,
-        components: input.components,
+        components,
       });
       metaTemplateId = res.metaTemplateId;
       status = 'PENDING';
@@ -171,7 +167,7 @@ export async function updateTemplate(input: UpdateLocalInput) {
     name: input.name,
     language: input.language,
     category: input.category,
-    components: input.components,
+    components,
     variableCount,
     ...(input.submitNow ? { status, metaTemplateId, lastSyncedAt: new Date() } : {}),
     updatedAt: new Date(),

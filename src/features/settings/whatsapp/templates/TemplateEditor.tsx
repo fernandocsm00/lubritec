@@ -67,7 +67,21 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
   const nameValid = /^[a-z0-9_]+$/.test(name);
   const bodyComp = components.find((c) => c.type === 'BODY');
   const hasBody = !!bodyComp && 'text' in bodyComp && bodyComp.text.trim().length > 0;
-  const canSave = nameValid && hasBody;
+
+  // HEADER de texto vazio → Meta rejeita (subcode 2388043). Bloqueia salvar.
+  const headerComp = components.find((c) => c.type === 'HEADER');
+  const headerTextEmpty = !!headerComp && 'format' in headerComp
+    && headerComp.format === 'TEXT'
+    && !('text' in headerComp && headerComp.text.trim().length > 0);
+
+  // Variáveis do BODY devem ser numéricas ({{1}}…), não {{nome}}.
+  const bodyText = bodyComp && 'text' in bodyComp ? bodyComp.text : '';
+  const invalidVars = [...new Set(
+    (bodyText.match(/\{\{[^}]*\}\}/g) ?? []).filter((p) => !/^\{\{\s*\d+\s*\}\}$/.test(p)),
+  )];
+  const hasInvalidVars = invalidVars.length > 0;
+
+  const canSave = nameValid && hasBody && !headerTextEmpty && !hasInvalidVars;
 
   const submit = (asDraft: boolean) => {
     const body = { name, language, category, components, submitNow: !asDraft };
@@ -140,6 +154,16 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
 
             <TemplateComponentsEditor components={components} onChange={setComponents} />
 
+            {headerTextEmpty && (
+              <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded px-3 py-2">
+                O HEADER está como "Texto" mas está vazio. Preencha o texto do cabeçalho ou mude o HEADER para "Nenhum".
+              </div>
+            )}
+            {hasInvalidVars && (
+              <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded px-3 py-2">
+                Variáveis inválidas no BODY: {invalidVars.join(', ')}. A Meta só aceita variáveis numéricas — use {'{{1}}, {{2}}, …'}.
+              </div>
+            )}
             {mutation.error && (
               <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
                 {mutation.error instanceof Error ? mutation.error.message : String(mutation.error)}

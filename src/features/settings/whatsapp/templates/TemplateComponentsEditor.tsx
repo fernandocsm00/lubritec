@@ -112,13 +112,22 @@ export function TemplateComponentsEditor({ components, onChange }: Props) {
           <option value="DOCUMENT">Documento</option>
         </select>
         {header && 'format' in header && header.format === 'TEXT' && 'text' in header && (
-          <input
-            value={header.text}
-            onChange={(e) => setHeaderText(e.target.value)}
-            maxLength={60}
-            placeholder="Texto do cabeçalho (max 60 chars)"
-            className="mt-2 w-full border border-zinc-300 rounded px-3 py-2 text-sm"
-          />
+          <>
+            <input
+              value={header.text}
+              onChange={(e) => setHeaderText(e.target.value)}
+              maxLength={60}
+              placeholder="Texto do cabeçalho (max 60 chars)"
+              className={`mt-2 w-full border rounded px-3 py-2 text-sm ${
+                header.text.trim().length === 0 ? 'border-amber-400' : 'border-zinc-300'
+              }`}
+            />
+            {header.text.trim().length === 0 && (
+              <p className="text-xs text-amber-700 mt-1">
+                Obrigatório para header de texto. Deixe em branco só se mudar o HEADER para "Nenhum".
+              </p>
+            )}
+          </>
         )}
         {header && 'format' in header && header.format !== 'TEXT' && (
           <p className="text-xs text-zinc-500 mt-2">
