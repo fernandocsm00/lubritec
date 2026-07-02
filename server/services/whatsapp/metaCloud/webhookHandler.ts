@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { db } from '../../../db/client';
 import { whatsappInstance } from '../../../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { decryptSecret } from '../../../lib/crypto';
 import { metaCloudConfigSchema, type MetaCloudConfig } from './configSchema';
 import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebhookService';
@@ -51,6 +51,40 @@ export async function loadMetaInstance(instanceId: string): Promise<{
     .where(eq(whatsappInstance.id, instanceId)).limit(1);
   if (!row || row.provider !== 'meta_cloud') return null;
   return { cfg: metaCloudConfigSchema.parse(row.providerConfig), rowId: row.id };
+}
+
+/**
+ * Resolve a instância meta_cloud dona de um valor de config (phoneNumberId ou
+ * wabaId), lido do payload do webhook.
+ *
+ * Por quê: a Meta permite UMA callback URL por App, mas um App pode ter vários
+ * números (WABAs). Como a URL carrega o instanceId, sem isto só a instância da
+ * URL receberia inbound. Roteando pelo phone_number_id do payload, uma URL só
+ * atende todas as linhas do mesmo App. `field` é sempre um literal controlado
+ * (não vem do usuário), então a interpolação no ->> é segura.
+ */
+async function resolveMetaInstanceByConfig(
+  field: 'phoneNumberId' | 'wabaId',
+  value: string,
+): Promise<{ instanceId: string; cfg: MetaCloudConfig } | null> {
+  const [row] = await db.select().from(whatsappInstance)
+    .where(and(
+      eq(whatsappInstance.provider, 'meta_cloud'),
+      sql`${whatsappInstance.providerConfig} ->> ${field} = ${value}`,
+    ))
+    .limit(1);
+  if (!row) return null;
+  const parsed = metaCloudConfigSchema.safeParse(row.providerConfig);
+  if (!parsed.success) return null;
+  return { instanceId: row.id, cfg: parsed.data };
+}
+
+export function resolveMetaInstanceByPhoneNumberId(phoneNumberId: string) {
+  return resolveMetaInstanceByConfig('phoneNumberId', phoneNumberId);
+}
+
+export function resolveMetaInstanceByWabaId(wabaId: string) {
+  return resolveMetaInstanceByConfig('wabaId', wabaId);
 }
 
 export function verifyHmac(
@@ -151,24 +185,41 @@ async function processOneMessage(
 }
 
 export async function processMetaWebhook(
-  instanceId: string,
-  cfg: MetaCloudConfig,
+  fallbackInstanceId: string,
+  fallbackCfg: MetaCloudConfig,
   body: MetaWebhookBody,
 ): Promise<void> {
-  const accessToken = decryptSecret(cfg.accessToken);
+  const fallback = { instanceId: fallbackInstanceId, cfg: fallbackCfg };
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (change.field === 'messages' && change.value.messages) {
+        // Roteia pela linha dona do phone_number_id do payload; fallback = instância da URL.
+        const phoneNumberId = change.value.metadata?.phone_number_id;
+        const target = (phoneNumberId
+          ? await resolveMetaInstanceByPhoneNumberId(phoneNumberId)
+          : null) ?? fallback;
+        const accessToken = decryptSecret(target.cfg.accessToken);
         const contactName = change.value.contacts?.[0]?.profile?.name;
+        let ingestedAny = false;
         for (const msg of change.value.messages) {
           try {
-            await processOneMessage(instanceId, accessToken, contactName, msg);
+            await processOneMessage(target.instanceId, accessToken, contactName, msg);
+            ingestedAny = true;
           } catch (err) {
             console.error('[meta-webhook] message ingest failed:', err);
           }
         }
+        // Recebeu inbound de fato → marca a assinatura na linha certa (idempotente),
+        // pra UI não mostrar "webhook não assinado" numa linha que já funciona via URL compartilhada.
+        if (ingestedAny) {
+          markWebhookSubscribed(target.instanceId).catch(() => { /* best-effort */ });
+        }
       }
       if (change.field === 'message_template_status_update') {
+        // Status de template é por WABA (entry.id) — roteia pela linha dona da WABA.
+        const target = (entry.id
+          ? await resolveMetaInstanceByWabaId(entry.id)
+          : null) ?? fallback;
         const v = change.value as unknown as {
           event?: string;
           message_template_id?: number | string;
@@ -182,7 +233,7 @@ export async function processMetaWebhook(
         }
         try {
           await updateTemplateStatus({
-            instanceId,
+            instanceId: target.instanceId,
             metaTemplateId: String(v.message_template_id),
             name: v.message_template_name,
             language: v.message_template_language,

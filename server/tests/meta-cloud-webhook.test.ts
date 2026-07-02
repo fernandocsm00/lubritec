@@ -7,6 +7,7 @@ import {
   whatsappInstance, conversations, messages, leads,
 } from '../db/schema';
 import { createWhatsappInstance } from './helpers';
+import { eq } from 'drizzle-orm';
 import { encryptSecret, _resetKeyCache } from '../lib/crypto';
 import textFixture from './fixtures/meta-webhook-text.json';
 import imageFixture from './fixtures/meta-webhook-image.json';
@@ -167,5 +168,69 @@ describe('POST /api/whatsapp/webhook/meta/:instanceId (events)', () => {
     expect(msg.mediaUrl).toMatch(/^\/uploads\/inbound\//);
     expect(msg.mediaUrl).not.toContain('lookaside');
     expect(msg.mediaMime).toBe('image/jpeg');
+  });
+});
+
+describe('roteamento multi-linha por phone_number_id (1 App / 1 callback URL)', () => {
+  it('roteia a mensagem para a instância dona do phone_number_id, não a da URL', async () => {
+    // Instância dona do App/callback URL (assina o HMAC) — com OUTRO número.
+    const urlInst = await createWhatsappInstance({
+      provider: 'meta_cloud', displayName: 'App Owner', isDefault: false,
+      providerConfig: {
+        wabaId: 'WABA_OWNER', phoneNumberId: 'PHONE_OWNER_999',
+        accessToken: encryptSecret('token-owner'), appSecret: encryptSecret(APP_SECRET),
+        webhookVerifyToken: VERIFY_TOKEN, webhookSubscribed: true,
+      },
+    });
+    // Instância que de fato recebeu — bate com metadata.phone_number_id da fixture.
+    const recipient = await createWhatsappInstance({
+      provider: 'meta_cloud', displayName: 'Recipient', isDefault: true,
+      providerConfig: {
+        wabaId: 'WABA_ID_123', phoneNumberId: 'PHONE_NUMBER_ID_456',
+        accessToken: encryptSecret('token-recipient'), appSecret: encryptSecret(APP_SECRET),
+        webhookVerifyToken: VERIFY_TOKEN, webhookSubscribed: false,
+      },
+    });
+    const body = JSON.stringify(textFixture);
+    const sig = signBody(body, APP_SECRET);
+    const res = await request(app)
+      .post(`/api/whatsapp/webhook/meta/${urlInst.id}`)
+      .set('X-Hub-Signature-256', sig)
+      .set('Content-Type', 'application/json')
+      .send(body);
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const convs = await db.select().from(conversations);
+    expect(convs).toHaveLength(1);
+    expect(convs[0].instanceId).toBe(recipient.id);
+
+    // Flag webhookSubscribed é promovido na instância que recebeu (mantém UI honesta).
+    const [rec] = await db.select().from(whatsappInstance).where(eq(whatsappInstance.id, recipient.id));
+    expect((rec.providerConfig as { webhookSubscribed?: boolean }).webhookSubscribed).toBe(true);
+  });
+
+  it('cai na instância da URL quando nenhuma instância bate com o phone_number_id', async () => {
+    const urlInst = await createWhatsappInstance({
+      provider: 'meta_cloud', displayName: 'Only', isDefault: true,
+      providerConfig: {
+        wabaId: 'WABA_URL', phoneNumberId: 'PHONE_URL_ONLY',
+        accessToken: encryptSecret('t'), appSecret: encryptSecret(APP_SECRET),
+        webhookVerifyToken: VERIFY_TOKEN, webhookSubscribed: false,
+      },
+    });
+    const body = JSON.stringify(textFixture); // phone_number_id 456 não bate com PHONE_URL_ONLY
+    const sig = signBody(body, APP_SECRET);
+    const res = await request(app)
+      .post(`/api/whatsapp/webhook/meta/${urlInst.id}`)
+      .set('X-Hub-Signature-256', sig)
+      .set('Content-Type', 'application/json')
+      .send(body);
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const convs = await db.select().from(conversations);
+    expect(convs).toHaveLength(1);
+    expect(convs[0].instanceId).toBe(urlInst.id);
   });
 });
