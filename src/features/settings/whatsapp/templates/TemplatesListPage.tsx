@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Plus, RefreshCw, Loader2, Trash2, Pencil, Clock, AlertCircle } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Trash2, Pencil, Clock, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useInstancesList } from '../api';
 import { useTemplates, useDeleteTemplate, useSyncTemplates } from './api';
 import { TemplateStatusBadge } from './TemplateStatusBadge';
 import { TemplateEditor } from './TemplateEditor';
+import { TemplatePreview } from './TemplatePreview';
 import type { HsmTemplateRecord } from './types';
 
 // Templates em PENDING há muito tempo são suspeitos — geralmente Meta resolve
@@ -34,6 +35,15 @@ export function TemplatesListPage() {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<HsmTemplateRecord | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   // Pick the first Meta instance as default when data loads
   const effectiveInstanceId = selectedInstanceId ?? metaInstances[0]?.id ?? null;
@@ -120,8 +130,19 @@ export function TemplatesListPage() {
         <div className="space-y-2">
           {data.items.map((tpl) => {
             const pendingStuck = tpl.status === 'PENDING' && hoursSince(tpl.lastSyncedAt) > PENDING_STUCK_HOURS;
+            const isOpen = expanded.has(tpl.id);
             return (
-            <div key={tpl.id} className="border border-zinc-200 rounded-lg p-4 flex items-center gap-4">
+            <div key={tpl.id} className="border border-zinc-200 rounded-lg">
+              <div className="p-4 flex items-center gap-3">
+                <button
+                  onClick={() => toggleExpanded(tpl.id)}
+                  className="p-1 -ml-1 rounded text-zinc-500 hover:bg-zinc-100 shrink-0"
+                  aria-label={isOpen ? 'Ocultar mensagem' : 'Ver mensagem'}
+                  aria-expanded={isOpen}
+                  title={isOpen ? 'Ocultar mensagem' : 'Ver mensagem'}
+                >
+                  {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </button>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-sm font-medium">{tpl.name}</span>
@@ -165,6 +186,15 @@ export function TemplatesListPage() {
               >
                 <Trash2 size={16} />
               </button>
+              </div>
+              {isOpen && (
+                <div className="border-t border-zinc-100 px-4 py-4 bg-zinc-50/50">
+                  <p className="text-xs font-medium text-zinc-500 mb-2">
+                    Mensagem {tpl.status === 'APPROVED' ? 'aprovada' : tpl.status === 'REJECTED' ? 'rejeitada' : 'enviada'} à Meta
+                  </p>
+                  <TemplatePreview components={tpl.components} />
+                </div>
+              )}
             </div>
             );
           })}
