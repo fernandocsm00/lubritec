@@ -11,44 +11,57 @@ const PREVIEW_PAGE_SIZE_DEFAULT = 50;
 const PREVIEW_PAGE_SIZE_MAX = 200;
 const ELIGIBLE_IDS_CAP = 10_000;
 
-function buildWhere(filter: AudienceFilters): SQL | undefined {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// excludeLeadIds pode conter ids sintéticos de leads NOVOS do CSV (ex.:
+// "new:5511..."), que não são leads reais. Filtra pra só UUIDs válidos antes de
+// usar em notInArray(leads.id) — senão o Postgres estoura ao castar pra uuid.
+function realLeadIds(ids: string[] | undefined): string[] {
+  return (ids ?? []).filter((id) => UUID_RE.test(id));
+}
+
+/**
+ * Quando o usuario sobe um CSV de telefones, a audiencia da campanha passa a
+ * ser EXATAMENTE os telefones do CSV — a intencao e "disparar pra essa lista".
+ * Por isso os filtros de status/origem/dias sao IGNORADOS enquanto ha CSV
+ * (nao faz sentido cruzar com status de leads que ainda nem existem). O opt-out
+ * manual (excludeLeadIds) continua valendo.
+ */
+function buildWhere(filter: AudienceFilters, csvActive: boolean): SQL | undefined {
   const conds: SQL[] = [
     // Campanhas SEMPRE excluem leads sem telefone (não dá pra disparar).
     isNotNull(leads.phone),
   ];
 
-  if (filter.status?.length) conds.push(inArray(leads.status, filter.status));
-  if (filter.source?.length) conds.push(inArray(leads.source, filter.source));
-  if (filter.daysSinceCreated != null && filter.daysSinceCreated >= 0) {
-    conds.push(sql`${leads.createdAt} <= now() - interval '${sql.raw(String(filter.daysSinceCreated))} days'`);
-  }
-  if (filter.excludeLeadIds?.length) {
-    conds.push(notInArray(leads.id, filter.excludeLeadIds));
+  if (!csvActive) {
+    if (filter.status?.length) conds.push(inArray(leads.status, filter.status));
+    if (filter.source?.length) conds.push(inArray(leads.source, filter.source));
+    if (filter.daysSinceCreated != null && filter.daysSinceCreated >= 0) {
+      conds.push(sql`${leads.createdAt} <= now() - interval '${sql.raw(String(filter.daysSinceCreated))} days'`);
+    }
   }
 
-  // CSV de telefones RESTRINGE a audiência (AND com os demais filtros): quando
-  // o usuário sobe uma planilha, ele quer disparar SÓ para aqueles telefones —
-  // não somá-los a todo mundo que já bate nos filtros. Sem outros filtros
-  // selecionados, o resultado é exatamente a lista do CSV (que existe na base).
-  //
-  // Os telefones do CSV são normalizados para a forma canônica E.164 (55 + DDD
-  // + 9) antes de comparar: a base grava sempre canônico, mas a planilha pode
-  // vir sem o 9 (ou sem o 55). Sem isso, um número da planilha sem o 9 nunca
-  // casaria com o mesmo lead gravado com 9 e ficaria de fora silenciosamente.
-  if (filter.phoneCsv?.length) {
-    const canonical = Array.from(
-      new Set(
-        filter.phoneCsv
-          .map((p) => toCanonicalBrPhone(p))
-          .filter((p): p is string => p !== null),
-      ),
-    );
-    // Se nenhum telefone do CSV normalizou, a audiência é vazia (não some o
-    // filtro — o usuário subiu uma planilha inválida e deve ver 0 impactados).
-    conds.push(canonical.length ? inArray(leads.phone, canonical) : sql`false`);
+  const excludeIds = realLeadIds(filter.excludeLeadIds);
+  if (excludeIds.length) {
+    conds.push(notInArray(leads.id, excludeIds));
   }
 
   return and(...conds);
+}
+
+/**
+ * Canonicaliza (E.164 BR com 9) e deduplica os telefones do CSV, descartando
+ * os invalidos. Retorna null quando nao ha CSV. Um Set VAZIO (CSV presente mas
+ * todos os telefones invalidos) resulta em audiencia vazia — nao "sem filtro".
+ */
+function csvCanonicalSet(filter: AudienceFilters): Set<string> | null {
+  if (!filter.phoneCsv?.length) return null;
+  const set = new Set<string>();
+  for (const p of filter.phoneCsv) {
+    const c = toCanonicalBrPhone(p);
+    if (c) set.add(c);
+  }
+  return set;
 }
 
 export interface DryRunOpts {
@@ -57,9 +70,10 @@ export interface DryRunOpts {
 }
 
 export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Promise<CampaignDryRunResponse> {
-  const where = buildWhere(filter);
+  const csvSet = csvCanonicalSet(filter);
+  const where = buildWhere(filter, csvSet !== null);
 
-  const allRows = await db
+  const rawRows = await db
     .select({
       leadId: leads.id,
       name: leads.name,
@@ -70,28 +84,69 @@ export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Pr
     .from(leads)
     .where(where);
 
-  const total = allRows.length;
-  const ids = allRows.map((r) => r.leadId);
+  // Leads existentes que casam com a audiencia. Para CSV, normalizamos OS DOIS
+  // lados (telefone do lead e telefone do CSV) porque a base tem formatos
+  // mistos (legado sem o 9, sem o 55) e comparacao literal perderia matches.
+  type Row = { leadId: string; name: string; phone: string; cnpj: string | null; createdAt: Date };
+  let existingRows: Row[] = rawRows.filter((r): r is Row => r.phone !== null);
+
+  // Telefones do CSV que ainda NAO sao lead — serao criados na criacao da
+  // campanha. No preview so contamos (nada e gravado aqui).
+  let newPhones: string[] = [];
+
+  if (csvSet) {
+    const matched = new Set<string>();
+    existingRows = existingRows.filter((r) => {
+      const c = toCanonicalBrPhone(r.phone);
+      if (c && csvSet.has(c)) {
+        matched.add(c);
+        return true;
+      }
+      return false;
+    });
+    newPhones = [...csvSet].filter((c) => !matched.has(c));
+  }
+
+  const newFromCsv = newPhones.length;
+
+  const ids = existingRows.map((r) => r.leadId);
   const { eligible, blocked } = await filterEligibleLeads(ids, {});
 
-  // Mapa leadId -> reason pra anotar no preview.
   const blockReasonByLead = new Map<string, 'recent_outbound' | 'pending_other_campaign'>();
   for (const b of blocked) {
     blockReasonByLead.set(b.leadId, b.reason);
   }
 
-  // Preview agora inclui BLOQUEADOS junto com elegiveis -- usuario precisa ver
-  // quem nao vai receber (e por que) antes de confirmar a campanha. Ordena
-  // elegiveis primeiro pra paginacao consistente.
   const eligibleSet = new Set(eligible);
-  const sortedRows = [...allRows]
-    .filter((r): r is typeof r & { phone: string } => r.phone !== null)
-    .sort((a, b) => {
-      const aBlocked = !eligibleSet.has(a.leadId);
-      const bBlocked = !eligibleSet.has(b.leadId);
-      if (aBlocked === bBlocked) return 0;
-      return aBlocked ? 1 : -1; // elegiveis primeiro
-    });
+
+  // Linhas de preview: existentes (com blockReason) + sinteticas pros telefones
+  // novos (sempre elegiveis, sem lead ainda). Elegiveis primeiro pra paginacao.
+  const now = new Date();
+  const existingPreview = existingRows.map((r) => ({
+    leadId: r.leadId,
+    name: r.name,
+    phone: r.phone,
+    cnpj: r.cnpj,
+    createdAt: r.createdAt,
+    blockReason: blockReasonByLead.get(r.leadId) ?? null,
+    isNew: false,
+    eligible: eligibleSet.has(r.leadId),
+  }));
+  const newPreview = newPhones.map((phone) => ({
+    leadId: `new:${phone}`,
+    name: phone,
+    phone,
+    cnpj: null as string | null,
+    createdAt: now,
+    blockReason: null as CampaignDryRunResponse['preview'][number]['blockReason'],
+    isNew: true,
+    eligible: true,
+  }));
+
+  const sortedRows = [...existingPreview, ...newPreview].sort((a, b) => {
+    if (a.eligible === b.eligible) return 0;
+    return a.eligible ? -1 : 1; // elegiveis primeiro
+  });
 
   const pageSize = Math.min(PREVIEW_PAGE_SIZE_MAX, Math.max(1, opts.pageSize ?? PREVIEW_PAGE_SIZE_DEFAULT));
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
@@ -107,37 +162,90 @@ export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Pr
     { recentOutbound: 0, pendingOtherCampaign: 0 },
   );
 
-  // eligibleIds: lista completa pra "marcar/desmarcar todos" no frontend
-  // sem precisar buscar pagina por pagina. Cap pra evitar payload absurdo
-  // em audiencias gigantes (improvavel, mas defensivo).
+  // total e eligible incluem os telefones novos (que serao criados e disparados).
+  const total = existingRows.length + newFromCsv;
+  const eligibleCount = eligible.length + newFromCsv;
+
+  // eligibleIds: só ids REAIS de leads existentes elegíveis (os novos ainda não
+  // têm id e não podem ser individualmente excluídos antes de criados).
   const eligibleIds = eligible.length <= ELIGIBLE_IDS_CAP ? eligible : [];
 
   return {
     total,
-    eligible: eligible.length,
+    eligible: eligibleCount,
     blocked: blockedCounts,
     eligibleIds,
     page,
     pageSize,
     pageCount,
+    newFromCsv,
     preview: previewRows.map((r) => ({
       leadId: r.leadId,
       name: r.name,
       phone: r.phone,
       cnpj: r.cnpj,
       createdAt: r.createdAt.toISOString(),
-      blockReason: blockReasonByLead.get(r.leadId) ?? null,
+      blockReason: r.blockReason,
+      isNew: r.isNew,
     })),
   };
 }
 
 export async function resolveAudience(filter: AudienceFilters): Promise<Array<{ leadId: string; phone: string }>> {
-  const where = buildWhere(filter);
+  const csvSet = csvCanonicalSet(filter);
+  const where = buildWhere(filter, csvSet !== null);
   const rows = await db
     .select({ id: leads.id, phone: leads.phone })
     .from(leads)
     .where(where);
-  return rows
-    .filter((r): r is typeof r & { phone: string } => r.phone !== null)
-    .map((r) => ({ leadId: r.id, phone: r.phone }));
+
+  let out = rows.filter((r): r is typeof r & { phone: string } => r.phone !== null);
+  if (csvSet) {
+    out = out.filter((r) => {
+      const c = toCanonicalBrPhone(r.phone);
+      return c !== null && csvSet.has(c);
+    });
+  }
+  return out.map((r) => ({ leadId: r.id, phone: r.phone }));
+}
+
+/**
+ * Cria como leads os telefones do CSV que ainda nao existem na base (comparacao
+ * por telefone CANONICO, pra nao duplicar leads legados gravados sem o 9/55).
+ * Leads criados: phone canonico, name = telefone, source='csv', status='frio',
+ * flowStage='complete' (tem telefone). Sem CNPJ, sem enriquecimento, sem
+ * auto-enroll na continua — sao contatos "crus" so pra receber a campanha.
+ *
+ * Idempotente: rodar duas vezes com o mesmo CSV nao recria os ja existentes.
+ * Retorna quantos leads foram criados.
+ */
+export async function materializeCsvLeads(filter: AudienceFilters): Promise<number> {
+  const csvSet = csvCanonicalSet(filter);
+  if (!csvSet || csvSet.size === 0) return 0;
+
+  const existingRows = await db
+    .select({ phone: leads.phone })
+    .from(leads)
+    .where(isNotNull(leads.phone));
+
+  const existingCanonical = new Set<string>();
+  for (const r of existingRows) {
+    const c = toCanonicalBrPhone(r.phone);
+    if (c) existingCanonical.add(c);
+  }
+
+  const missing = [...csvSet].filter((c) => !existingCanonical.has(c));
+  if (missing.length === 0) return 0;
+
+  await db.insert(leads).values(
+    missing.map((phone) => ({
+      name: phone,
+      phone,
+      source: 'csv' as const,
+      status: 'frio' as const,
+      flowStage: 'complete' as const,
+    })),
+  );
+
+  return missing.length;
 }

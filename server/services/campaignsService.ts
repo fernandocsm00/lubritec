@@ -17,7 +17,7 @@ import type {
   CampaignCalibrationMetrics,
 } from '@shared/types';
 import { LOSS_REASONS } from '@shared/types';
-import { resolveAudience } from './campaignsAudience';
+import { resolveAudience, materializeCsvLeads } from './campaignsAudience';
 import { filterEligibleLeads } from './campaignsCooldown';
 import { getTemplateById, countBodyVariables } from './hsmTemplateService';
 import type { HsmComponent } from '@shared/types';
@@ -172,6 +172,11 @@ export async function createCampaign(input: {
       }
     }
   }
+
+  // Se a audiência tem CSV de telefones, materializa como leads os números que
+  // ainda não existem na base ANTES de resolver a audiência — assim eles entram
+  // como destinatários. Idempotente e por telefone canônico (não duplica).
+  await materializeCsvLeads(input.audienceFilter);
 
   const audience = await resolveAudience(input.audienceFilter);
   const audienceIds = audience.map((a) => a.leadId);

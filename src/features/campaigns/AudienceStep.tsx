@@ -122,6 +122,11 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold">{total} lead(s) impactado(s)</div>
+            {(dryRun.data?.newFromCsv ?? 0) > 0 && (
+              <div className="text-xs text-emerald-600">
+                {dryRun.data!.newFromCsv} novo(s) lead(s) serão criados a partir do CSV
+              </div>
+            )}
             {(filters.excludeLeadIds?.length ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">
                 {filters.excludeLeadIds!.length} excluído(s) manualmente

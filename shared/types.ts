@@ -469,6 +469,12 @@ export interface CampaignDryRunResponse {
   pageSize: number;
   /** Total de paginas (max(1, ceil(totalComPhone / pageSize))). */
   pageCount: number;
+  /**
+   * Quantos telefones do CSV ainda NAO existem como lead e serao criados no
+   * momento em que a campanha for criada. Ja contabilizados em `total` e
+   * `eligible`. 0 (ou ausente) quando nao ha CSV ou tudo ja existe.
+   */
+  newFromCsv?: number;
   preview: Array<{
     leadId: string;
     name: string;
@@ -477,6 +483,8 @@ export interface CampaignDryRunResponse {
     createdAt: string;
     /** null = elegivel; string = motivo de bloqueio. */
     blockReason: CampaignBlockReason | null;
+    /** true = telefone do CSV que ainda nao e lead (sera criado na campanha). */
+    isNew?: boolean;
   }>;
 }
 

@@ -100,7 +100,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
   function markPage() {
     if (!data) return;
     const pageEligibleIds = data.preview
-      .filter((p) => p.blockReason == null)
+      .filter((p) => p.blockReason == null && !p.isNew)
       .map((p) => p.leadId);
     const pageSet = new Set(pageEligibleIds);
     onExcludedChange(excluded.filter((id) => !pageSet.has(id)));
@@ -109,7 +109,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
   function unmarkPage() {
     if (!data) return;
     const pageEligibleIds = data.preview
-      .filter((p) => p.blockReason == null)
+      .filter((p) => p.blockReason == null && !p.isNew)
       .map((p) => p.leadId);
     const merged = new Set([...excluded, ...pageEligibleIds]);
     onExcludedChange(Array.from(merged));
@@ -201,16 +201,25 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
               <TableBody>
                 {items.map((l) => {
                   const blocked = l.blockReason != null;
-                  const checked = !blocked && !excluded.includes(l.leadId);
+                  // Leads novos (do CSV, ainda não criados) entram sempre — não
+                  // dá pra excluir individualmente antes de existirem. Pra tirar
+                  // um número, remova-o do CSV.
+                  const checked = l.isNew || (!blocked && !excluded.includes(l.leadId));
                   return (
                     <TableRow key={l.leadId} className={blocked ? 'opacity-60' : ''}>
                       <TableCell>
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={blocked}
+                          disabled={blocked || l.isNew}
                           onChange={() => toggle(l.leadId)}
-                          title={blocked ? 'Bloqueado — não pode ser incluído' : undefined}
+                          title={
+                            l.isNew
+                              ? 'Novo contato do CSV — será criado e incluído. Para remover, edite o CSV.'
+                              : blocked
+                                ? 'Bloqueado — não pode ser incluído'
+                                : undefined
+                          }
                         />
                       </TableCell>
                       <TableCell>{l.name}</TableCell>
@@ -229,7 +238,12 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
                             Em outra campanha
                           </span>
                         )}
-                        {!l.blockReason && (
+                        {!l.blockReason && l.isNew && (
+                          <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/30">
+                            Novo (CSV)
+                          </span>
+                        )}
+                        {!l.blockReason && !l.isNew && (
                           <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
                             Elegível
                           </span>
