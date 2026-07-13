@@ -83,6 +83,17 @@ export function toCanonicalBrPhone(raw: string | null | undefined): string | nul
   // Trata casos com 0 internacional (raro): "0055..." -> "55..."
   if (digits.startsWith('00')) digits = digits.slice(2);
 
+  // Prefixo de tronco nacional "0" antes do DDD — MUITO comum em planilhas
+  // ("011 98765-4321", "021...", "031..."). Nenhum numero BR valido comeca com
+  // 0 (DDD 1-9, pais 55), entao um 0 inicial e sempre artefato de discagem.
+  if (digits.startsWith('0')) digits = digits.replace(/^0+/, '');
+
+  // Caso "55" + "0" + DDD (pais junto com o tronco): "55011987654321" (14 dig)
+  // -> remove o 0 -> "5511987654321".
+  if (digits.length === 14 && digits.startsWith('550')) {
+    digits = '55' + digits.slice(3);
+  }
+
   // Garante o "55" do pais.
   // Casos sem 55: 10 ou 11 digitos (DDD + numero) — prepend "55"
   // Casos com 55: 12 ou 13 digitos

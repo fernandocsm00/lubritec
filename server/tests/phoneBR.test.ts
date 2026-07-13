@@ -27,6 +27,22 @@ describe('toCanonicalBrPhone', () => {
     });
   });
 
+  describe('prefixo de tronco nacional "0" antes do DDD (planilhas)', () => {
+    it('remove o 0 e canonicaliza: "011 98765-4321" -> celular SP', () => {
+      expect(toCanonicalBrPhone('011987654321')).toBe('5511987654321');
+      expect(toCanonicalBrPhone('0 11 98765-4321')).toBe('5511987654321');
+    });
+    it('remove o 0 de fixo com tronco: "011 3333-4444"', () => {
+      expect(toCanonicalBrPhone('01133334444')).toBe('551133334444');
+    });
+    it('trata "55" + "0" + DDD: "55011987654321"', () => {
+      expect(toCanonicalBrPhone('55011987654321')).toBe('5511987654321');
+    });
+    it('trata "0" + "55" + numero: "05511987654321"', () => {
+      expect(toCanonicalBrPhone('05511987654321')).toBe('5511987654321');
+    });
+  });
+
   describe('formato com pontuacao / sufixo WhatsApp', () => {
     it('extrai digitos de "+55 54 99653-2189"', () => {
       expect(toCanonicalBrPhone('+55 54 99653-2189')).toBe('5554996532189');

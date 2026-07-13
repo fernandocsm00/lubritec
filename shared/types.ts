@@ -475,6 +475,12 @@ export interface CampaignDryRunResponse {
    * `eligible`. 0 (ou ausente) quando nao ha CSV ou tudo ja existe.
    */
   newFromCsv?: number;
+  /**
+   * Quantos telefones do CSV foram descartados por formato invalido (nao
+   * normalizaram pra um numero BR valido). NAO entram em `total`. Serve pra
+   * avisar o operador que parte da lista nao vai receber.
+   */
+  invalidFromCsv?: number;
   preview: Array<{
     leadId: string;
     name: string;

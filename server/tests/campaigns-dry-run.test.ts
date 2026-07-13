@@ -117,6 +117,15 @@ describe('campaignsAudience.dryRun', () => {
     const r = await dryRun({ phoneCsv: ['123', '000'] });
     expect(r.total).toBe(0);
     expect(r.newFromCsv).toBe(0);
+    expect(r.invalidFromCsv).toBe(2);
+  });
+
+  it('phoneCsv com DDD com 0 na frente (formato planilha) normaliza e conta', async () => {
+    // "011987650040" = 0 (tronco) + 11 + celular -> canônico 5511987650040
+    const r = await dryRun({ phoneCsv: ['011987650040', '021987650041'] });
+    expect(r.total).toBe(2);
+    expect(r.newFromCsv).toBe(2);
+    expect(r.invalidFromCsv).toBe(0); // nenhum descartado
   });
 
   it('preview paginado por pageSize (default 50, configurável)', async () => {

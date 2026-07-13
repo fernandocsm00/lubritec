@@ -127,6 +127,11 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
                 {dryRun.data!.newFromCsv} novo(s) lead(s) serão criados a partir do CSV
               </div>
             )}
+            {(dryRun.data?.invalidFromCsv ?? 0) > 0 && (
+              <div className="text-xs text-lc-amber">
+                {dryRun.data!.invalidFromCsv} telefone(s) do CSV em formato inválido foram ignorados
+              </div>
+            )}
             {(filters.excludeLeadIds?.length ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">
                 {filters.excludeLeadIds!.length} excluído(s) manualmente

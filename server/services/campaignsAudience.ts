@@ -73,6 +73,10 @@ export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Pr
   const csvSet = csvCanonicalSet(filter);
   const where = buildWhere(filter, csvSet !== null);
 
+  // Telefones do CSV que nao normalizaram (formato invalido) — nao entram na
+  // audiencia, mas contamos pra avisar o operador.
+  const invalidFromCsv = (filter.phoneCsv ?? []).filter((p) => toCanonicalBrPhone(p) === null).length;
+
   const rawRows = await db
     .select({
       leadId: leads.id,
@@ -179,6 +183,7 @@ export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Pr
     pageSize,
     pageCount,
     newFromCsv,
+    invalidFromCsv,
     preview: previewRows.map((r) => ({
       leadId: r.leadId,
       name: r.name,
