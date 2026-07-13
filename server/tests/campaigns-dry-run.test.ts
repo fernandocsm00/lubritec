@@ -49,16 +49,38 @@ describe('campaignsAudience.dryRun', () => {
     expect(r.preview[0].leadId).toBe(b.id);
   });
 
-  it('phoneCsv inclui leads pelos telefones (OR com filtros)', async () => {
-    await createLead({ phone: '5511000050001', status: 'frio' });
-    await createLead({ phone: '5511000050002', status: 'quente' });
-    const c = await createLead({ phone: '5511000050003', status: 'morno' });
+  it('phoneCsv RESTRINGE a audiência aos telefones do CSV (AND com filtros)', async () => {
+    await createLead({ phone: '5511987650001', status: 'frio' });
+    await createLead({ phone: '5511987650002', status: 'quente' });
+    await createLead({ phone: '5511987650003', status: 'morno' });
 
-    const r = await dryRun({
-      status: ['frio'],
-      phoneCsv: ['5511000050003'],
+    // Sem outros filtros: só os leads do CSV entram (não todos da base).
+    const soCsv = await dryRun({
+      phoneCsv: ['5511987650001', '5511987650002'],
     });
-    expect(r.total).toBe(2);
+    expect(soCsv.total).toBe(2);
+
+    // Com filtro de status: interseção entre CSV e status.
+    const comStatus = await dryRun({
+      status: ['frio'],
+      phoneCsv: ['5511987650001', '5511987650003'],
+    });
+    expect(comStatus.total).toBe(1); // só o 987650001 é frio E está no CSV
+  });
+
+  it('phoneCsv normaliza telefone (CSV sem o 9 casa com lead canônico)', async () => {
+    // Lead gravado na forma canônica: 55 + 54 + 9 + 96532189
+    await createLead({ phone: '5554996532189', status: 'frio' });
+
+    // Planilha traz o mesmo número SEM o 9 e SEM o 55 (formato pré-2012 comum).
+    const r = await dryRun({ phoneCsv: ['5496532189'] });
+    expect(r.total).toBe(1);
+  });
+
+  it('phoneCsv com telefones todos inválidos resulta em audiência vazia', async () => {
+    await createLead({ phone: '5511000051001', status: 'frio' });
+    const r = await dryRun({ phoneCsv: ['123', '000'] });
+    expect(r.total).toBe(0);
   });
 
   it('preview paginado por pageSize (default 50, configurável)', async () => {

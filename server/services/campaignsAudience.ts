@@ -1,8 +1,9 @@
 import { db } from '../db/client';
 import { leads } from '../db/schema';
-import { and, or, eq, isNotNull, lte, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNotNull, lte, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { AudienceFilters, CampaignDryRunResponse } from '@shared/types';
 import { filterEligibleLeads } from './campaignsCooldown';
+import { toCanonicalBrPhone } from '../lib/phoneBR';
 
 void eq; void lte;
 
@@ -25,13 +26,26 @@ function buildWhere(filter: AudienceFilters): SQL | undefined {
     conds.push(notInArray(leads.id, filter.excludeLeadIds));
   }
 
+  // CSV de telefones RESTRINGE a audiência (AND com os demais filtros): quando
+  // o usuário sobe uma planilha, ele quer disparar SÓ para aqueles telefones —
+  // não somá-los a todo mundo que já bate nos filtros. Sem outros filtros
+  // selecionados, o resultado é exatamente a lista do CSV (que existe na base).
+  //
+  // Os telefones do CSV são normalizados para a forma canônica E.164 (55 + DDD
+  // + 9) antes de comparar: a base grava sempre canônico, mas a planilha pode
+  // vir sem o 9 (ou sem o 55). Sem isso, um número da planilha sem o 9 nunca
+  // casaria com o mesmo lead gravado com 9 e ficaria de fora silenciosamente.
   if (filter.phoneCsv?.length) {
-    const baseCondition = and(...conds);
-    const phoneCondition = and(isNotNull(leads.phone), inArray(leads.phone, filter.phoneCsv));
-    if (baseCondition) {
-      return or(baseCondition, phoneCondition);
-    }
-    return phoneCondition;
+    const canonical = Array.from(
+      new Set(
+        filter.phoneCsv
+          .map((p) => toCanonicalBrPhone(p))
+          .filter((p): p is string => p !== null),
+      ),
+    );
+    // Se nenhum telefone do CSV normalizou, a audiência é vazia (não some o
+    // filtro — o usuário subiu uma planilha inválida e deve ver 0 impactados).
+    conds.push(canonical.length ? inArray(leads.phone, canonical) : sql`false`);
   }
 
   return and(...conds);
