@@ -7,6 +7,37 @@ interface Props {
   current: string[];
 }
 
+/**
+ * Quebra uma linha de CSV respeitando aspas (RFC 4180): campos entre aspas
+ * podem conter o separador, e aspas duplas escapam ("" -> "). Sem isso, um
+ * endereço tipo "RUA X, 35" quebraria o alinhamento das colunas.
+ */
+function splitLine(line: string, delimiter: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delimiter) {
+      out.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 export function CsvUpload({ onPhones, current }: Props) {
   const [error, setError] = useState<string | null>(null);
   const aliveRef = useRef(true);
@@ -22,23 +53,53 @@ export function CsvUpload({ onPhones, current }: Props) {
       if (!aliveRef.current) return;
       // Strip UTF-8 BOM (Excel exports CSVs with one by default on Windows)
       const text = String(reader.result ?? '').replace(/^\uFEFF/, '');
-      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-      // Aceita: 1 telefone por linha, OU CSV com coluna telefone/phone/celular/whatsapp
+      const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+      if (lines.length === 0) {
+        setError('Arquivo vazio.');
+        return;
+      }
+
+      // Detecta o separador pela 1a linha: tab, ponto-e-vírgula ou vírgula.
+      // Planilhas BR (Excel) exportam muito em ; ou tab, não em vírgula.
+      const header = lines[0];
+      const count = (ch: string) => header.split(ch).length - 1;
+      const delimiter =
+        count('\t') >= count(';') && count('\t') >= count(',') ? '\t'
+        : count(';') >= count(',') ? ';'
+        : ',';
+
+      const headerCols = splitLine(header, delimiter);
+
+      // Acha a coluna de telefone pelo cabeçalho. Reconhece TELEFONE1,
+      // TELEFONE 1, CELULAR, WHATSAPP, etc. Preferimos o telefone PRIMÁRIO
+      // (telefone1/telefone) sobre o secundário (telefone2).
+      const norm = (h: string) => h.toLowerCase().replace(/[\s_]+/g, '');
+      const isPhone = (n: string) => /^(telefone|celular|whatsapp|fone|phone)/.test(n) || n === 'tel' || n === 'contato';
+      let phoneCol = headerCols.findIndex((h) => { const n = norm(h); return isPhone(n) && !n.endsWith('2'); });
+      if (phoneCol < 0) phoneCol = headerCols.findIndex((h) => isPhone(norm(h))); // aceita telefone2 se não houver primário
+      const hasHeader = phoneCol >= 0;
+
+      let startIdx: number;
+      if (hasHeader) {
+        startIdx = 1;
+      } else if (headerCols.length === 1) {
+        // Arquivo simples: 1 telefone por linha, sem cabeçalho.
+        phoneCol = 0;
+        startIdx = 0;
+      } else {
+        setError('Não encontrei a coluna de telefone. Use um cabeçalho "telefone" (ou "telefone1"/"celular"/"whatsapp"), ou envie um arquivo com só os telefones.');
+        return;
+      }
+
       const phones: string[] = [];
-      const PHONE_ALIASES = ['telefone', 'phone', 'celular', 'whatsapp', 'fone', 'tel'];
-      const firstCols = lines[0]?.split(',').map((h) => h.trim().toLowerCase()) ?? [];
-      const headerIdx = firstCols.findIndex((h) => PHONE_ALIASES.includes(h));
-      const isHeaderCsv = headerIdx >= 0;
-      const startIdx = isHeaderCsv ? 1 : 0;
-      const phoneCol = isHeaderCsv ? headerIdx : 0;
       for (let i = startIdx; i < lines.length; i++) {
-        const cols = lines[i].split(',');
-        const raw = cols[phoneCol] ?? cols[0] ?? '';
+        const cols = splitLine(lines[i], delimiter);
+        const raw = cols[phoneCol] ?? '';
         const digits = raw.replace(/\D/g, '');
         if (digits.length >= 8) phones.push(digits);
       }
       if (phones.length === 0) {
-        setError('Nenhum telefone válido encontrado no arquivo.');
+        setError('Nenhum telefone válido encontrado na coluna de telefone.');
         return;
       }
       onPhones(phones);
