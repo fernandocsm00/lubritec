@@ -122,6 +122,44 @@ describe('listBoard — filtro por campanha de ORIGEM', () => {
   });
 });
 
+describe('listBoard — grupo "Recebeu disparo" (recipient) e filtro por re-disparo', () => {
+  it('recipientCampaigns lista campanhas que dispararam para cards mas nao sao a de origem', async () => {
+    const u = await admin();
+    const lead = await createLead({ name: 'Rehit', phone: '5554900999000' });
+    await createDeal({ leadId: lead.id, stage: 'lead_no_comercial' });
+    const origem = await createCampaign({ name: 'Lista 1 origem', createdByUserId: u.id });
+    const disparo4 = await createCampaign({ name: 'Disparo 4', createdByUserId: u.id });
+    // 'origem' abriu a conversa (define a campanha de origem)
+    await createConversation({ leadId: lead.id, originKind: 'campaign', originCampaignId: origem.id });
+    // Ambas dispararam pro lead (recipients enviados)
+    await createCampaignRecipient({ campaignId: origem.id, leadId: lead.id, status: 'sent', sentAt: new Date('2026-01-01') });
+    await createCampaignRecipient({ campaignId: disparo4.id, leadId: lead.id, status: 'sent', sentAt: new Date('2026-05-01') });
+
+    const r = await listBoard(userCtx);
+    // 'origem' fica no grupo de origem.
+    expect(r.originCampaigns.map((c) => c.name)).toEqual(['Lista 1 origem']);
+    // 'Disparo 4' aparece no grupo "Recebeu disparo"; a de origem NAO se duplica aqui.
+    expect(r.recipientCampaigns.map((c) => c.name)).toEqual(['Disparo 4']);
+  });
+
+  it('filtra o board por campanha que so aparece como recipient (re-disparo)', async () => {
+    const u = await admin();
+    const leadHit = await createLead({ name: 'Recebeu D4', phone: '5554900111000' });
+    const leadOther = await createLead({ name: 'Nao recebeu', phone: '5554900222000' });
+    await createDeal({ leadId: leadHit.id, stage: 'lead_no_comercial' });
+    await createDeal({ leadId: leadOther.id, stage: 'lead_no_comercial' });
+    const origem = await createCampaign({ name: 'Origem', createdByUserId: u.id });
+    const disparo4 = await createCampaign({ name: 'Disparo 4', createdByUserId: u.id });
+    // leadHit originou de 'origem' e recebeu re-disparo da 'Disparo 4'.
+    await createConversation({ leadId: leadHit.id, originKind: 'campaign', originCampaignId: origem.id });
+    await createCampaignRecipient({ campaignId: disparo4.id, leadId: leadHit.id, status: 'sent', sentAt: new Date() });
+    // leadOther nao tem relacao nenhuma com 'Disparo 4'.
+
+    const r = await listBoard({ ...userCtx, campaignIds: [disparo4.id] });
+    expect(r.stages.lead_no_comercial.map((d) => d.lead.name)).toEqual(['Recebeu D4']);
+  });
+});
+
 describe('listHistory — campaigns e filtro por origem', () => {
   it('attaches campaigns (recipients) e filtra por campanha de origem', async () => {
     const u = await admin();
