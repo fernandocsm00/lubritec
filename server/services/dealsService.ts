@@ -1,5 +1,5 @@
 import { db } from '../db/client';
-import { deals, dealActivities, leads, users, conversations, campaigns } from '../db/schema';
+import { deals, dealActivities, leads, users, conversations, campaigns, campaignRecipients } from '../db/schema';
 import {
   eq, and, or, ilike, desc, sql, inArray, gte, lte,
   type SQL,
@@ -185,7 +185,7 @@ export async function listBoard(input: {
   // O filtro de campanha fica SEPARADO das demais condições (owner/busca/stage)
   // pra que a lista de opções do dropdown seja calculada ignorando-o — senão,
   // ao selecionar uma campanha, as outras sumiriam do select.
-  const campaignFilter = originCampaignFilter(input.campaignIds);
+  const campaignFilter = campaignAssociationFilter(input.campaignIds);
 
   const where = campaignFilter ? and(...conds, campaignFilter) : and(...conds);
 
@@ -224,6 +224,32 @@ export async function listBoard(input: {
     .where(and(...conds))
     .orderBy(campaigns.name);
 
+  // Campanhas que DISPARARAM (recipient enviado) pra algum card do escopo, mas
+  // que não são a campanha de origem — grupo "Recebeu disparo". Cobre o caso do
+  // re-disparo: uma lista nova sobre uma base já contatada não sobrescreve a
+  // origem (conversations.origin_campaign_id é gravado uma vez só), então nunca
+  // apareceria no grupo de origem. Aqui ela vira selecionável.
+  const recipientCampaignsRaw = await db
+    .selectDistinct({ id: campaigns.id, name: campaigns.name })
+    .from(deals)
+    // leftJoin leads: as conds compartilhadas referenciam leads quando há busca (q).
+    .leftJoin(leads, eq(deals.leadId, leads.id))
+    .innerJoin(
+      campaignRecipients,
+      and(
+        eq(campaignRecipients.leadId, deals.leadId),
+        sql`${campaignRecipients.sentAt} IS NOT NULL`,
+      ),
+    )
+    .innerJoin(campaigns, eq(campaigns.id, campaignRecipients.campaignId))
+    .where(and(...conds))
+    .orderBy(campaigns.name);
+
+  // Exclui as que já estão no grupo de origem (o filtro casa origem OU recipient,
+  // então basta oferecê-las uma vez, no grupo de origem).
+  const originIds = new Set(originCampaigns.map((c) => c.id));
+  const recipientCampaigns = recipientCampaignsRaw.filter((c) => !originIds.has(c.id));
+
   const stages: BoardResponse['stages'] = {
     lead_no_comercial: [],
     proposta_enviada: [],
@@ -246,20 +272,31 @@ export async function listBoard(input: {
     totals[pub.stage].valueSum += pub.proposalValue ?? 0;
   }
 
-  return { stages, totals, originCampaigns };
+  return { stages, totals, originCampaigns, recipientCampaigns };
 }
 
-// EXISTS por campanha de ORIGEM (conversations.origin_campaign_id) — alinhado
-// com o badge do card e com o filtro de campanha do Inbox. Retorna null quando
-// não há filtro. Usado por listBoard e listHistory.
-function originCampaignFilter(campaignIds: string[] | undefined): SQL | null {
+// Filtro por campanha: casa o card cujo lead ORIGINOU da campanha
+// (conversations.origin_campaign_id, alinhado ao badge do card) OU recebeu um
+// disparo dela (campaign_recipients com sent_at). Cobre tanto o grupo "Campanha
+// de origem" quanto o "Recebeu disparo" do multi-select — selecionar qualquer
+// campanha mostra todo card tocado por ela. Retorna null quando não há filtro.
+// Usado por listBoard e listHistory.
+function campaignAssociationFilter(campaignIds: string[] | undefined): SQL | null {
   if (!campaignIds || campaignIds.length === 0) return null;
   const ids = sql.join(campaignIds.map((id) => sql`${id}`), sql`, `);
-  return sql`EXISTS (
-    SELECT 1 FROM conversations cv
-    WHERE cv.lead_id = ${deals.leadId}
-      AND cv.origin_kind = 'campaign'
-      AND cv.origin_campaign_id IN (${ids})
+  return sql`(
+    EXISTS (
+      SELECT 1 FROM conversations cv
+      WHERE cv.lead_id = ${deals.leadId}
+        AND cv.origin_kind = 'campaign'
+        AND cv.origin_campaign_id IN (${ids})
+    )
+    OR EXISTS (
+      SELECT 1 FROM campaign_recipients cr
+      WHERE cr.lead_id = ${deals.leadId}
+        AND cr.sent_at IS NOT NULL
+        AND cr.campaign_id IN (${ids})
+    )
   )`;
 }
 
@@ -304,7 +341,7 @@ export async function listHistory(input: {
     if (search) conds.push(search);
   }
 
-  const campaignFilter = originCampaignFilter(input.campaignIds);
+  const campaignFilter = campaignAssociationFilter(input.campaignIds);
   if (campaignFilter) conds.push(campaignFilter);
 
   const where = and(...conds);

@@ -348,8 +348,13 @@ export interface BoardResponse {
   stages: Record<DealStage, PublicDeal[]>;
   totals: Record<DealStage, DealStageTotal>;
   // Campanhas que originaram ao menos um card no escopo atual (owner+busca,
-  // ignorando o próprio filtro de campanha) — alimenta o multi-select do Kanban.
+  // ignorando o próprio filtro de campanha) — grupo "Campanha de origem" do
+  // multi-select do Kanban.
   originCampaigns: Array<{ id: string; name: string }>;
+  // Campanhas que dispararam (recipient enviado) para algum card do escopo mas
+  // NÃO são a campanha de origem — grupo "Recebeu disparo" do multi-select.
+  // Cobre re-disparos (ex.: uma lista nova sobre uma base já contatada).
+  recipientCampaigns: Array<{ id: string; name: string }>;
 }
 
 // ---------------------------------------------------------------------------

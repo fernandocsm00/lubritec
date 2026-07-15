@@ -21,6 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
@@ -84,9 +85,14 @@ export function KanbanBoard() {
   const { data, isLoading, isError } = useBoard(filters);
   const changeStage = useChangeStage();
 
-  // Opções de campanha = só as que originaram algum card (vem do board, já
-  // calculado ignorando o filtro de campanha pra a lista não encolher).
+  // Opções de campanha (vêm do board, já calculadas ignorando o filtro de
+  // campanha pra a lista não encolher):
+  //  - origem: campanha que abriu a conversa do card (badge do card);
+  //  - "recebeu disparo": campanhas que dispararam pro lead do card mas não são
+  //    a de origem (ex.: re-disparo de uma lista nova sobre base já contatada).
   const campaignOptions = data?.originCampaigns ?? [];
+  const recipientCampaignOptions = data?.recipientCampaigns ?? [];
+  const hasCampaignOptions = campaignOptions.length > 0 || recipientCampaignOptions.length > 0;
   function toggleCampaign(id: string) {
     const set = new Set(campaignIds);
     if (set.has(id)) set.delete(id);
@@ -189,7 +195,7 @@ export function KanbanBoard() {
             )}
           </SelectContent>
         </Select>
-        {(campaignOptions.length > 0 || campaignIds.length > 0) && (
+        {(hasCampaignOptions || campaignIds.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
@@ -198,21 +204,48 @@ export function KanbanBoard() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64 max-h-72 overflow-y-auto">
-              {campaignOptions.length === 0 ? (
+              {!hasCampaignOptions ? (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Nenhuma campanha de origem.
+                  Nenhuma campanha vinculada aos cards.
                 </div>
               ) : (
-                campaignOptions.map((c) => (
-                  <DropdownMenuCheckboxItem
-                    key={c.id}
-                    checked={campaignIds.includes(c.id)}
-                    onCheckedChange={() => toggleCampaign(c.id)}
-                    onSelect={(e) => e.preventDefault()}
-                  >
-                    <span className="truncate">{c.name}</span>
-                  </DropdownMenuCheckboxItem>
-                ))
+                <>
+                  {campaignOptions.length > 0 && (
+                    <>
+                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Campanha de origem
+                      </DropdownMenuLabel>
+                      {campaignOptions.map((c) => (
+                        <DropdownMenuCheckboxItem
+                          key={c.id}
+                          checked={campaignIds.includes(c.id)}
+                          onCheckedChange={() => toggleCampaign(c.id)}
+                          onSelect={(e) => e.preventDefault()}
+                        >
+                          <span className="truncate">{c.name}</span>
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </>
+                  )}
+                  {recipientCampaignOptions.length > 0 && (
+                    <>
+                      {campaignOptions.length > 0 && <DropdownMenuSeparator />}
+                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Recebeu disparo
+                      </DropdownMenuLabel>
+                      {recipientCampaignOptions.map((c) => (
+                        <DropdownMenuCheckboxItem
+                          key={c.id}
+                          checked={campaignIds.includes(c.id)}
+                          onCheckedChange={() => toggleCampaign(c.id)}
+                          onSelect={(e) => e.preventDefault()}
+                        >
+                          <span className="truncate">{c.name}</span>
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </>
+                  )}
+                </>
               )}
               {campaignIds.length > 0 && (
                 <>
