@@ -3,6 +3,7 @@ import {
   inviteHandler,
   listHandler,
   updateHandler,
+  setPasswordHandler,
   resendInviteHandler,
   listAssignableHandler,
   listConversationAssigneesHandler,
@@ -17,6 +18,7 @@ router.get('/conversation-assignees', authGuard, listConversationAssigneesHandle
 router.get('/', authGuard, requireRole('admin'), listHandler);
 router.post('/', authGuard, requireRole('admin'), inviteHandler);
 router.patch('/:id', authGuard, requireRole('admin'), updateHandler);
+router.post('/:id/set-password', authGuard, requireRole('admin'), setPasswordHandler);
 router.post('/:id/resend-invite', authGuard, requireRole('admin'), resendInviteHandler);
 
 export default router;

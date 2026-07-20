@@ -19,12 +19,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { EditUserDialog } from './EditUserDialog';
+import { SetPasswordDialog } from './SetPasswordDialog';
 import { useUpdateUser, useResendInvite } from './api';
 import { translateError } from './translateError';
 import type { AdminUser } from '@shared/types';
 
 export function UserActions({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [setPasswordOpen, setSetPasswordOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const update = useUpdateUser();
   const resend = useResendInvite();
@@ -57,6 +59,9 @@ export function UserActions({ user, isSelf }: { user: AdminUser; isSelf: boolean
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setEditOpen(true)}>Editar</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setSetPasswordOpen(true)}>
+            Definir senha
+          </DropdownMenuItem>
           {user.is_active ? (
             <DropdownMenuItem
               disabled={isSelf}
@@ -82,6 +87,12 @@ export function UserActions({ user, isSelf }: { user: AdminUser; isSelf: boolean
         isSelf={isSelf}
         open={editOpen}
         onOpenChange={setEditOpen}
+      />
+
+      <SetPasswordDialog
+        user={user}
+        open={setPasswordOpen}
+        onOpenChange={setSetPasswordOpen}
       />
 
       <AlertDialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
