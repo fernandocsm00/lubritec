@@ -7,6 +7,7 @@ import {
   listAssignableUsers,
   listConversationAssignees,
   updateUser,
+  setUserPassword,
   resendInvite,
   deleteUserById,
   deleteInviteTokenById,
@@ -41,6 +42,11 @@ export const updateUserSchema = z
 
 export const userIdParamsSchema = z.object({
   id: z.string().uuid(),
+});
+
+// min(8) espelha a politica de setup/troca/reset de senha do resto do sistema.
+const setPasswordSchema = z.object({
+  password: z.string().min(8),
 });
 
 export async function inviteHandler(req: Request, res: Response, next: NextFunction) {
@@ -132,6 +138,17 @@ export async function updateHandler(req: Request, res: Response, next: NextFunct
       // Empty string → null pra "remover telefone cadastrado".
       phone: body.phone === '' ? null : body.phone,
     });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function setPasswordHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = userIdParamsSchema.parse(req.params);
+    const { password } = setPasswordSchema.parse(req.body);
+    const updated = await setUserPassword({ id, password });
     res.json(updated);
   } catch (e) {
     next(e);

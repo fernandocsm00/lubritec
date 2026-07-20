@@ -45,6 +45,18 @@ export function useUpdateUser() {
   });
 }
 
+export function useSetPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; password: string }) =>
+      api<AdminUser>(`/users/${input.id}/set-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password: input.password }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  });
+}
+
 export function useResendInvite() {
   return useMutation({
     mutationFn: (id: string) =>

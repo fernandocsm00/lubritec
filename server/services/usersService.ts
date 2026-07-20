@@ -81,6 +81,55 @@ export async function createUserWithPassword(input: {
 }
 
 /**
+ * Define/redefine a senha de um usuario EXISTENTE (admin operando pela tela de
+ * Usuarios). Serve tanto pra "Convite pendente" (usuario nasce sem senha) quanto
+ * pra resetar a senha de quem ja tem acesso. Espelha o resetPassword do fluxo de
+ * token: alem de gravar o novo hash, revoga todas as sessoes ativas — se a senha
+ * mudou, quem estava logado precisa reautenticar.
+ */
+export async function setUserPassword(input: { id: string; password: string }) {
+  const passwordHash = await hashPassword(input.password);
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(users).where(eq(users.id, input.id)).limit(1);
+    if (!existing) {
+      throw new HttpError(404, 'User not found');
+    }
+    const [updated] = await tx
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, input.id))
+      .returning();
+
+    // Revoga sessoes ativas: senha trocada = sessoes antigas invalidadas.
+    await tx
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(sessions.userId, input.id));
+
+    // Se o usuario estava com convite pendente, o token de convite deixa de
+    // fazer sentido depois que o admin ja definiu a senha — remove pra nao
+    // sobrar link de cadastro valido.
+    await tx
+      .delete(authTokens)
+      .where(and(eq(authTokens.userId, input.id), eq(authTokens.purpose, 'invite')));
+
+    return updated;
+  });
+
+  return {
+    id: result.id,
+    email: result.email,
+    name: result.name,
+    role: result.role,
+    is_active: result.isActive,
+    phone: result.phone ?? null,
+    last_login_at: result.lastLoginAt?.toISOString() ?? null,
+    created_at: result.createdAt.toISOString(),
+    has_password: result.passwordHash !== null,
+  };
+}
+
+/**
  * Compensating delete used when an invite is created in the DB but the
  * subsequent email send fails — avoids leaving a "ghost" user with no
  * password hash that nothing can clean up. CASCADE handles auth_tokens.
