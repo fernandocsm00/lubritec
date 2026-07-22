@@ -25,10 +25,40 @@ import type { HsmComponent } from '@shared/types';
 const LIST_PAGE_SIZE = 50;
 const RECIPIENTS_PAGE_SIZE = 50;
 
+/**
+ * Contagens de status derivadas AO VIVO das linhas de campaign_recipients
+ * (fonte única de verdade). Os contadores desnormalizados na tabela campaigns
+ * (sent_count/failed_count/skipped_count) driftavam com retries/re-disparo — ex.:
+ * campanha mostrava "N ignoradas" mas ao filtrar por Ignorados não havia
+ * recipient nenhum. Derivar aqui faz lista/detalhe/progresso baterem com o
+ * filtro de recipients e com o funil.
+ */
+type RecipientCounts = { sent: number; failed: number; skipped: number; skippedByCooldown: number };
+
+const ZERO_COUNTS: RecipientCounts = { sent: 0, failed: 0, skipped: 0, skippedByCooldown: 0 };
+
+async function getRecipientCounts(campaignIds: string[]): Promise<Map<string, RecipientCounts>> {
+  if (campaignIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      campaignId: campaignRecipients.campaignId,
+      sent: sql<number>`count(*) FILTER (WHERE status = 'sent')::int`,
+      failed: sql<number>`count(*) FILTER (WHERE status = 'failed')::int`,
+      skipped: sql<number>`count(*) FILTER (WHERE status = 'skipped')::int`,
+      skippedByCooldown: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
+    })
+    .from(campaignRecipients)
+    .where(inArray(campaignRecipients.campaignId, campaignIds))
+    .groupBy(campaignRecipients.campaignId);
+  return new Map(rows.map((r) => [r.campaignId, {
+    sent: r.sent, failed: r.failed, skipped: r.skipped, skippedByCooldown: r.skippedByCooldown,
+  }]));
+}
+
 function toPublicCampaign(
   row: typeof campaigns.$inferSelect,
   creator: typeof users.$inferSelect | null,
-  skippedByCooldown: number,
+  counts: RecipientCounts,
 ): PublicCampaign {
   return {
     id: row.id,
@@ -45,10 +75,10 @@ function toPublicCampaign(
     scheduledAt: row.scheduledAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
-    sentCount: row.sentCount,
-    failedCount: row.failedCount,
-    skippedCount: row.skippedCount,
-    skippedByCooldown,
+    sentCount: counts.sent,
+    failedCount: counts.failed,
+    skippedCount: counts.skipped,
+    skippedByCooldown: counts.skippedByCooldown,
     ratePerMinute: row.ratePerMinute,
     createdBy: creator
       ? { id: creator.id, name: creator.name }
@@ -56,14 +86,6 @@ function toPublicCampaign(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-async function countSkippedByCooldown(campaignId: string): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int` })
-    .from(campaignRecipients)
-    .where(eq(campaignRecipients.campaignId, campaignId));
-  return row?.n ?? 0;
 }
 
 // list
@@ -96,20 +118,10 @@ export async function listCampaigns(input: {
     .offset((page - 1) * LIST_PAGE_SIZE);
 
   const ids = rows.map((r) => r.campaign.id);
-  const cooldownCounts = ids.length
-    ? await db
-        .select({
-          campaignId: campaignRecipients.campaignId,
-          n: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
-        })
-        .from(campaignRecipients)
-        .where(inArray(campaignRecipients.campaignId, ids))
-        .groupBy(campaignRecipients.campaignId)
-    : [];
-  const cooldownMap = new Map(cooldownCounts.map((c) => [c.campaignId, c.n]));
+  const countsMap = await getRecipientCounts(ids);
 
   return {
-    items: rows.map((r) => toPublicCampaign(r.campaign, r.creator, cooldownMap.get(r.campaign.id) ?? 0)),
+    items: rows.map((r) => toPublicCampaign(r.campaign, r.creator, countsMap.get(r.campaign.id) ?? ZERO_COUNTS)),
     total,
     page,
     pageSize: LIST_PAGE_SIZE,
@@ -125,8 +137,8 @@ export async function getCampaignById(id: string): Promise<PublicCampaign> {
     .where(eq(campaigns.id, id))
     .limit(1);
   if (!row) throw new HttpError(404, 'Campaign not found');
-  const skippedByCooldown = await countSkippedByCooldown(id);
-  return toPublicCampaign(row.campaign, row.creator, skippedByCooldown);
+  const counts = (await getRecipientCounts([id])).get(id) ?? ZERO_COUNTS;
+  return toPublicCampaign(row.campaign, row.creator, counts);
 }
 
 // create + materialize recipients
@@ -227,9 +239,11 @@ export async function createCampaign(input: {
     }
 
     const [creator] = await tx.select().from(users).where(eq(users.id, input.createdByUserId)).limit(1);
-    // skippedByCooldown no retorno reflete os excluídos do filtro original —
-    // útil pro frontend exibir "X contatos em cooldown ficaram de fora".
-    return toPublicCampaign(c, creator ?? null, excludedByCooldownCount);
+    // Campanha recém-criada: recipients acabaram de entrar como 'pending', então
+    // sent/failed/skipped reais são 0. skippedByCooldown no retorno reflete os
+    // EXCLUÍDOS do filtro original (leads que nem viraram recipient) — útil pro
+    // frontend exibir "X contatos em cooldown ficaram de fora".
+    return toPublicCampaign(c, creator ?? null, { ...ZERO_COUNTS, skippedByCooldown: excludedByCooldownCount });
   });
 }
 
