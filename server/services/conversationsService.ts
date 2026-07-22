@@ -529,14 +529,27 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
       })
       .returning();
 
+    const convPatch: Partial<typeof conversations.$inferInsert> = {
+      lastMessageAt: sentAt,
+      assignedTo: conv.assignedTo ?? input.userId,
+      status: conv.assignedTo ? conv.status : 'em_atendimento',
+      updatedAt: new Date(),
+    };
+
+    // Handoff automático IA → COMERCIAL: quando alguém do Inside Sales responde
+    // pela Inbox uma conversa que ainda está na fila da IA, o atendente humano
+    // assume — migra pra 'comercial', marca entrada na fila (SLA) e limpa o
+    // safety-net pra que o aiPendingWorker não dispare uma resposta da IA depois
+    // que o humano já respondeu.
+    if (conv.queue === 'ia') {
+      convPatch.queue = 'comercial';
+      convPatch.enteredQueueAt = sentAt;
+      convPatch.pendingAiResponse = false;
+    }
+
     await tx
       .update(conversations)
-      .set({
-        lastMessageAt: sentAt,
-        assignedTo: conv.assignedTo ?? input.userId,
-        status: conv.assignedTo ? conv.status : 'em_atendimento',
-        updatedAt: new Date(),
-      })
+      .set(convPatch)
       .where(eq(conversations.id, conv.id));
 
     return [inserted];
