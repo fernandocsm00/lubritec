@@ -127,6 +127,57 @@ describe('POST /api/conversations/:id/messages', () => {
     expect(row.status).toBe('em_atendimento');
   });
 
+  it('handoff IA→COMERCIAL: resposta do Inside Sales pela Inbox tira a conversa da IA', async () => {
+    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
+      messageId: 'uazapi-out-ia-01',
+      rawPayload: {},
+    });
+    const { token, userId } = await loginAs();
+    const lead = await createLead({ phone: '11000050035' });
+    const conv = await createConversation({
+      phone: '11000050035',
+      leadId: lead.id,
+      queue: 'ia',
+      assignedTo: null,
+      status: 'aguardando_atendimento',
+    });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/messages`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'text', body: 'Oi, aqui é o comercial' });
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.queue).toBe('comercial');
+    expect(row.assignedTo).toBe(userId);
+    expect(row.status).toBe('em_atendimento');
+    expect(row.pendingAiResponse).toBe(false);
+    expect(row.enteredQueueAt).not.toBeNull();
+  });
+
+  it('conversa fora da IA: envio não altera a fila (recepcao permanece recepcao)', async () => {
+    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
+      messageId: 'uazapi-out-rec-01',
+      rawPayload: {},
+    });
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000050037' });
+    const conv = await createConversation({
+      phone: '11000050037',
+      leadId: lead.id,
+      queue: 'recepcao',
+    });
+
+    await request(app)
+      .post(`/api/conversations/${conv.id}/messages`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'text', body: 'oi' });
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.queue).toBe('recepcao');
+  });
+
   it('envia mídia: mediaUrl obrigatório, body opcional', async () => {
     vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
       messageId: 'uazapi-out-003',
