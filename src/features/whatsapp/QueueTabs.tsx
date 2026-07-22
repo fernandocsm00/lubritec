@@ -1,9 +1,11 @@
 import { useConversationCounts } from './api';
 import type { ConversationQueue } from './types';
 
+// Ordem da Inbox: Receptivo (recepcao) → IA → Comercial. O valor interno segue
+// 'recepcao' (enum do banco); só o rótulo exibido é "Receptivo".
 const QUEUES: { key: ConversationQueue; label: string }[] = [
+  { key: 'recepcao', label: 'Receptivo' },
   { key: 'ia', label: 'IA' },
-  { key: 'recepcao', label: 'Recepção' },
   { key: 'comercial', label: 'Comercial' },
 ];
 

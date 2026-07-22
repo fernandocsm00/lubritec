@@ -35,7 +35,7 @@ const STATUS_LABEL: Record<PublicConversation['lead']['status'], { label: string
 
 const QUEUE_LABEL: Record<PublicConversation['queue'], string> = {
   ia: 'IA',
-  recepcao: 'Recepção',
+  recepcao: 'Receptivo',
   comercial: 'Comercial',
 };
 

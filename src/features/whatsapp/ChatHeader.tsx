@@ -22,7 +22,7 @@ const ROLE_LABEL: Record<'admin' | 'comercial' | 'recepcao', string> = {
 };
 
 const QUEUE_LABEL: Record<PublicConversation['queue'], string> = {
-  ia: 'IA', recepcao: 'Recepção', comercial: 'Comercial',
+  ia: 'IA', recepcao: 'Receptivo', comercial: 'Comercial',
 };
 
 export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; currentUserId: string }) {
