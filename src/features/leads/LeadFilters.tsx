@@ -6,19 +6,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
+import type { LeadStatus, LeadSource, CadastroStage } from '@shared/types';
 
 interface Props {
   q: string;
   status: LeadStatus | 'all';
   source: LeadSource | 'all';
-  flowStage: LeadFlowStage | 'all';
+  flowStage: CadastroStage | 'all';
   pipeline: 'yes' | 'no' | 'all';
   withIssues: boolean;
   onQChange: (v: string) => void;
   onStatusChange: (v: LeadStatus | 'all') => void;
   onSourceChange: (v: LeadSource | 'all') => void;
-  onFlowStageChange: (v: LeadFlowStage | 'all') => void;
+  onFlowStageChange: (v: CadastroStage | 'all') => void;
   onPipelineChange: (v: 'yes' | 'no' | 'all') => void;
   onWithIssuesChange: (v: boolean) => void;
 }
@@ -45,7 +45,7 @@ export function LeadFilters({
         placeholder="Buscar por nome, telefone, CPF ou CNPJ..."
         className="max-w-sm"
       />
-      <Select value={flowStage} onValueChange={(v) => onFlowStageChange(v as LeadFlowStage | 'all')}>
+      <Select value={flowStage} onValueChange={(v) => onFlowStageChange(v as CadastroStage | 'all')}>
         <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todas as etapas</SelectItem>
@@ -55,6 +55,9 @@ export function LeadFilters({
           <SelectItem value="engaged">Respondeu</SelectItem>
           <SelectItem value="qualified">Qualificado</SelectItem>
           <SelectItem value="handed_off">No comercial</SelectItem>
+          <SelectItem value="proposta_enviada">Proposta enviada</SelectItem>
+          <SelectItem value="em_negociacao">Em negociação</SelectItem>
+          <SelectItem value="won">Ganho</SelectItem>
           <SelectItem value="lost">Perdido</SelectItem>
         </SelectContent>
       </Select>

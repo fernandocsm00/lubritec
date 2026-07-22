@@ -2,8 +2,8 @@ import { db } from '../db/client';
 import { leads, deals, conversations, campaignRecipients, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, LeadCampaignSummary, Imbp, Segment } from '@shared/types';
-import { IMBP_TO_SEGMENT } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, CadastroStage, LeadEnrichmentResult, LeadQualityFeedback, LeadCampaignSummary, Imbp, Segment } from '@shared/types';
+import { IMBP_TO_SEGMENT, CADASTRO_STAGES } from '@shared/types';
 import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
@@ -26,6 +26,7 @@ function normalizePhone(raw: string): string {
 
 function toPublic(row: typeof leads.$inferSelect & {
   hasDeal?: boolean;
+  cadastroStage?: CadastroStage | string | null;
   lastEnrichmentResult?: LeadEnrichmentResult | string | null;
   campaigns?: LeadCampaignSummary[];
 }): PublicLead {
@@ -37,6 +38,12 @@ function toPublic(row: typeof leads.$inferSelect & {
   const result = row.lastEnrichmentResult && known.includes(row.lastEnrichmentResult as LeadEnrichmentResult)
     ? (row.lastEnrichmentResult as LeadEnrichmentResult)
     : null;
+  // cadastroStage é derivado no SELECT da listagem; consultas single-lead que
+  // não o computam caem no flowStage (que é subset válido de CADASTRO_STAGES).
+  const cadastroStage: CadastroStage =
+    row.cadastroStage && (CADASTRO_STAGES as readonly string[]).includes(row.cadastroStage)
+      ? (row.cadastroStage as CadastroStage)
+      : row.flowStage;
   return {
     id: row.id,
     name: row.name,
@@ -53,6 +60,7 @@ function toPublic(row: typeof leads.$inferSelect & {
     status: row.status,
     source: row.source,
     flowStage: row.flowStage,
+    cadastroStage,
     hasDeal: row.hasDeal ?? false,
     lastEnrichmentResult: result,
     campaigns: row.campaigns ?? [],
@@ -383,11 +391,37 @@ const LATEST_ENRICHMENT_RESULT_SQL = sql<string | null>`(
 // (lead ainda util), mas vale mostrar.
 const ISSUE_STATUSES = ['cnpj_inactive', 'cnpj_not_found', 'phone_not_in_brasilapi', 'api_error'] as const;
 
+// Etapa unificada de Cadastros (ver CadastroStage): deriva AO VIVO de
+// deals.stage quando o lead tem deal, senao espelha leads.flow_stage. Como
+// deals.lead_id é UNIQUE, ha no maximo 1 deal por lead. Usada tanto no SELECT
+// (coluna cadastroStage) quanto no WHERE (filtro de etapa). Nao persiste nada:
+// mudou o card no Inside Sales, Cadastros reflete na hora, sem backfill.
+// OBS: deals.stage é enum Postgres (deal_stage); casta pra ::text pra o CASE
+// não tentar coagir 'won'/os literais de volta pro enum (que não os tem).
+// Factory (não const): a mesma query usa a expressão em 2 posições (SELECT e
+// WHERE); reusar a MESMA instância sql faz o Drizzle renderizar errado.
+// OBS 2: na LISTA do SELECT (query single-table), o Drizzle renderiza
+// ${leads.id} SEM qualificar ("id"), e dentro do subquery `FROM deals d` esse
+// "id" resolve pra deals.id (correlação quebrada → sempre NULL/false). Forçamos
+// `leads.id`/`leads.flow_stage` qualificados via sql.raw, igual ao campaignsSql.
+const cadastroStageSql = () => sql<string>`COALESCE(
+  (SELECT CASE d.stage::text
+     WHEN 'ganho' THEN 'won'
+     WHEN 'perdido' THEN 'lost'
+     WHEN 'lead_no_comercial' THEN 'handed_off'
+     ELSE d.stage::text
+   END
+   FROM deals d WHERE d.lead_id = ${sql.raw('leads.id')} LIMIT 1),
+  ${sql.raw('leads.flow_stage')}
+)`;
+
 export async function listLeads(params: {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
-  flowStage?: LeadFlowStage;
+  /** Filtro de etapa da aba Cadastros: casa contra a etapa unificada derivada
+   * (CADASTRO_STAGE_SQL), não diretamente contra leads.flow_stage. */
+  flowStage?: CadastroStage;
   pipeline?: 'yes' | 'no';
   withIssues?: boolean;
   campaignIds?: string[];
@@ -403,7 +437,7 @@ export async function listLeads(params: {
   const conditions = [];
   if (params.status) conditions.push(eq(leads.status, params.status));
   if (params.source) conditions.push(eq(leads.source, params.source));
-  if (params.flowStage) conditions.push(eq(leads.flowStage, params.flowStage));
+  if (params.flowStage) conditions.push(sql`${cadastroStageSql()} = ${params.flowStage}`);
   if (params.pipeline === 'yes') {
     conditions.push(sql`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`);
   }
@@ -462,7 +496,11 @@ export async function listLeads(params: {
   const rows = await db
     .select({
       lead: leads,
-      hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`,
+      // sql.raw('leads.id'): correlação qualificada (ver OBS 2 em cadastroStageSql).
+      // Sem isso, ${leads.id} vira "id" unqualified na lista do SELECT e casa
+      // deals.id — hasDeal ficava SEMPRE false.
+      hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${sql.raw('leads.id')})`,
+      cadastroStage: cadastroStageSql(),
       lastEnrichmentResult: LATEST_ENRICHMENT_RESULT_SQL,
       campaigns: campaignsSql,
     })
@@ -476,6 +514,7 @@ export async function listLeads(params: {
     items: rows.map((r) => toPublic({
       ...r.lead,
       hasDeal: Boolean(r.hasDeal),
+      cadastroStage: r.cadastroStage,
       lastEnrichmentResult: r.lastEnrichmentResult,
       campaigns: (r.campaigns ?? []) as LeadCampaignSummary[],
     })),

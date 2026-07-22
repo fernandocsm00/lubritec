@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { LEAD_STATUSES, LEAD_SOURCES, LEAD_FLOW_STAGES, LEAD_QUALITY_FEEDBACK, IMBP_VALUES, SEGMENT_VALUES } from '../../shared/types';
+import { LEAD_STATUSES, LEAD_SOURCES, CADASTRO_STAGES, LEAD_QUALITY_FEEDBACK, IMBP_VALUES, SEGMENT_VALUES } from '../../shared/types';
 import { createLead, listLeads, updateLead, deleteLead, markLeadLost, getLeadById, closeLeadNoDeal } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
@@ -85,7 +85,7 @@ const listQuery = z.object({
   q: z.string().optional(),
   status: z.enum(LEAD_STATUSES).optional(),
   source: z.enum(LEAD_SOURCES).optional(),
-  flowStage: z.enum(LEAD_FLOW_STAGES).optional(),
+  flowStage: z.enum(CADASTRO_STAGES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
   withIssues: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   // zod v4: `.optional()` precisa ficar FORA do z.preprocess; se ficar dentro,

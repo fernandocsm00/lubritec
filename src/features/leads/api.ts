@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
-import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
+import type { PublicLead, ImportReport, LeadStatus, LeadSource, CadastroStage, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
 
 export interface LeadExtendedFields {
   phone2?: string | null;
@@ -15,7 +15,8 @@ export interface ListParams {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
-  flowStage?: LeadFlowStage;
+  /** Etapa unificada de Cadastros (funil do lead + etapa comercial do deal). */
+  flowStage?: CadastroStage;
   pipeline?: 'yes' | 'no';
   /** Filtra leads cujo ultimo enriquecimento BrasilAPI deu problema. */
   withIssues?: boolean;

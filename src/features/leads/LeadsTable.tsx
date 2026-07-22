@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { PublicLead, LeadFlowStage, LeadEnrichmentResult } from '@shared/types';
+import type { PublicLead, CadastroStage, LeadEnrichmentResult } from '@shared/types';
 import { formatCnpj } from '@/lib/utils';
 import { LeadActions } from './LeadActions';
 
@@ -66,13 +66,18 @@ const ENRICHMENT_ISSUE: Partial<Record<LeadEnrichmentResult, { label: string; cl
   },
 };
 
-const STAGE_LABEL: Record<LeadFlowStage, { label: string; className: string }> = {
+// Keyed por CadastroStage: funil do lead + etapa comercial do card (deals.stage),
+// derivada no backend (ver PublicLead.cadastroStage / CADASTRO_STAGES).
+const STAGE_LABEL: Record<CadastroStage, { label: string; className: string }> = {
   incomplete: { label: 'Incompleto', className: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800' },
   complete:   { label: 'Completo',   className: 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800' },
   dispatched: { label: 'Disparado',  className: 'bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800' },
   engaged:    { label: 'Respondeu',  className: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' },
   qualified:  { label: 'Qualificado', className: 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800' },
   handed_off: { label: 'No comercial', className: 'bg-primary/10 text-primary border-primary/40' },
+  proposta_enviada: { label: 'Proposta enviada', className: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800' },
+  em_negociacao:    { label: 'Em negociação',    className: 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800' },
+  won:        { label: 'Ganho',      className: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800' },
   lost:       { label: 'Perdido',    className: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700' },
 };
 
@@ -173,8 +178,8 @@ export function LeadsTable(props: Props) {
                         {l.phone ?? '—'}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={STAGE_LABEL[l.flowStage].className}>
-                          {STAGE_LABEL[l.flowStage].label}
+                        <Badge variant="outline" className={STAGE_LABEL[l.cadastroStage].className}>
+                          {STAGE_LABEL[l.cadastroStage].label}
                         </Badge>
                       </TableCell>
                       <TableCell>

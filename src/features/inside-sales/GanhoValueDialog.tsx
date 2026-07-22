@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -9,13 +9,21 @@ import type { LeadQualityFeedback } from '@shared/types';
 
 interface Props {
   open: boolean;
+  /** Valor já cadastrado no deal — pré-preenche o campo (o atendente só confirma
+   * o feedback quando o card já tinha valor). null = precisa digitar. */
+  initialValue?: number | null;
   onConfirm: (value: number, feedback: LeadQualityFeedback) => void;
   onCancel: () => void;
 }
 
-export function GanhoValueDialog({ open, onConfirm, onCancel }: Props) {
-  const [value, setValue] = useState<number | null>(null);
+export function GanhoValueDialog({ open, initialValue = null, onConfirm, onCancel }: Props) {
+  const [value, setValue] = useState<number | null>(initialValue);
   const [feedback, setFeedback] = useState<LeadQualityFeedback | null>(null);
+
+  // Sincroniza o valor pré-preenchido sempre que o diálogo (re)abre pra outro card.
+  useEffect(() => {
+    if (open) setValue(initialValue);
+  }, [open, initialValue]);
 
   const canConfirm = value != null && value > 0 && feedback != null;
 

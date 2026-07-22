@@ -9,7 +9,7 @@ import { ImportCsvDialog } from '@/features/leads/ImportCsvDialog';
 import { BulkEnrichmentDialog } from '@/features/leads/BulkEnrichmentDialog';
 import { useLeads, type ListParams } from '@/features/leads/api';
 import { useAuthStore } from '@/features/auth/store';
-import { LEAD_FLOW_STAGES, type LeadStatus, type LeadSource, type LeadFlowStage } from '@shared/types';
+import { CADASTRO_STAGES, type LeadStatus, type LeadSource, type CadastroStage } from '@shared/types';
 
 function useDebounced<T>(value: T, ms = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -23,15 +23,16 @@ function useDebounced<T>(value: T, ms = 300): T {
 export default function CadastrosPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // Inicializa flowStage da URL (deep link do MacroFunnel do dashboard).
+  // Aceita o conjunto unificado (funil do lead + etapa comercial do card).
   const initialFlowStage = (() => {
     const v = searchParams.get('flowStage');
-    return v && (LEAD_FLOW_STAGES as readonly string[]).includes(v) ? (v as LeadFlowStage) : 'all';
+    return v && (CADASTRO_STAGES as readonly string[]).includes(v) ? (v as CadastroStage) : 'all';
   })();
 
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<LeadStatus | 'all'>('all');
   const [source, setSource] = useState<LeadSource | 'all'>('all');
-  const [flowStage, setFlowStage] = useState<LeadFlowStage | 'all'>(initialFlowStage);
+  const [flowStage, setFlowStage] = useState<CadastroStage | 'all'>(initialFlowStage);
   const [pipeline, setPipeline] = useState<'yes' | 'no' | 'all'>('all');
   const [withIssues, setWithIssues] = useState<boolean>(searchParams.get('withIssues') === 'true');
   const [sort, setSort] = useState<NonNullable<ListParams['sort']>>('created_at');

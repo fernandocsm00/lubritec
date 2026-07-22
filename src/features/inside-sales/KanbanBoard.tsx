@@ -119,8 +119,11 @@ export function KanbanBoard() {
       setPendingMove({ dealId, toStage, fromStage, proposalValue: deal.proposalValue });
       return;
     }
-    if (toStage === 'ganho' && deal.proposalValue == null) {
-      setPendingMove({ dealId, toStage, fromStage, proposalValue: null });
+    // Ganho SEMPRE passa pelo diálogo: o backend exige leadQualityFeedback (só
+    // coletado aqui). Se pulasse o diálogo quando já havia valor, o move ia sem
+    // feedback e o backend respondia 400 ("Falha ao mover").
+    if (toStage === 'ganho') {
+      setPendingMove({ dealId, toStage, fromStage, proposalValue: deal.proposalValue });
       return;
     }
     void doMove({ dealId, toStage, fromStage });
@@ -314,6 +317,7 @@ export function KanbanBoard() {
       />
       <GanhoValueDialog
         open={pendingMove?.toStage === 'ganho'}
+        initialValue={pendingMove?.proposalValue ?? null}
         onCancel={() => setPendingMove(null)}
         onConfirm={(value, feedback) => {
           if (pendingMove) {

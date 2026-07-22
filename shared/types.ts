@@ -112,6 +112,32 @@ export const LEAD_FLOW_STAGES = [
 export type LeadFlowStage = (typeof LEAD_FLOW_STAGES)[number];
 
 /**
+ * Etapa exibida/filtrável na aba Cadastros. É o funil do lead (LEAD_FLOW_STAGES)
+ * refletindo, quando existe deal, a etapa comercial do card do Inside Sales.
+ * Derivada AO VIVO de deals.stage (fonte única) — não é uma coluna persistida:
+ *   deal 'lead_no_comercial' -> 'handed_off' (No comercial)
+ *   deal 'proposta_enviada'  -> 'proposta_enviada'
+ *   deal 'em_negociacao'     -> 'em_negociacao'
+ *   deal 'ganho'             -> 'won'
+ *   deal 'perdido'           -> 'lost'
+ *   sem deal                 -> leads.flow_stage
+ * Superset de LEAD_FLOW_STAGES + as etapas comerciais intermediárias/ganho.
+ */
+export const CADASTRO_STAGES = [
+  'incomplete',
+  'complete',
+  'dispatched',
+  'engaged',
+  'qualified',
+  'handed_off',
+  'proposta_enviada',
+  'em_negociacao',
+  'won',
+  'lost',
+] as const;
+export type CadastroStage = (typeof CADASTRO_STAGES)[number];
+
+/**
  * Resultado da ultima tentativa de enriquecimento BrasilAPI pra este lead.
  * null = nunca foi enriquecido (ou enriquecimento ainda nao rodou).
  */
@@ -145,6 +171,11 @@ export interface PublicLead {
   status: LeadStatus;
   source: LeadSource;
   flowStage: LeadFlowStage;
+  /**
+   * Etapa unificada para a aba Cadastros: reflete a etapa comercial do card
+   * (deals.stage) quando há deal, senão espelha flowStage. Ver CADASTRO_STAGES.
+   */
+  cadastroStage: CadastroStage;
   hasDeal: boolean;
   /** Ultimo resultado de enriquecimento BrasilAPI (null se nunca foi enriquecido). */
   lastEnrichmentResult: LeadEnrichmentResult | null;
