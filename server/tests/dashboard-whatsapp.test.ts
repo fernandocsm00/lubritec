@@ -3,13 +3,23 @@ import { whatsappStats } from '../services/dashboardService';
 import { createLead, createConversation, createMessage, createWhatsappInstance } from './helpers';
 
 describe('dashboardService.whatsappStats', () => {
-  it('counts inQueue (aguardando_atendimento)', async () => {
-    const l1 = await createLead({});
-    const l2 = await createLead({});
-    await createConversation({ leadId: l1.id, status: 'aguardando_atendimento' });
-    await createConversation({ leadId: l2.id, status: 'em_atendimento' });
+  it('inQueue conta conversas abertas visíveis na Inbox (exclui disparo de campanha sem inbound e encerradas)', async () => {
+    const [l1, l2, l3, l4, l5] = await Promise.all([
+      createLead({}), createLead({}), createLead({}), createLead({}), createLead({}),
+    ]);
+    // Conta: organic aguardando (visível mesmo sem inbound)
+    await createConversation({ leadId: l1.id, status: 'aguardando_atendimento', originKind: 'organic' });
+    // Conta: organic em_atendimento (não-encerrada)
+    await createConversation({ leadId: l2.id, status: 'em_atendimento', originKind: 'organic' });
+    // NÃO conta: disparo de campanha nunca respondido (sem inbound) — o "581" irreal
+    await createConversation({ leadId: l3.id, status: 'aguardando_atendimento', originKind: 'campaign', lastInboundAt: null });
+    // Conta: campanha QUE respondeu (tem inbound)
+    await createConversation({ leadId: l4.id, status: 'aguardando_atendimento', originKind: 'campaign', lastInboundAt: new Date() });
+    // NÃO conta: encerrada
+    await createConversation({ leadId: l5.id, status: 'encerrada', originKind: 'organic' });
+
     const r = await whatsappStats();
-    expect(r.inQueue).toBe(1);
+    expect(r.inQueue).toBe(3);
   });
 
   it('expired24h matches attention.conv_expired logic (no outbound after inbound)', async () => {

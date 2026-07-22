@@ -557,10 +557,18 @@ export async function whatsappStats(): Promise<DashboardWhatsappStats> {
     .limit(1);
   const instanceConnected = instRow?.lastStatus === 'connected';
 
+  // "Conversas em fila" = conversas abertas (não encerradas) que REALMENTE
+  // aparecem na Inbox. Aplica o mesmo filtro de visibilidade do listConversations
+  // (lastInboundAt IS NOT NULL OR originKind != 'campaign'): sem ele, contava
+  // centenas de disparos de campanha nunca respondidos (número inflado/irreal).
+  // Casa com o link do card (statusChips=aguardando,em_atendimento = não-encerradas).
   const [inQueueRow] = await db
     .select({ cnt: sql<number>`count(*)::int` })
     .from(conversations)
-    .where(eq(conversations.status, 'aguardando_atendimento'));
+    .where(and(
+      sql`${conversations.status} != 'encerrada'`,
+      sql`(${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')`,
+    ));
 
   const [expiredRow] = await db
     .select({ cnt: sql<number>`count(*)::int` })
