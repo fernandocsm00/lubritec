@@ -411,7 +411,11 @@ const cadastroStageSql = () => sql<string>`COALESCE(
      WHEN 'lead_no_comercial' THEN 'handed_off'
      ELSE d.stage::text
    END
-   FROM deals d WHERE d.lead_id = ${sql.raw('leads.id')} LIMIT 1),
+   FROM deals d WHERE d.lead_id = ${sql.raw('leads.id')}
+   -- Recompra: um lead pode ter vários deals. Prefere o ATIVO (não terminal);
+   -- se todos fechados, o mais recente. (false ordena antes de true.)
+   ORDER BY (d.stage IN ('ganho', 'perdido')), d.created_at DESC
+   LIMIT 1),
   ${sql.raw('leads.flow_stage')}
 )`;
 

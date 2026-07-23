@@ -442,7 +442,10 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
     .leftJoin(leads, eq(deals.leadId, leads.id))
     .leftJoin(users, eq(deals.ownerUserId, users.id))
     .where(eq(deals.leadId, leadId))
-    .orderBy(desc(deals.updatedAt))
+    // Com múltiplos deals por lead (recompra): prefere o card ATIVO (não
+    // terminal); se todos fechados, o mais recente. `false` ordena antes de
+    // `true`, então NOT-terminal (false) vem primeiro.
+    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.updatedAt))
     .limit(1);
 
   if (!row) return null;
@@ -474,11 +477,33 @@ export async function createDeal(input: {
   ownerUserId: string | null;       // aceita null (Pull model)
   source: 'manual' | 'auto_image' | 'ai_qualified';
 }): Promise<PublicDeal> {
-  // Idempotente: se já existe deal pra esse lead, retorna o existing.
-  const [existing] = await db.select().from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
-  if (existing) {
-    return getDealById(existing.id);
+  // Idempotência do ATIVO: se já há um card ABERTO (não terminal) pra esse lead,
+  // devolve ele — nunca cria um 2º card ativo (invariante do índice parcial).
+  const [active] = await db
+    .select({ id: deals.id })
+    .from(deals)
+    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
+    .limit(1);
+  if (active) return getDealById(active.id);
+
+  // Sem card ativo. O lead já teve algum deal (todos fechados)? = recompra.
+  const [lastDeal] = await db
+    .select({ id: deals.id })
+    .from(deals)
+    .where(eq(deals.leadId, input.leadId))
+    .orderBy(desc(deals.createdAt))
+    .limit(1);
+  const isRepeat = !!lastDeal;
+
+  // Recompra só vira NOVO ciclo no gatilho MANUAL (vendedor). IA/auto NÃO
+  // recriam ciclo sozinhas — devolvem o último card (evita card fantasma).
+  if (isRepeat && input.source !== 'manual') {
+    return getDealById(lastDeal.id);
   }
+
+  // Estágio inicial: recompra (cliente conhecido) entra direto em
+  // 'em_negociacao'; primeiro deal do lead entra em 'lead_no_comercial'.
+  const initialStage = isRepeat ? 'em_negociacao' : 'lead_no_comercial';
 
   // Captura stage anterior do lead pra audit trail.
   const [leadBefore] = await db
@@ -492,7 +517,7 @@ export async function createDeal(input: {
       .insert(deals)
       .values({
         leadId: input.leadId,
-        stage: 'lead_no_comercial',
+        stage: initialStage,
         proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
         ownerUserId: input.ownerUserId,       // pode ser null agora
       })
@@ -618,6 +643,24 @@ export async function changeStage(input: {
     input.stage === 'proposta_enviada' ||
     input.stage === 'em_negociacao';
   const reactivating = isTerminalNow && movingToActive;
+
+  // Invariante "1 card ativo por lead": reabrir um card fechado quando o lead já
+  // tem outro card ATIVO (ex.: recompra) violaria o índice parcial. Barra com
+  // erro amigável em vez de deixar estourar unique_violation (500).
+  if (reactivating) {
+    const [otherActive] = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(and(
+        eq(deals.leadId, current.leadId),
+        sql`${deals.id} <> ${input.id}`,
+        sql`${deals.stage} NOT IN ('ganho', 'perdido')`,
+      ))
+      .limit(1);
+    if (otherActive) {
+      throw new HttpError(409, 'Este lead já tem um negócio ativo. Use o card ativo ou feche-o antes de reabrir este.');
+    }
+  }
 
   await db.transaction(async (tx) => {
     const patch: Record<string, unknown> = {

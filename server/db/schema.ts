@@ -161,7 +161,7 @@ export const messageTemplates = pgTable('message_templates', {
 
 export const deals = pgTable('deals', {
   id: uuid('id').primaryKey().defaultRandom(),
-  leadId: uuid('lead_id').notNull().unique().references(() => leads.id, { onDelete: 'restrict' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'restrict' }),
   stage: text('stage', { enum: DEAL_STAGES }).notNull().default('proposta_enviada'),
   proposalValue: numeric('proposal_value', { precision: 12, scale: 2 }),
   lossReason: text('loss_reason', { enum: LOSS_REASONS }),
@@ -173,7 +173,13 @@ export const deals = pgTable('deals', {
   leadQualityFeedbackBy: uuid('lead_quality_feedback_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  // Múltiplos deals por lead (recompra), mas no máximo 1 ATIVO por lead.
+  // Deals terminais (ganho/perdido) acumulam como histórico. Ver migration 036.
+  oneActivePerLead: uniqueIndex('uidx_deals_one_active_per_lead')
+    .on(t.leadId)
+    .where(sql`stage NOT IN ('ganho', 'perdido')`),
+}));
 
 export const dealActivities = pgTable('deal_activities', {
   id: uuid('id').primaryKey().defaultRandom(),
