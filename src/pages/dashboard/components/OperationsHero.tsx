@@ -66,7 +66,7 @@ function RevenueCard({ kpis, goal }: { kpis: DashboardKpis | undefined; goal: Da
           <Target className="h-3.5 w-3.5" />
           <span>Sem meta cadastrada.</span>
           <Link
-            to="/configuracoes?tab=organizacao"
+            to="/settings?tab=organization"
             className="text-primary hover:underline"
           >
             Definir agora
