@@ -499,6 +499,30 @@ export interface AudienceFilters {
   daysSinceCreated?: number;
   excludeLeadIds?: string[];
   phoneCsv?: string[];
+  /**
+   * Audiência por leads importados (novo fluxo: CSV por CNPJ na Etapa 3).
+   * Quando presente, a audiência = esses leads (menos excludeLeadIds, só com
+   * Telefone 1), ignorando status/source/daysSinceCreated/phoneCsv.
+   */
+  importedLeadIds?: string[];
+}
+
+export const ENRICHMENT_TARGETS = ['phone', 'phone2'] as const;
+export type EnrichmentTarget = (typeof ENRICHMENT_TARGETS)[number];
+
+export interface CampaignAudienceImportResult {
+  report: ImportReport;
+  /** leadIds dos CNPJs do arquivo (novos + existentes). */
+  importedLeadIds: string[];
+  /** Linhas com CNPJ repetido dentro do próprio arquivo (consolidadas). */
+  duplicatesInFileCount: number;
+  /** CNPJs que já participaram de campanha anterior (pra decisão manter/excluir). */
+  previouslyParticipated: Array<{
+    leadId: string;
+    cnpj: string | null;
+    name: string;
+    lastCampaign: { id: string; name: string; participatedAt: string } | null;
+  }>;
 }
 
 export type CampaignBlockReason = 'recent_outbound' | 'pending_other_campaign';
@@ -975,6 +999,16 @@ export interface PublicEnrichmentJob {
   lastError: string | null;
   estimatedRemainingMinutes: number | null;
   createdAt: string;
+  /** phone (Tel 1, Cadastros) ou phone2 (Tel 2, audiência de campanha). */
+  target?: EnrichmentTarget;
+  /** Leads que acabaram de ganhar telefone neste job (mais recentes primeiro). */
+  recentlyFound?: Array<{
+    leadId: string;
+    name: string;
+    cnpj: string | null;
+    phone: string | null;
+    phone2: string | null;
+  }>;
 }
 
 // ---------------------------------------------------------------------------

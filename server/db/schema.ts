@@ -33,6 +33,7 @@ import {
   IMBP_VALUES,
   SEGMENT_VALUES,
   UF_VALUES,
+  ENRICHMENT_TARGETS,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -336,6 +337,8 @@ export type NewCampaignRecipient = typeof campaignRecipients.$inferInsert;
 export const enrichmentJobs = pgTable('enrichment_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
   status: text('status').notNull().default('pending'), // pending|running|completed|cancelled
+  // phone (Tel 1, Cadastros) ou phone2 (Tel 2, audiência de campanha). Migration 038.
+  target: text('target', { enum: ENRICHMENT_TARGETS }).notNull().default('phone'),
   totalLeads: integer('total_leads').notNull(),
   processedCount: integer('processed_count').notNull().default(0),
   succeededCount: integer('succeeded_count').notNull().default(0),
