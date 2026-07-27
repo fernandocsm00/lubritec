@@ -16,6 +16,7 @@ export interface ListParams {
   q?: string;
   status?: LeadStatus;
   source?: LeadSource;
+  uf?: Uf;
   /** Etapa unificada de Cadastros (funil do lead + etapa comercial do deal). */
   flowStage?: CadastroStage;
   pipeline?: 'yes' | 'no';

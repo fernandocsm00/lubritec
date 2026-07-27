@@ -9,7 +9,7 @@ import { ImportCsvDialog } from '@/features/leads/ImportCsvDialog';
 import { BulkEnrichmentDialog } from '@/features/leads/BulkEnrichmentDialog';
 import { useLeads, type ListParams } from '@/features/leads/api';
 import { useAuthStore } from '@/features/auth/store';
-import { CADASTRO_STAGES, type LeadStatus, type LeadSource, type CadastroStage } from '@shared/types';
+import { CADASTRO_STAGES, type LeadStatus, type LeadSource, type CadastroStage, type Uf } from '@shared/types';
 
 function useDebounced<T>(value: T, ms = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -32,6 +32,7 @@ export default function CadastrosPage() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<LeadStatus | 'all'>('all');
   const [source, setSource] = useState<LeadSource | 'all'>('all');
+  const [uf, setUf] = useState<Uf | 'all'>('all');
   const [flowStage, setFlowStage] = useState<CadastroStage | 'all'>(initialFlowStage);
   const [pipeline, setPipeline] = useState<'yes' | 'no' | 'all'>('all');
   const [withIssues, setWithIssues] = useState<boolean>(searchParams.get('withIssues') === 'true');
@@ -48,6 +49,7 @@ export default function CadastrosPage() {
     q: debouncedQ || undefined,
     status: status === 'all' ? undefined : status,
     source: source === 'all' ? undefined : source,
+    uf: uf === 'all' ? undefined : uf,
     flowStage: flowStage === 'all' ? undefined : flowStage,
     pipeline: pipeline === 'all' ? undefined : pipeline,
     withIssues: withIssues || undefined,
@@ -58,7 +60,7 @@ export default function CadastrosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, source, flowStage, pipeline, withIssues]);
+  }, [debouncedQ, status, source, uf, flowStage, pipeline, withIssues]);
 
   // Sincroniza flowStage e withIssues na URL (refresh preserva o filtro,
   // e deep-link de toasts do import consegue trazer o usuario direto pra
@@ -115,12 +117,14 @@ export default function CadastrosPage() {
         q={q}
         status={status}
         source={source}
+        uf={uf}
         flowStage={flowStage}
         pipeline={pipeline}
         withIssues={withIssues}
         onQChange={setQ}
         onStatusChange={setStatus}
         onSourceChange={setSource}
+        onUfChange={setUf}
         onFlowStageChange={setFlowStage}
         onPipelineChange={setPipeline}
         onWithIssuesChange={setWithIssues}

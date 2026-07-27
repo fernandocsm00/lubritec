@@ -433,6 +433,7 @@ export async function listLeads(params: {
   flowStage?: CadastroStage;
   pipeline?: 'yes' | 'no';
   withIssues?: boolean;
+  uf?: Uf;
   campaignIds?: string[];
   sort?: SortKey;
   order?: 'asc' | 'desc';
@@ -446,6 +447,7 @@ export async function listLeads(params: {
   const conditions = [];
   if (params.status) conditions.push(eq(leads.status, params.status));
   if (params.source) conditions.push(eq(leads.source, params.source));
+  if (params.uf) conditions.push(eq(leads.uf, params.uf));
   if (params.flowStage) conditions.push(sql`${cadastroStageSql()} = ${params.flowStage}`);
   if (params.pipeline === 'yes') {
     conditions.push(sql`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`);

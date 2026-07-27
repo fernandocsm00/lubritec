@@ -135,6 +135,15 @@ describe('listLeads', () => {
     expect(res.total).toBe(1);
   });
 
+  it('filtra por uf', async () => {
+    await createLead({ name: 'RS lead', phone: '11000000080', cnpj: VALID_CNPJ_4, uf: 'RS' });
+    await createLead({ name: 'BA lead', phone: '11000000081', cnpj: VALID_CNPJ_5, uf: 'BA' });
+    const rs = await listLeads({ uf: 'RS' });
+    expect(rs.items.every((l) => l.uf === 'RS')).toBe(true);
+    expect(rs.items.some((l) => l.name === 'RS lead')).toBe(true);
+    expect(rs.items.some((l) => l.name === 'BA lead')).toBe(false);
+  });
+
   it('default sort é created_at desc', async () => {
     const a = await seedLead({ name: 'Old', phone: '11000000060' });
     await new Promise((r) => setTimeout(r, 10));

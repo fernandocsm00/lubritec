@@ -123,6 +123,7 @@ export function LeadsTable(props: Props) {
               </TableHead>
               <TableHead>CPF/CNPJ</TableHead>
               <TableHead>Telefone</TableHead>
+              <TableHead>UF</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Pipeline</TableHead>
@@ -143,7 +144,7 @@ export function LeadsTable(props: Props) {
             {loading
               ? Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
@@ -151,7 +152,7 @@ export function LeadsTable(props: Props) {
               : items.length === 0
                 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
                       Nenhum lead encontrado.
                     </TableCell>
                   </TableRow>
@@ -176,6 +177,11 @@ export function LeadsTable(props: Props) {
                       <TableCell className="font-mono text-xs">{formatCnpj(l.cnpj)}</TableCell>
                       <TableCell className={l.phone ? '' : 'text-muted-foreground italic'}>
                         {l.phone ?? '—'}
+                      </TableCell>
+                      <TableCell>
+                        {l.uf
+                          ? <Badge variant="outline" className="text-xs">{l.uf}</Badge>
+                          : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={STAGE_LABEL[l.cadastroStage].className}>

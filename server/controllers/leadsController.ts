@@ -86,6 +86,7 @@ const listQuery = z.object({
   q: z.string().optional(),
   status: z.enum(LEAD_STATUSES).optional(),
   source: z.enum(LEAD_SOURCES).optional(),
+  uf: z.enum(UF_VALUES).optional(),
   flowStage: z.enum(CADASTRO_STAGES).optional(),
   pipeline: z.enum(['yes', 'no']).optional(),
   withIssues: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),

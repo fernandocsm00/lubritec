@@ -6,18 +6,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { LeadStatus, LeadSource, CadastroStage } from '@shared/types';
+import { UF_VALUES, UF_LABELS, type LeadStatus, type LeadSource, type CadastroStage, type Uf } from '@shared/types';
 
 interface Props {
   q: string;
   status: LeadStatus | 'all';
   source: LeadSource | 'all';
+  uf: Uf | 'all';
   flowStage: CadastroStage | 'all';
   pipeline: 'yes' | 'no' | 'all';
   withIssues: boolean;
   onQChange: (v: string) => void;
   onStatusChange: (v: LeadStatus | 'all') => void;
   onSourceChange: (v: LeadSource | 'all') => void;
+  onUfChange: (v: Uf | 'all') => void;
   onFlowStageChange: (v: CadastroStage | 'all') => void;
   onPipelineChange: (v: 'yes' | 'no' | 'all') => void;
   onWithIssuesChange: (v: boolean) => void;
@@ -27,12 +29,14 @@ export function LeadFilters({
   q,
   status,
   source,
+  uf,
   flowStage,
   pipeline,
   withIssues,
   onQChange,
   onStatusChange,
   onSourceChange,
+  onUfChange,
   onFlowStageChange,
   onPipelineChange,
   onWithIssuesChange,
@@ -77,6 +81,15 @@ export function LeadFilters({
           <SelectItem value="manual">Manual</SelectItem>
           <SelectItem value="csv">CSV</SelectItem>
           <SelectItem value="whatsapp">WhatsApp</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={uf} onValueChange={(v) => onUfChange(v as Uf | 'all')}>
+        <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todas as UFs</SelectItem>
+          {UF_VALUES.map((v) => (
+            <SelectItem key={v} value={v}>{UF_LABELS[v]}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
       <Select value={pipeline} onValueChange={(v) => onPipelineChange(v as 'yes' | 'no' | 'all')}>
