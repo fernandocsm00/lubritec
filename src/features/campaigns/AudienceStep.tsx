@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { LEAD_STATUSES, LEAD_SOURCES } from '@shared/types';
 import type { AudienceFilters } from './types';
 import { useDryRun } from './api';
-import { CsvUpload } from './CsvUpload';
+import { AudienceCsvImport } from './AudienceCsvImport';
 import { AudiencePreviewTable } from './AudiencePreviewTable';
 
 interface Props {
@@ -108,14 +108,16 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
       </div>
 
       <div className="border-t pt-4">
-        <Label>Upload CSV de telefones (opcional)</Label>
-        <CsvUpload
-          current={filters.phoneCsv ?? []}
-          onPhones={(phones) => onFiltersChange({
-            ...filters,
-            phoneCsv: phones.length ? phones : undefined,
-          })}
-        />
+        <Label>Importar audiência por CNPJ</Label>
+        <div className="mt-1">
+          <AudienceCsvImport
+            onChange={(importedLeadIds, excludeLeadIds) => onFiltersChange({
+              ...filters,
+              importedLeadIds: importedLeadIds.length ? importedLeadIds : undefined,
+              excludeLeadIds: excludeLeadIds.length ? excludeLeadIds : undefined,
+            })}
+          />
+        </div>
       </div>
 
       <div className="border-t pt-4">

@@ -12,7 +12,7 @@ import type {
   CampaignsTimeseries,
   TopCampaignsResponse,
 } from './types';
-import type { PublicAuditSample, LeadQualityFeedback, CampaignCalibrationMetrics } from '@shared/types';
+import type { PublicAuditSample, LeadQualityFeedback, CampaignCalibrationMetrics, CampaignAudienceImportResult, PublicEnrichmentJob } from '@shared/types';
 
 export type ReportPeriod = 'today' | '7d' | 'month' | '30d' | 'quarter';
 export type CampaignKind = 'all' | 'one_shot' | 'continuous';
@@ -291,6 +291,25 @@ export function useUploadMedia() {
       fd.append('file', file);
       return api('/campaigns/upload-media', { method: 'POST', body: fd });
     },
+  });
+}
+
+/** Import da audiência por CNPJ (reusa o import de Cadastros). */
+export function useImportAudience() {
+  return useMutation({
+    mutationFn: (file: File): Promise<CampaignAudienceImportResult> => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api('/campaigns/audience/import', { method: 'POST', body: fd });
+    },
+  });
+}
+
+/** Dispara enriquecimento (Telefone 2) em background pros leads importados. */
+export function useEnrichAudience() {
+  return useMutation({
+    mutationFn: (leadIds: string[]): Promise<PublicEnrichmentJob> =>
+      api('/campaigns/audience/enrich', { method: 'POST', body: JSON.stringify({ leadIds }) }),
   });
 }
 
