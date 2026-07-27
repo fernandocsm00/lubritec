@@ -38,6 +38,17 @@ export function validateComponentsForMeta(components: HsmComponent[]): void {
     throw new HttpError(422, 'O template precisa de um BODY com texto.');
   }
 
+  // Header de mídia (imagem/vídeo/documento) exige example.header_handle — a
+  // amostra que a Meta usa pra aprovar. Sem ela a Meta rejeita de forma opaca.
+  const header = components.find((c) => c.type === 'HEADER');
+  if (
+    header?.type === 'HEADER' &&
+    header.format !== 'TEXT' &&
+    !(header.example?.header_handle?.[0])
+  ) {
+    throw new HttpError(422, 'O header de imagem precisa de uma imagem enviada antes de submeter à Meta.');
+  }
+
   // Placeholders precisam ser numéricos: {{1}}, {{2}}, … ({{nome}} é inválido na Meta)
   const placeholders = body.text.match(/\{\{[^}]*\}\}/g) ?? [];
   const nonNumeric = [...new Set(placeholders.filter((p) => !/^\{\{\s*\d+\s*\}\}$/.test(p)))];

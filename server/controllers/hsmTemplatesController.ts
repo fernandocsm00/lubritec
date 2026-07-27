@@ -9,6 +9,7 @@ const createSchema = z.object({
   language: z.string().min(2),
   category: z.enum(HSM_CATEGORIES),
   components: z.array(z.any()).min(1, 'at least one component (BODY) is required'),
+  headerMediaUrl: z.string().url().nullable().optional(),
   submitNow: z.boolean().optional().default(false),
 });
 
@@ -41,6 +42,7 @@ const updateSchema = z.object({
   language: z.string().min(2),
   category: z.enum(HSM_CATEGORIES),
   components: z.array(z.any()).min(1, 'at least one component (BODY) is required'),
+  headerMediaUrl: z.string().url().nullable().optional(),
   submitNow: z.boolean().optional().default(false),
 });
 
@@ -57,6 +59,17 @@ export async function updateHandler(req: Request, res: Response, next: NextFunct
     if (e instanceof z.ZodError) return next(new HttpError(422, e.issues[0].message));
     next(e);
   }
+}
+
+export async function uploadHeaderMediaHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new HttpError(400, 'Nenhuma imagem enviada (campo "file").');
+    const result = await svc.uploadHeaderMedia({
+      instanceId: req.params.instanceId,
+      buffer: req.file.buffer,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
 }
 
 export async function deleteHandler(req: Request, res: Response, next: NextFunction) {

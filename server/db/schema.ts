@@ -220,6 +220,9 @@ export const whatsappHsmTemplates = pgTable('whatsapp_hsm_templates', {
   category: text('category', { enum: HSM_CATEGORIES }).notNull(),
   status: text('status', { enum: HSM_STATUSES }).notNull(),
   components: jsonb('components').notNull(),
+  // URL pública (Supabase Storage) da imagem de header — usada no disparo.
+  // Fora de `components` porque a Meta rejeita esse campo na criação (migration 036).
+  headerMediaUrl: text('header_media_url'),
   variableCount: integer('variable_count').notNull().default(0),
   rejectionReason: text('rejection_reason'),
   createdBy: uuid('created_by').notNull().references(() => users.id, { onDelete: 'restrict' }),

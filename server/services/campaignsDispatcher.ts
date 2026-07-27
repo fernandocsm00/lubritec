@@ -299,6 +299,8 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
         templateName: tpl.name,
         language: tpl.language,
         variables,
+        // Header de imagem: envia a URL pública (Supabase) como link do header.
+        ...(tpl.headerMediaUrl ? { headerMedia: { kind: 'image' as const, url: tpl.headerMediaUrl } } : {}),
       });
       msgBody = tpl.name;
       providerKind = 'meta_cloud';

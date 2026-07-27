@@ -28,6 +28,7 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
   const [components, setComponents] = useState<HsmComponent[]>([
     { type: 'BODY', text: '' },
   ]);
+  const [headerMediaUrl, setHeaderMediaUrl] = useState<string | null>(null);
 
   const create = useCreateTemplate(instanceId);
   const update = useUpdateTemplate(instanceId);
@@ -40,11 +41,13 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
       setLanguage(template.language);
       setCategory(template.category);
       setComponents((template.components ?? []) as HsmComponent[]);
+      setHeaderMediaUrl(template.headerMediaUrl ?? null);
     } else if (open && !template) {
       setName('');
       setLanguage('pt_BR');
       setCategory('MARKETING');
       setComponents([{ type: 'BODY', text: '' }]);
+      setHeaderMediaUrl(null);
     }
   }, [open, template]);
 
@@ -55,6 +58,7 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
     setLanguage('pt_BR');
     setCategory('MARKETING');
     setComponents([{ type: 'BODY', text: '' }]);
+    setHeaderMediaUrl(null);
     create.reset();
     update.reset();
   };
@@ -81,10 +85,16 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
   )];
   const hasInvalidVars = invalidVars.length > 0;
 
+  // Header de imagem sem imagem enviada: pode salvar rascunho, mas a Meta rejeita.
+  const headerIsImage = !!headerComp && 'format' in headerComp && headerComp.format === 'IMAGE';
+  const headerImageMissing = headerIsImage
+    && !(headerComp && 'example' in headerComp && headerComp.example?.header_handle?.[0]);
+
   const canSave = nameValid && hasBody && !headerTextEmpty && !hasInvalidVars;
+  const canSubmitMeta = canSave && !headerImageMissing;
 
   const submit = (asDraft: boolean) => {
-    const body = { name, language, category, components, submitNow: !asDraft };
+    const body = { name, language, category, components, headerMediaUrl, submitNow: !asDraft };
     if (isEdit && template) {
       update.mutate(
         { templateId: template.id, body },
@@ -152,7 +162,13 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
               </div>
             </fieldset>
 
-            <TemplateComponentsEditor components={components} onChange={setComponents} />
+            <TemplateComponentsEditor
+              components={components}
+              onChange={setComponents}
+              instanceId={instanceId}
+              headerMediaUrl={headerMediaUrl}
+              onHeaderMediaUrlChange={setHeaderMediaUrl}
+            />
 
             {headerTextEmpty && (
               <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded px-3 py-2">
@@ -174,7 +190,7 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
           {/* ── PREVIEW ── */}
           <div className="md:sticky md:top-0 self-start">
             <div className="text-xs font-medium text-zinc-700 mb-2">Preview</div>
-            <TemplatePreview components={components} />
+            <TemplatePreview components={components} headerMediaUrl={headerMediaUrl} />
           </div>
         </div>
 
@@ -191,7 +207,8 @@ export function TemplateEditor({ open, instanceId, template, onClose }: Props) {
           </button>
           <button
             onClick={() => submit(false)}
-            disabled={!canSave || mutation.isPending}
+            disabled={!canSubmitMeta || mutation.isPending}
+            title={headerImageMissing ? 'Envie a imagem do header antes de submeter à Meta' : undefined}
             className="px-4 py-2 bg-lc-navy text-white rounded disabled:opacity-50 text-sm"
           >
             {mutation.isPending ? 'Enviando...' : 'Enviar para aprovação'}

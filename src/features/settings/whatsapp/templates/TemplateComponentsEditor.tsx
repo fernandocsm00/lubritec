@@ -1,10 +1,15 @@
-import { useMemo } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { Plus, X, Upload, Loader2 } from 'lucide-react';
 import type { HsmComponent, HsmHeader, HsmBody, HsmFooter, HsmButtons, HsmButton } from './types';
+import { useUploadHeaderMedia } from './api';
 
 interface Props {
   components: HsmComponent[];
   onChange: (next: HsmComponent[]) => void;
+  instanceId: string;
+  /** URL pública da imagem de header já enviada (persistida no disparo). */
+  headerMediaUrl: string | null;
+  onHeaderMediaUrlChange: (url: string | null) => void;
 }
 
 function setComponent(components: HsmComponent[], next: HsmComponent | null, type: HsmComponent['type']): HsmComponent[] {
@@ -17,7 +22,15 @@ function setComponent(components: HsmComponent[], next: HsmComponent | null, typ
   return combined;
 }
 
-export function TemplateComponentsEditor({ components, onChange }: Props) {
+export function TemplateComponentsEditor({
+  components,
+  onChange,
+  instanceId,
+  headerMediaUrl,
+  onHeaderMediaUrlChange,
+}: Props) {
+  const upload = useUploadHeaderMedia(instanceId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const header = components.find((c) => c.type === 'HEADER') as HsmHeader | undefined;
   const body = components.find((c) => c.type === 'BODY') as HsmBody | undefined;
   const footer = components.find((c) => c.type === 'FOOTER') as HsmFooter | undefined;
@@ -32,12 +45,35 @@ export function TemplateComponentsEditor({ components, onChange }: Props) {
 
   // ─── HEADER ───
   const setHeaderType = (type: 'none' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') => {
+    // Qualquer troca de tipo descarta a imagem já enviada (o header_handle sai
+    // junto ao recriar o componente).
+    onHeaderMediaUrlChange(null);
+    upload.reset();
     if (type === 'none') {
       onChange(setComponent(components, null, 'HEADER'));
     } else if (type === 'TEXT') {
       onChange(setComponent(components, { type: 'HEADER', format: 'TEXT', text: '' }, 'HEADER'));
     } else {
       onChange(setComponent(components, { type: 'HEADER', format: type }, 'HEADER'));
+    }
+  };
+
+  // header_handle já preenchido? (imagem enviada e pronta pra submissão)
+  const headerHandle = header && header.format !== 'TEXT'
+    ? header.example?.header_handle?.[0]
+    : undefined;
+
+  const onPickImage = async (file: File) => {
+    try {
+      const { url, handle } = await upload.mutateAsync(file);
+      // Grava o handle nos components (submissão à Meta) e leva a url pra cima
+      // (persistida como headerMediaUrl, usada no disparo).
+      onChange(setComponent(components, { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handle] } }, 'HEADER'));
+      onHeaderMediaUrlChange(url);
+    } catch {
+      // erro fica exposto via upload.error abaixo
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -129,7 +165,65 @@ export function TemplateComponentsEditor({ components, onChange }: Props) {
             )}
           </>
         )}
-        {header && 'format' in header && header.format !== 'TEXT' && (
+        {header && 'format' in header && header.format === 'IMAGE' && (
+          <div className="mt-3 space-y-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onPickImage(f);
+              }}
+            />
+            {headerMediaUrl ? (
+              <div className="flex items-start gap-3">
+                <img
+                  src={headerMediaUrl}
+                  alt="Header do template"
+                  className="h-24 w-24 rounded object-cover border border-zinc-200"
+                />
+                <div className="space-y-1">
+                  <p className="text-xs text-emerald-700">Imagem enviada ✓</p>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={upload.isPending}
+                    className="inline-flex items-center gap-1 px-2 py-1 border border-zinc-300 rounded text-xs hover:bg-zinc-50 disabled:opacity-50"
+                  >
+                    {upload.isPending ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                    Trocar imagem
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={upload.isPending}
+                className="inline-flex items-center gap-2 px-3 py-2 border border-dashed border-zinc-300 rounded text-sm hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {upload.isPending ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {upload.isPending ? 'Enviando…' : 'Enviar imagem do header'}
+              </button>
+            )}
+            <p className="text-xs text-zinc-500">
+              JPG, PNG ou WebP (máx. 5MB). Serve como amostra de aprovação e como header fixo do disparo.
+            </p>
+            {upload.error && (
+              <p className="text-xs text-red-600">
+                {upload.error instanceof Error ? upload.error.message : 'Falha no upload da imagem.'}
+              </p>
+            )}
+            {!headerHandle && !upload.isPending && (
+              <p className="text-xs text-amber-700">
+                Envie uma imagem antes de submeter à Meta.
+              </p>
+            )}
+          </div>
+        )}
+        {header && 'format' in header && (header.format === 'VIDEO' || header.format === 'DOCUMENT') && (
           <p className="text-xs text-zinc-500 mt-2">
             Mídia de header é enviada por URL no momento do disparo da campanha.
           </p>

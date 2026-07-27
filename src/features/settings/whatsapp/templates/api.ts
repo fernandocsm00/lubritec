@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
-import type { HsmTemplateRecord, CreateHsmTemplateRequest } from './types';
+import type { HsmTemplateRecord, CreateHsmTemplateRequest, HsmHeaderMediaUploadResult } from '@shared/types';
 
 const TEMPLATES_KEY = (instanceId: string) => ['hsm-templates', instanceId];
 
@@ -32,6 +32,20 @@ export function useUpdateTemplate(instanceId: string) {
         method: 'PATCH', body: JSON.stringify(args.body),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: TEMPLATES_KEY(instanceId) }),
+  });
+}
+
+/** Sobe a imagem de header e devolve { url, handle } (Supabase + Meta). */
+export function useUploadHeaderMedia(instanceId: string) {
+  return useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api<HsmHeaderMediaUploadResult>(
+        `/whatsapp/instances/${instanceId}/templates/header-media`,
+        { method: 'POST', body: fd },
+      );
+    },
   });
 }
 

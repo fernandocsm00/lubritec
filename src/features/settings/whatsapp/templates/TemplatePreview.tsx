@@ -2,6 +2,8 @@ import type { HsmComponent } from './types';
 
 interface Props {
   components: HsmComponent[];
+  /** URL da imagem de header já enviada — mostra a imagem real no preview. */
+  headerMediaUrl?: string | null;
 }
 
 function findComponent<T extends HsmComponent['type']>(
@@ -20,7 +22,7 @@ function renderBodyWithHighlight(text: string) {
   );
 }
 
-export function TemplatePreview({ components }: Props) {
+export function TemplatePreview({ components, headerMediaUrl }: Props) {
   const header = findComponent(components, 'HEADER');
   const body = findComponent(components, 'BODY');
   const footer = findComponent(components, 'FOOTER');
@@ -32,7 +34,11 @@ export function TemplatePreview({ components }: Props) {
         {header && 'format' in header && header.format === 'TEXT' && 'text' in header && (
           <div className="font-semibold text-sm">{header.text}</div>
         )}
-        {header && 'format' in header && header.format !== 'TEXT' && (
+        {header && 'format' in header && header.format === 'IMAGE' && headerMediaUrl && (
+          <img src={headerMediaUrl} alt="Header" className="rounded w-full h-32 object-cover" />
+        )}
+        {header && 'format' in header && header.format !== 'TEXT'
+          && !(header.format === 'IMAGE' && headerMediaUrl) && (
           <div className="bg-zinc-100 rounded h-32 flex items-center justify-center text-xs text-zinc-500">
             [{header.format}]
           </div>

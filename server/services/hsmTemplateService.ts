@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/client';
 import { whatsappHsmTemplates, whatsappInstance, users } from '../db/schema';
 import { HttpError } from '../middleware/errorHandler';
 import { decryptSecret } from '../lib/crypto';
+import { uploadPublicObject } from '../lib/storage';
+import { uploadResumableHeaderSample } from './whatsapp/metaCloud/mediaUpload';
 import { metaCloudConfigSchema } from './whatsapp/metaCloud/configSchema';
 import {
   createTemplate as createOnMeta,
@@ -47,6 +51,7 @@ export interface CreateLocalInput {
   language: string;
   category: HsmCategory;
   components: HsmComponent[];
+  headerMediaUrl?: string | null;
   submitNow: boolean;
 }
 
@@ -58,6 +63,75 @@ async function loadMetaCfg(instanceId: string) {
     throw new HttpError(400, 'HSM templates are only supported on meta_cloud instances');
   }
   return metaCloudConfigSchema.parse(row.providerConfig);
+}
+
+const MAX_HEADER_DIMENSION = 1024;
+
+/**
+ * Sobe a imagem de header de um template HSM. Normaliza pra JPEG (sharp), guarda
+ * no Supabase Storage (URL pública, usada no disparo) e sobe a mesma imagem como
+ * amostra via Resumable Upload da Meta (header_handle, usado na submissão).
+ * Retorna { url, handle } — o frontend põe o handle em components[HEADER].example
+ * e envia a url como headerMediaUrl na criação do template.
+ */
+export async function uploadHeaderMedia(input: {
+  instanceId: string;
+  buffer: Buffer;
+}): Promise<{ url: string; handle: string }> {
+  const cfg = await loadMetaCfg(input.instanceId);
+  if (!cfg.appId) {
+    throw new HttpError(
+      400,
+      'App ID da Meta não configurado nesta instância. Configure o App ID nas configurações do WhatsApp para enviar imagens de header.',
+    );
+  }
+
+  // Normaliza pra JPEG: corrige orientação EXIF, limita dimensão e remove
+  // metadados. Se o sharp não decodificar, é formato inválido → 400 amigável.
+  let jpeg: Buffer;
+  try {
+    jpeg = await sharp(input.buffer, { failOn: 'truncated' })
+      .rotate()
+      .resize({ width: MAX_HEADER_DIMENSION, height: MAX_HEADER_DIMENSION, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85, mozjpeg: true })
+      .toBuffer();
+  } catch {
+    throw new HttpError(400, 'Formato de imagem não suportado. Use JPG, PNG ou WebP.');
+  }
+
+  const fileName = `${randomUUID()}.jpg`;
+  const url = await uploadPublicObject({
+    path: `headers/${fileName}`,
+    buffer: jpeg,
+    contentType: 'image/jpeg',
+  });
+
+  try {
+    const handle = await uploadResumableHeaderSample({
+      appId: cfg.appId,
+      accessToken: decryptSecret(cfg.accessToken),
+      buffer: jpeg,
+      mimeType: 'image/jpeg',
+      fileName,
+    });
+    return { url, handle };
+  } catch (err) {
+    if (err instanceof MetaGraphError) {
+      throw new HttpError(422, `Falha ao enviar amostra à Meta: ${err.message}`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Deriva a headerMediaUrl a persistir: só faz sentido quando o header é de mídia
+ * (imagem). Se o header for texto ou não existir, força null pra não deixar URL
+ * órfã presa no registro.
+ */
+function resolveHeaderMediaUrl(components: HsmComponent[], input: string | null | undefined): string | null {
+  const header = components.find((c) => c.type === 'HEADER');
+  const isMedia = header?.type === 'HEADER' && header.format !== 'TEXT';
+  return isMedia ? (input ?? null) : null;
 }
 
 export async function createTemplate(input: CreateLocalInput) {
@@ -103,6 +177,7 @@ export async function createTemplate(input: CreateLocalInput) {
     category: input.category,
     status,
     components,
+    headerMediaUrl: resolveHeaderMediaUrl(components, input.headerMediaUrl),
     metaTemplateId,
     variableCount,
     lastSyncedAt: metaTemplateId ? new Date() : null,
@@ -117,6 +192,7 @@ export interface UpdateLocalInput {
   language: string;
   category: HsmCategory;
   components: HsmComponent[];
+  headerMediaUrl?: string | null;
   submitNow: boolean;
 }
 
@@ -168,6 +244,7 @@ export async function updateTemplate(input: UpdateLocalInput) {
     language: input.language,
     category: input.category,
     components,
+    headerMediaUrl: resolveHeaderMediaUrl(components, input.headerMediaUrl),
     variableCount,
     ...(input.submitNow ? { status, metaTemplateId, lastSyncedAt: new Date() } : {}),
     updatedAt: new Date(),
