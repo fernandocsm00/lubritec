@@ -553,6 +553,12 @@ export interface PublicCampaign {
   status: CampaignStatus;
   templateId: string | null;
   messageBody: string;
+  // Mensagem legível efetivamente disparada. Para campanhas de texto = messageBody;
+  // para campanhas com template HSM = o texto do BODY do template (messageBody
+  // fica vazio nesses casos). Usada no relatório e no hover da Inbox.
+  dispatchedMessage: string;
+  // Imagem do disparo: mídia da campanha de texto OU header de imagem do HSM.
+  dispatchedMediaUrl: string | null;
   qualificationQuestion: string | null;
   mediaUrl: string | null;
   mediaMime: string | null;

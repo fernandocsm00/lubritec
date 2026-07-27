@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { createUser, createLead, createConversation, createMessage, createCampaign } from './helpers';
+import { createUser, createLead, createConversation, createMessage, createCampaign, createHsmTemplate, getOrCreateDefaultInstance } from './helpers';
 
 const app = createApp();
 
@@ -184,6 +184,42 @@ describe('GET /api/conversations', () => {
     const item = res.body.items.find((c: { phone: string }) => c.phone === '11000010051');
     expect(item).toBeDefined();
     expect(item.originCampaignMessage).toBe('Mensagem padrão da campanha');
+  });
+
+  it('originCampaignMessage = BODY do template em campanha HSM', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000010060' });
+    const owner = await createUser({ email: 'hsm-hover@x.com', role: 'comercial' });
+    const instanceId = await getOrCreateDefaultInstance();
+    const tpl = await createHsmTemplate({
+      instanceId,
+      createdBy: owner.id,
+      status: 'APPROVED',
+      components: [{ type: 'BODY', text: 'Olá {{1}}, faz tempo que não te vemos!' }],
+    });
+    const campaign = await createCampaign({
+      createdByUserId: owner.id,
+      instanceId,
+      hsmTemplateId: tpl.id,
+      messageBody: '',
+    });
+    const conv = await createConversation({
+      phone: '11000010060',
+      leadId: lead.id,
+      originKind: 'campaign',
+      originCampaignId: campaign.id,
+      lastInboundAt: new Date(),
+    });
+    // O outbound guarda o NOME do template — o hover deve mostrar o BODY, não o nome.
+    await createMessage({ conversationId: conv.id, direction: 'out', body: tpl.name });
+
+    const res = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((c: { phone: string }) => c.phone === '11000010060');
+    expect(item).toBeDefined();
+    expect(item.originCampaignMessage).toBe('Olá {{1}}, faz tempo que não te vemos!');
   });
 
   it('filtra por assignment=mine', async () => {

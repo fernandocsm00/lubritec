@@ -88,7 +88,7 @@ let _convPhoneSeq = 0;
  * intended to verify cross-instance isolation might still pass because both
  * conversations land in the same auto-created instance).
  */
-async function getOrCreateDefaultInstance(): Promise<string> {
+export async function getOrCreateDefaultInstance(): Promise<string> {
   const existing = await db.query.whatsappInstance.findFirst({
     where: (t, { eq }) => eq(t.isDefault, true),
   });

@@ -123,9 +123,13 @@ export default function CampaignDetailPage() {
 
           <div className="rounded-lg border border-border bg-card p-4 mb-4">
             <h3 className="text-sm font-semibold mb-2">Mensagem disparada</h3>
-            <pre className="text-xs bg-muted/30 p-2 rounded whitespace-pre-wrap">{data.messageBody}</pre>
-            {data.mediaUrl && (
-              <img src={data.mediaUrl} alt="" className="mt-2 max-w-xs max-h-40 rounded" />
+            {data.dispatchedMediaUrl && (
+              <img src={data.dispatchedMediaUrl} alt="" className="mb-2 max-w-xs max-h-40 rounded" />
+            )}
+            {data.dispatchedMessage?.trim() ? (
+              <pre className="text-xs bg-muted/30 p-2 rounded whitespace-pre-wrap">{data.dispatchedMessage}</pre>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">Sem prévia da mensagem.</p>
             )}
           </div>
 

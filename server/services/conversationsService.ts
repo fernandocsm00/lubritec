@@ -1,9 +1,9 @@
 ﻿import { db } from '../db/client';
-import { conversations, messages, leads, users, whatsappInstance, campaigns } from '../db/schema';
+import { conversations, messages, leads, users, whatsappInstance, campaigns, whatsappHsmTemplates } from '../db/schema';
 import { eq, and, or, ilike, asc, desc, sql, isNull, lt, inArray, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
-import { getTemplateById, resolveHsmVariables } from './hsmTemplateService';
+import { getTemplateById, resolveHsmVariables, hsmBodyText } from './hsmTemplateService';
 import type {
   PublicConversation,
   ConversationCounts,
@@ -124,6 +124,9 @@ export async function listConversations(input: ListInput): Promise<{
       campaignName: campaigns.name,
       // messageBody da campanha — fallback pro hover quando o disparo foi só mídia.
       campaignBody: campaigns.messageBody,
+      // Components do template HSM (quando a campanha usou template) — a mensagem
+      // real é o BODY do template, não o nome dele (que é o que vira o outbound).
+      hsmComponents: whatsappHsmTemplates.components,
       // Corpo do disparo real (1º outbound da conversa), com placeholders já
       // resolvidos e variante A/B correta. Só busca em conversas de campanha.
       campaignSentBody: sql<string | null>`(
@@ -146,6 +149,7 @@ export async function listConversations(input: ListInput): Promise<{
     .leftJoin(leads, eq(conversations.leadId, leads.id))
     .leftJoin(users, eq(conversations.assignedTo, users.id))
     .leftJoin(campaigns, eq(conversations.originCampaignId, campaigns.id))
+    .leftJoin(whatsappHsmTemplates, eq(campaigns.hsmTemplateId, whatsappHsmTemplates.id))
     .where(where)
     // Na fila Comercial: FIFO por tempo de espera (entered_queue_at ASC).
     // Conversas sem enteredQueueAt (historico antigo) caem no fim via NULLS LAST.
@@ -175,7 +179,11 @@ export async function listConversations(input: ListInput): Promise<{
       originKind: r.conv.originKind,
       originCampaignId: r.conv.originCampaignId,
       originCampaignName: r.campaignName ?? null,
-      originCampaignMessage: r.campaignSentBody ?? r.campaignBody ?? null,
+      // HSM: BODY do template (o outbound guarda só o nome do template).
+      // Texto: o disparo real (com placeholders resolvidos) ou o messageBody.
+      originCampaignMessage: r.hsmComponents
+        ? (hsmBodyText(r.hsmComponents as HsmComponent[]) || null)
+        : (r.campaignSentBody ?? r.campaignBody ?? null),
       lastMessagePreview: previewFromMessage({
         body: r.lastMsg?.body ?? null,
         kind: r.lastMsg?.kind ?? 'text',

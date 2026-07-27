@@ -14,10 +14,10 @@ import {
   deleteTemplateOnMeta,
 } from './whatsapp/metaCloud/templates';
 import { MetaGraphError } from './whatsapp/metaCloud/client';
-import { countBodyVariables, sanitizeComponents, validateComponentsForMeta } from './hsmComponents';
+import { countBodyVariables, sanitizeComponents, validateComponentsForMeta, hsmBodyText } from './hsmComponents';
 import type { HsmComponent, HsmStatus, HsmCategory, CampaignHsmVariable } from '@shared/types';
 
-export { countBodyVariables, sanitizeComponents, validateComponentsForMeta };
+export { countBodyVariables, sanitizeComponents, validateComponentsForMeta, hsmBodyText };
 
 // ── Variable resolution ─────────────────────────────────────────────────────
 

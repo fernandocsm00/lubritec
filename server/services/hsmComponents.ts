@@ -1,6 +1,12 @@
 import { HttpError } from '../middleware/errorHandler';
 import type { HsmComponent, HsmBody } from '@shared/types';
 
+/** Texto do BODY de um template HSM (a mensagem principal). '' se não houver. */
+export function hsmBodyText(components: HsmComponent[]): string {
+  const body = components.find((c) => c.type === 'BODY');
+  return body && 'text' in body ? body.text : '';
+}
+
 /** Count unique {{N}} placeholders in the BODY component of an HSM template. */
 export function countBodyVariables(components: HsmComponent[]): number {
   for (const c of components) {

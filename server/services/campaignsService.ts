@@ -19,7 +19,7 @@ import type {
 import { LOSS_REASONS } from '@shared/types';
 import { resolveAudience, materializeCsvLeads } from './campaignsAudience';
 import { filterEligibleLeads } from './campaignsCooldown';
-import { getTemplateById, countBodyVariables } from './hsmTemplateService';
+import { getTemplateById, countBodyVariables, hsmBodyText } from './hsmTemplateService';
 import type { HsmComponent } from '@shared/types';
 
 const LIST_PAGE_SIZE = 50;
@@ -67,6 +67,10 @@ function toPublicCampaign(
     status: row.status as CampaignStatus,
     templateId: row.templateId,
     messageBody: row.messageBody,
+    // Base: campanhas de texto. getCampaignById sobrescreve para HSM (texto do
+    // BODY do template + header de imagem), já que aí o template é carregado.
+    dispatchedMessage: row.messageBody,
+    dispatchedMediaUrl: row.mediaUrl,
     qualificationQuestion: row.qualificationQuestion ?? null,
     mediaUrl: row.mediaUrl,
     mediaMime: row.mediaMime,
@@ -138,7 +142,18 @@ export async function getCampaignById(id: string): Promise<PublicCampaign> {
     .limit(1);
   if (!row) throw new HttpError(404, 'Campaign not found');
   const counts = (await getRecipientCounts([id])).get(id) ?? ZERO_COUNTS;
-  return toPublicCampaign(row.campaign, row.creator, counts);
+  const pub = toPublicCampaign(row.campaign, row.creator, counts);
+
+  // Campanha com template HSM: a mensagem real é o BODY do template (messageBody
+  // fica vazio). Resolve aqui pra reportar a mensagem efetivamente disparada.
+  if (row.campaign.hsmTemplateId) {
+    const tpl = await getTemplateById(row.campaign.hsmTemplateId);
+    if (tpl) {
+      pub.dispatchedMessage = hsmBodyText(tpl.components as HsmComponent[]);
+      pub.dispatchedMediaUrl = tpl.headerMediaUrl ?? null;
+    }
+  }
+  return pub;
 }
 
 // create + materialize recipients

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { createUser, createCampaign } from './helpers';
+import { createUser, createCampaign, createHsmTemplate, getOrCreateDefaultInstance } from './helpers';
 
 const app = createApp();
 
@@ -50,6 +50,30 @@ describe('GET /api/campaigns/:id', () => {
       .get('/api/campaigns/00000000-0000-0000-0000-000000000000')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(404);
+  });
+
+  it('dispatchedMessage = messageBody em campanha de texto', async () => {
+    const { token, userId } = await loginAs('a4@x.com', 'admin');
+    const c = await createCampaign({ createdByUserId: userId, messageBody: 'Olá {{nome}}, promoção!' });
+    const res = await request(app).get(`/api/campaigns/${c.id}`).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.dispatchedMessage).toBe('Olá {{nome}}, promoção!');
+  });
+
+  it('dispatchedMessage = BODY do template em campanha HSM', async () => {
+    const { token, userId } = await loginAs('a5@x.com', 'admin');
+    const instanceId = await getOrCreateDefaultInstance();
+    const tpl = await createHsmTemplate({
+      instanceId,
+      createdBy: userId,
+      status: 'APPROVED',
+      components: [{ type: 'BODY', text: 'Olá {{1}}, sua troca de óleo está pronta!' }],
+    });
+    // messageBody vazio: a mensagem real vem do BODY do template.
+    const c = await createCampaign({ createdByUserId: userId, instanceId, hsmTemplateId: tpl.id, messageBody: '' });
+    const res = await request(app).get(`/api/campaigns/${c.id}`).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.dispatchedMessage).toBe('Olá {{1}}, sua troca de óleo está pronta!');
   });
 });
 
