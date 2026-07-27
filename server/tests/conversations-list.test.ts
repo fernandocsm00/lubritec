@@ -222,6 +222,29 @@ describe('GET /api/conversations', () => {
     expect(item.originCampaignMessage).toBe('Olá {{1}}, faz tempo que não te vemos!');
   });
 
+  it('filtra por uf (RS inclui leads sem UF; BA só BA)', async () => {
+    const token = await seedAuth();
+    const leadRs = await createLead({ phone: '11000010070', uf: 'RS' });
+    const leadBa = await createLead({ phone: '11000010071', uf: 'BA' });
+    const leadNull = await createLead({ phone: '11000010072', uf: null });
+    await createConversation({ phone: '11000010070', leadId: leadRs.id });
+    await createConversation({ phone: '11000010071', leadId: leadBa.id });
+    await createConversation({ phone: '11000010072', leadId: leadNull.id });
+
+    const rs = await request(app).get('/api/conversations?uf=RS').set('Authorization', `Bearer ${token}`);
+    expect(rs.status).toBe(200);
+    const rsPhones = rs.body.items.map((c: { phone: string }) => c.phone);
+    expect(rsPhones).toContain('11000010070'); // RS
+    expect(rsPhones).toContain('11000010072'); // null → conta como RS
+    expect(rsPhones).not.toContain('11000010071'); // BA fora
+
+    const ba = await request(app).get('/api/conversations?uf=BA').set('Authorization', `Bearer ${token}`);
+    const baPhones = ba.body.items.map((c: { phone: string }) => c.phone);
+    expect(baPhones).toContain('11000010071'); // BA
+    expect(baPhones).not.toContain('11000010070'); // RS fora
+    expect(baPhones).not.toContain('11000010072'); // null fora
+  });
+
   it('filtra por assignment=mine', async () => {
     const u = await createUser({ email: 'mine@x.com', password: 'pw12345', role: 'recepcao' });
     const token = await loginAs('mine@x.com');

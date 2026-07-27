@@ -29,6 +29,7 @@ function buildQuery(filters: ConversationFilters): string {
   if (filters.origin?.length) u.set('origin', filters.origin.join(','));
   if (filters.campaignId) u.set('campaignId', filters.campaignId);
   if (filters.assignment && filters.assignment !== 'all') u.set('assignment', filters.assignment);
+  if (filters.uf) u.set('uf', filters.uf);
   if (filters.q) u.set('q', filters.q);
   if (filters.page && filters.page > 1) u.set('page', String(filters.page));
   const s = u.toString();

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
-import type { ConversationStatus, OriginKind } from './types';
+import { UF_VALUES, type ConversationStatus, type OriginKind, type Uf } from '@shared/types';
 
 const STATUS_OPTIONS: { key: 'aguardando' | 'em_atendimento' | 'expirada' | 'sem_retorno' | 'encerrada'; label: string }[] = [
   { key: 'aguardando', label: 'Aguardando' },
@@ -25,6 +25,8 @@ const ORIGIN_OPTIONS: { key: OriginKind; label: string }[] = [
 interface Props {
   q: string;
   onQChange: (q: string) => void;
+  uf: Uf | 'all';
+  onUfChange: (uf: Uf | 'all') => void;
   statusKeys: string[];
   onStatusToggle: (key: string) => void;
   assignment: 'mine' | 'unassigned' | 'all';
@@ -49,6 +51,14 @@ export function FilterBar(props: Props) {
             onKeyDown={(e) => { if (e.key === 'Enter') props.onQChange(searchInput); }}
           />
         </div>
+      </div>
+
+      <div className="px-3 pb-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-medium text-muted-foreground mr-1">UF:</span>
+        <Chip active={props.uf === 'all'} onClick={() => props.onUfChange('all')}>Todas</Chip>
+        {UF_VALUES.map((v) => (
+          <Chip key={v} active={props.uf === v} onClick={() => props.onUfChange(v)}>{v}</Chip>
+        ))}
       </div>
 
       <div className="px-3 pb-2 flex flex-wrap gap-1.5">

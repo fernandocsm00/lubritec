@@ -56,6 +56,7 @@ export async function createLead(opts: {
   status?: LeadStatus;
   source?: LeadSource;
   flowStage?: LeadFlowStage;
+  uf?: 'RS' | 'BA' | null;
   createdAt?: Date;
 }) {
   const phone = opts.phone === null ? null : (opts.phone ?? `5511${String(++_phoneSeq).padStart(8, '0')}`);
@@ -70,6 +71,7 @@ export async function createLead(opts: {
       status: opts.status ?? 'frio',
       source: opts.source ?? 'manual',
       flowStage: opts.flowStage ?? (phone ? 'complete' : 'incomplete'),
+      uf: opts.uf ?? null,
       ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     })
     .returning();

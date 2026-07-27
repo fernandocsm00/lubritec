@@ -5,6 +5,7 @@ import {
   CONVERSATION_STATUSES,
   ORIGIN_KINDS,
   MESSAGE_KINDS,
+  UF_VALUES,
 } from '../../shared/types';
 import {
   listConversations,
@@ -38,6 +39,7 @@ const listQuery = z.object({
   origin: csvOf(ORIGIN_KINDS).optional(),
   campaignId: z.string().uuid().optional(),
   assignment: z.enum(['mine', 'unassigned', 'all']).optional(),
+  uf: z.enum(UF_VALUES).optional(),
   q: z.string().optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });

@@ -309,6 +309,8 @@ export interface ConversationFilters {
   origin?: OriginKind[];
   campaignId?: string;
   assignment?: 'mine' | 'unassigned' | 'all';
+  /** UF do lead (cadastro). 'RS' também casa leads sem UF definida (null → RS). */
+  uf?: Uf;
   q?: string;
   page?: number;
 }

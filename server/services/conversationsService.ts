@@ -100,6 +100,9 @@ export async function listConversations(input: ListInput): Promise<{
   if (input.campaignId) conds.push(eq(conversations.originCampaignId, input.campaignId));
   if (input.assignment === 'mine') conds.push(eq(conversations.assignedTo, input.currentUserId));
   if (input.assignment === 'unassigned') conds.push(isNull(conversations.assignedTo));
+  // UF vem do cadastro (leads.uf). Sem UF definida conta como RS (regra do produto).
+  if (input.uf === 'RS') conds.push(sql`(${leads.uf} = 'RS' OR ${leads.uf} IS NULL)`);
+  else if (input.uf === 'BA') conds.push(eq(leads.uf, 'BA'));
 
   if (input.q) {
     const escaped = input.q.replace(/[%_\\]/g, '\\$&');

@@ -10,6 +10,7 @@ import { NewConversationDialog } from '@/features/whatsapp/NewConversationDialog
 import { useConversations, fetchConversationByLead } from '@/features/whatsapp/api';
 import { useAuthStore } from '@/features/auth/store';
 import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
+import type { Uf } from '@shared/types';
 
 export default function WhatsappPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,6 +20,8 @@ export default function WhatsappPage() {
   const assignment = (searchParams.get('assignment') as 'mine' | 'unassigned' | 'all') ?? 'all';
   const origins: OriginKind[] = ((searchParams.get('origin') ?? 'organic,campaign')
     .split(',').filter(Boolean) as OriginKind[]);
+  const ufParam = searchParams.get('uf');
+  const uf: Uf | 'all' = ufParam === 'RS' || ufParam === 'BA' ? ufParam : 'all';
   const q = searchParams.get('q') ?? '';
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
@@ -28,9 +31,10 @@ export default function WhatsappPage() {
     ...statusChipsToFilters(statusKeys),
     origin: origins,
     assignment,
+    uf: uf === 'all' ? undefined : uf,
     q: q || undefined,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [queue, statusKeys.join(','), origins.join(','), assignment, q]);
+  }), [queue, statusKeys.join(','), origins.join(','), assignment, uf, q]);
 
   const { data: convsData } = useConversations(filters);
   const selectedConv = convsData?.items.find((c) => c.id === selectedConvId) ?? null;
@@ -122,6 +126,8 @@ export default function WhatsappPage() {
         <FilterBar
           q={q}
           onQChange={(v) => patch({ q: v || null })}
+          uf={uf}
+          onUfChange={(v) => patch({ uf: v === 'all' ? null : v })}
           statusKeys={statusKeys}
           onStatusToggle={(k) => {
             const next = statusKeys.includes(k)
