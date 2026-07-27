@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { LEAD_STATUSES, LEAD_SOURCES, CADASTRO_STAGES, LEAD_QUALITY_FEEDBACK, IMBP_VALUES, SEGMENT_VALUES } from '../../shared/types';
+import { LEAD_STATUSES, LEAD_SOURCES, CADASTRO_STAGES, LEAD_QUALITY_FEEDBACK, IMBP_VALUES, SEGMENT_VALUES, UF_VALUES } from '../../shared/types';
 import { createLead, listLeads, updateLead, deleteLead, markLeadLost, getLeadById, closeLeadNoDeal } from '../services/leadsService';
 import { importLeadsFromCsv } from '../services/leadsImport';
 import { enrichLead } from '../services/leadsEnrichment';
@@ -43,6 +43,7 @@ const extendedFields = {
   address1: z.string().max(255).nullable().optional(),
   address2: z.string().max(255).nullable().optional(),
   city: z.string().max(120).nullable().optional(),
+  uf: z.enum(UF_VALUES).nullable().optional(),
   imbp: z.enum(IMBP_VALUES).nullable().optional(),
   segment: z.enum(SEGMENT_VALUES).nullable().optional(),
 };

@@ -32,6 +32,7 @@ import {
   HSM_STATUSES,
   IMBP_VALUES,
   SEGMENT_VALUES,
+  UF_VALUES,
 } from '../../shared/types';
 
 export const users = pgTable(
@@ -91,6 +92,7 @@ export const leads = pgTable('leads', {
   address1: text('address1'),
   address2: text('address2'),
   city: text('city'),
+  uf: text('uf', { enum: UF_VALUES }),
   imbp: text('imbp', { enum: IMBP_VALUES }),
   segment: text('segment', { enum: SEGMENT_VALUES }),
   status: text('status', { enum: LEAD_STATUSES }).notNull().default('frio'),

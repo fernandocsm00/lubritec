@@ -4,8 +4,8 @@ import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { ImportReport, Imbp, Segment } from '@shared/types';
-import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT } from '@shared/types';
+import type { ImportReport, Imbp, Segment, Uf } from '@shared/types';
+import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT, UF_VALUES } from '@shared/types';
 import { parseTaxIdLenient } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { tryEnrollSafe } from './continuousCampaign';
@@ -75,6 +75,10 @@ const HEADER_ALIASES: Record<string, string> = {
   city: 'city',
   municipio: 'city',
   'município': 'city',
+
+  uf: 'uf',
+  estado: 'uf',
+  unidade_federativa: 'uf',
   // IMBP / Linha de Negocio
   imbp: 'imbp',
   linha_de_negocio: 'imbp',
@@ -102,6 +106,7 @@ export interface CsvRow {
   address1: string | null;
   address2: string | null;
   city: string | null;
+  uf: Uf | null;
   imbp: Imbp | null;
   segment: Segment | null;
 }
@@ -138,6 +143,21 @@ function parseSegmentValue(raw: string): Segment | null {
   // Pega o prefixo de 3 letras (ex: "PVL - Veiculos" → "PVL")
   const code = cleaned.split(/[\s-]/)[0] as Segment;
   return (SEGMENT_VALUES as readonly string[]).includes(code) ? code : null;
+}
+
+/**
+ * Casa o valor do CSV com um UF_VALUES (RS/BA). Aceita a sigla direta
+ * (case-insensitive) ou o nome do estado por extenso. Retorna null se nao casar
+ * — UF invalida nao rejeita a linha (mesmo tratamento de IMBP/segment).
+ */
+function parseUfValue(raw: string): Uf | null {
+  const cleaned = raw.trim().toUpperCase();
+  if (!cleaned) return null;
+  const bySigla = UF_VALUES.find((v) => v === cleaned);
+  if (bySigla) return bySigla;
+  if (cleaned.includes('RIO GRANDE DO SUL')) return 'RS';
+  if (cleaned.includes('BAHIA')) return 'BA';
+  return null;
 }
 
 function detectDelimiter(buf: Buffer): ',' | ';' {
@@ -330,6 +350,7 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       address1: (obj.address1 ?? '').trim() || null,
       address2: (obj.address2 ?? '').trim() || null,
       city: (obj.city ?? '').trim() || null,
+      uf: parseUfValue(obj.uf ?? ''),
       imbp,
       segment,
     });
@@ -426,6 +447,7 @@ export async function importLeadsFromCsv(
           address1: row.address1,
           address2: row.address2,
           city: row.city,
+          uf: row.uf,
           imbp: row.imbp,
           segment: row.segment,
           source: 'csv',
@@ -462,6 +484,7 @@ export async function importLeadsFromCsv(
       if (row.address1 && !existing.address1) patch.address1 = row.address1;
       if (row.address2 && !existing.address2) patch.address2 = row.address2;
       if (row.city && !existing.city) patch.city = row.city;
+      if (row.uf && !existing.uf) patch.uf = row.uf;
       if (row.imbp && !existing.imbp) {
         patch.imbp = row.imbp;
         patch.segment = row.segment; // ja derivado no parser

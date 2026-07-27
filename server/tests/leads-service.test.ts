@@ -60,9 +60,30 @@ describe('createLead', () => {
       createLead({ name: 'B', phone: '11999996002', cnpj: VALID_CNPJ_3 }),
     ).rejects.toMatchObject({ status: 409 });
   });
+
+  it('persiste UF (RS/BA) no cadastro', async () => {
+    const lead = await createLead({
+      name: 'Empresa UF',
+      phone: '11999997010',
+      cnpj: VALID_CNPJ_4,
+      uf: 'BA',
+    });
+    expect(lead.uf).toBe('BA');
+  });
+
+  it('UF ausente fica null', async () => {
+    const lead = await createLead({ name: 'Sem UF', phone: '11999997011', cnpj: VALID_CNPJ_5 });
+    expect(lead.uf).toBeNull();
+  });
 });
 
 describe('updateLead', () => {
+  it('atualiza UF', async () => {
+    const seed = await seedLead({ name: 'UF edit', phone: '11999997020' });
+    const updated = await updateLead({ id: seed.id, uf: 'RS' });
+    expect(updated.uf).toBe('RS');
+  });
+
   it('atualiza nome e status', async () => {
     const seed = await seedLead({ name: 'Old', phone: '11999990000' });
     const updated = await updateLead({ id: seed.id, name: 'New', status: 'morno' });
@@ -151,6 +172,15 @@ describe('parseLeadsCsv', () => {
     const { rejected } = await parseLeadsCsv(Buffer.from(csv));
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason).toMatch(/cnpj/i);
+  });
+
+  it('reconhece a coluna UF (sigla e por extenso)', async () => {
+    const csv = `nome,telefone,cnpj,uf\nEmpresa RS,11999990201,${VALID_CNPJ_1},RS\nEmpresa BA,11999990202,${VALID_CNPJ_2},Bahia\nSem UF,11999990203,${VALID_CNPJ_3},\n`;
+    const { rows, rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rejected).toEqual([]);
+    expect(rows[0].uf).toBe('RS');
+    expect(rows[1].uf).toBe('BA');
+    expect(rows[2].uf).toBeNull();
   });
 
   it('rejeita CNPJ duplicado dentro do arquivo', async () => {

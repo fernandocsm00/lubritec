@@ -41,6 +41,8 @@ import {
   SEGMENT_VALUES,
   SEGMENT_LABELS,
   IMBP_TO_SEGMENT,
+  UF_VALUES,
+  UF_LABELS,
   type PublicLead,
 } from '@shared/types';
 
@@ -73,6 +75,7 @@ const baseSchema = z.object({
   address1: z.string().max(255).optional().or(z.literal('')),
   address2: z.string().max(255).optional().or(z.literal('')),
   city: z.string().max(120).optional().or(z.literal('')),
+  uf: z.enum(UF_VALUES).optional().or(z.literal('')),
   imbp: z.enum(IMBP_VALUES).optional().or(z.literal('')),
   segment: z.enum(SEGMENT_VALUES).optional().or(z.literal('')),
 });
@@ -114,6 +117,7 @@ export function LeadDialog({
     address1: '',
     address2: '',
     city: '',
+    uf: '',
     imbp: '',
     segment: '',
   };
@@ -148,6 +152,7 @@ export function LeadDialog({
           address1: lead.address1 ?? '',
           address2: lead.address2 ?? '',
           city: lead.city ?? '',
+          uf: lead.uf ?? '',
           imbp: lead.imbp ?? '',
           segment: lead.segment ?? '',
         });
@@ -163,6 +168,7 @@ export function LeadDialog({
       address1: nullify(values.address1),
       address2: nullify(values.address2),
       city: nullify(values.city),
+      uf: values.uf ? values.uf : null,
       imbp: values.imbp ? values.imbp : null,
       segment: values.segment ? values.segment : null,
       phone2: nullify((values.phone2 ?? '').replace(/\D/g, '')),
@@ -231,6 +237,25 @@ export function LeadDialog({
             <FormItem>
               <FormLabel>Cidade</FormLabel>
               <FormControl><Input {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="uf"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>UF (Estado)</FormLabel>
+              <Select onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)} value={field.value || '__none__'}>
+                <FormControl><SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="__none__">— não definido —</SelectItem>
+                  {UF_VALUES.map((v) => (
+                    <SelectItem key={v} value={v}>{UF_LABELS[v]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}
