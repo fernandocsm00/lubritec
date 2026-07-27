@@ -131,6 +131,61 @@ describe('GET /api/conversations', () => {
     expect(item.originCampaignName).toBeNull();
   });
 
+  it('originCampaignMessage = corpo do disparo real enviado', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000010050' });
+    const owner = await createUser({ email: 'camp-msg@x.com', role: 'comercial' });
+    const campaign = await createCampaign({
+      createdByUserId: owner.id,
+      messageBody: 'Template com {{nome}}',
+    });
+    const conv = await createConversation({
+      phone: '11000010050',
+      leadId: lead.id,
+      originKind: 'campaign',
+      originCampaignId: campaign.id,
+      lastInboundAt: new Date(),
+    });
+    await createMessage({
+      conversationId: conv.id,
+      direction: 'out',
+      body: 'Olá João, temos uma oferta pra você!',
+    });
+
+    const res = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((c: { phone: string }) => c.phone === '11000010050');
+    expect(item).toBeDefined();
+    expect(item.originCampaignMessage).toBe('Olá João, temos uma oferta pra você!');
+  });
+
+  it('originCampaignMessage cai no messageBody da campanha quando não há outbound', async () => {
+    const token = await seedAuth();
+    const lead = await createLead({ phone: '11000010051' });
+    const owner = await createUser({ email: 'camp-fallback@x.com', role: 'comercial' });
+    const campaign = await createCampaign({
+      createdByUserId: owner.id,
+      messageBody: 'Mensagem padrão da campanha',
+    });
+    await createConversation({
+      phone: '11000010051',
+      leadId: lead.id,
+      originKind: 'campaign',
+      originCampaignId: campaign.id,
+      lastInboundAt: new Date(),
+    });
+
+    const res = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((c: { phone: string }) => c.phone === '11000010051');
+    expect(item).toBeDefined();
+    expect(item.originCampaignMessage).toBe('Mensagem padrão da campanha');
+  });
+
   it('filtra por assignment=mine', async () => {
     const u = await createUser({ email: 'mine@x.com', password: 'pw12345', role: 'recepcao' });
     const token = await loginAs('mine@x.com');

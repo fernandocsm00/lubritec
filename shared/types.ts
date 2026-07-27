@@ -206,6 +206,9 @@ export interface PublicConversation {
   originKind: OriginKind;
   originCampaignId: string | null;
   originCampaignName: string | null;
+  // Corpo do disparo que originou a conversa (mensagem real enviada, com
+  // placeholders já resolvidos); fallback pro messageBody da campanha.
+  originCampaignMessage: string | null;
   lastMessagePreview: string;
   lastMessageDirection: MessageDirection | null;
   lastMessageAt: string;
@@ -421,6 +424,7 @@ export interface CreateInstanceRequest {
     phoneNumberId: string;
     accessToken: string;
     appSecret: string;
+    appId?: string;
   };
 }
 
@@ -1011,6 +1015,8 @@ export interface HsmTemplateRecord {
   category: HsmCategory;
   status: HsmStatus;
   components: HsmComponent[];
+  // URL pública da imagem de header (quando o header é de imagem) — usada no disparo.
+  headerMediaUrl: string | null;
   variableCount: number;
   rejectionReason: string | null;
   createdAt: string;
@@ -1023,7 +1029,15 @@ export interface CreateHsmTemplateRequest {
   language: string;
   category: HsmCategory;
   components: HsmComponent[];
+  // URL pública da imagem de header (do endpoint de upload). Só para header de imagem.
+  headerMediaUrl?: string | null;
   submitNow?: boolean;
+}
+
+/** Resposta do endpoint de upload da imagem de header de um template HSM. */
+export interface HsmHeaderMediaUploadResult {
+  url: string;      // URL pública persistente (disparo)
+  handle: string;   // header_handle da Meta (submissão)
 }
 
 export interface CampaignHsmVariable {

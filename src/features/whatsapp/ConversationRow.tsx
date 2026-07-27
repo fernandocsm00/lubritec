@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { Image as ImageIcon, Bot, Clock, Megaphone } from 'lucide-react';
 import {
   formatRelativeTime,
@@ -87,13 +88,31 @@ export function ConversationRow({ conv, active, currentUserId, onClick }: Props)
         </div>
         {conv.originKind === 'campaign' && conv.originCampaignName && (
           <div className="mt-1">
-            <span
-              className="inline-flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-[140px]"
-              title={`Campanha: ${conv.originCampaignName}`}
-            >
-              <Megaphone className="h-2.5 w-2.5 shrink-0" />
-              <span className="truncate">{conv.originCampaignName}</span>
-            </span>
+            <HoverCard openDelay={120} closeDelay={80}>
+              <HoverCardTrigger asChild>
+                <span
+                  className="inline-flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-[140px] cursor-help hover:bg-muted/70 transition-colors"
+                >
+                  <Megaphone className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">{conv.originCampaignName}</span>
+                </span>
+              </HoverCardTrigger>
+              <HoverCardContent align="start" side="top" className="w-72">
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                  <Megaphone className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="truncate">{conv.originCampaignName}</span>
+                </div>
+                {conv.originCampaignMessage ? (
+                  <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">
+                    {conv.originCampaignMessage}
+                  </p>
+                ) : (
+                  <p className="text-xs italic text-muted-foreground">
+                    Sem prévia da mensagem enviada.
+                  </p>
+                )}
+              </HoverCardContent>
+            </HoverCard>
           </div>
         )}
       </div>

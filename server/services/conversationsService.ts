@@ -122,6 +122,17 @@ export async function listConversations(input: ListInput): Promise<{
       lead: leads,
       assignee: users,
       campaignName: campaigns.name,
+      // messageBody da campanha — fallback pro hover quando o disparo foi só mídia.
+      campaignBody: campaigns.messageBody,
+      // Corpo do disparo real (1º outbound da conversa), com placeholders já
+      // resolvidos e variante A/B correta. Só busca em conversas de campanha.
+      campaignSentBody: sql<string | null>`(
+        CASE WHEN ${conversations.originKind} = 'campaign' THEN (
+          SELECT m.body FROM messages m
+          WHERE m.conversation_id = ${conversations.id} AND m.direction = 'out'
+          ORDER BY m.sent_at ASC LIMIT 1
+        ) END
+      )`,
       // Uma única subquery correlata (jsonb) em vez de três idênticas — eram
       // 3 index scans em messages POR CONVERSA por página (150 com PAGE_SIZE=50).
       lastMsg: sql<{ body: string | null; kind: string; direction: string } | null>`(
@@ -164,6 +175,7 @@ export async function listConversations(input: ListInput): Promise<{
       originKind: r.conv.originKind,
       originCampaignId: r.conv.originCampaignId,
       originCampaignName: r.campaignName ?? null,
+      originCampaignMessage: r.campaignSentBody ?? r.campaignBody ?? null,
       lastMessagePreview: previewFromMessage({
         body: r.lastMsg?.body ?? null,
         kind: r.lastMsg?.kind ?? 'text',
