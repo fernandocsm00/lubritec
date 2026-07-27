@@ -64,6 +64,17 @@ export const IMBP_LABELS: Record<Imbp, string> = {
 export const SEGMENT_VALUES = ['PVL', 'CVL', 'MCO', 'IND', 'ATA'] as const;
 export type Segment = (typeof SEGMENT_VALUES)[number];
 
+// UF (Unidade Federativa) do cadastro. A operacao Lubritec atende apenas dois
+// estados: Rio Grande do Sul e Bahia. Enum fechado — novos valores exigem
+// alinhamento comercial.
+export const UF_VALUES = ['RS', 'BA'] as const;
+export type Uf = (typeof UF_VALUES)[number];
+
+export const UF_LABELS: Record<Uf, string> = {
+  RS: 'RS — Rio Grande do Sul',
+  BA: 'BA — Bahia',
+};
+
 export const SEGMENT_LABELS: Record<Segment, string> = {
   PVL: 'PVL — Veiculos Automotores',
   CVL: 'CVL — Caminhoes e Linha Pesada',
@@ -140,6 +151,7 @@ export interface PublicLead {
   address1: string | null;
   address2: string | null;
   city: string | null;
+  uf: Uf | null;
   imbp: Imbp | null;
   segment: Segment | null;
   status: LeadStatus;

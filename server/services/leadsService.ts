@@ -2,7 +2,7 @@ import { db } from '../db/client';
 import { leads, deals, conversations, campaignRecipients, type NewLead } from '../db/schema';
 import { eq, and, or, ilike, desc, asc, sql, type AnyColumn } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, LeadCampaignSummary, Imbp, Segment } from '@shared/types';
+import type { PublicLead, LeadStatus, LeadSource, LeadFlowStage, LeadEnrichmentResult, LeadQualityFeedback, LeadCampaignSummary, Imbp, Segment, Uf } from '@shared/types';
 import { IMBP_TO_SEGMENT } from '@shared/types';
 import { normalizeCnpj, isValidTaxId } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
@@ -48,6 +48,7 @@ function toPublic(row: typeof leads.$inferSelect & {
     address1: row.address1,
     address2: row.address2,
     city: row.city,
+    uf: row.uf,
     imbp: row.imbp,
     segment: row.segment,
     status: row.status,
@@ -98,6 +99,7 @@ export async function createLead(input: {
   address1?: string | null;
   address2?: string | null;
   city?: string | null;
+  uf?: Uf | null;
   imbp?: Imbp | null;
   segment?: Segment | null;
 }): Promise<PublicLead> {
@@ -137,6 +139,7 @@ export async function createLead(input: {
         address1: input.address1 ?? null,
         address2: input.address2 ?? null,
         city: input.city ?? null,
+        uf: input.uf ?? null,
         imbp: input.imbp ?? null,
         segment,
         flowStage: computeInitialStage(phone),
@@ -189,6 +192,7 @@ export async function updateLead(input: {
   address1?: string | null;
   address2?: string | null;
   city?: string | null;
+  uf?: Uf | null;
   imbp?: Imbp | null;
   segment?: Segment | null;
 }): Promise<PublicLead> {
@@ -201,6 +205,7 @@ export async function updateLead(input: {
   if (rest.address1 !== undefined) patch.address1 = rest.address1;
   if (rest.address2 !== undefined) patch.address2 = rest.address2;
   if (rest.city !== undefined) patch.city = rest.city;
+  if (rest.uf !== undefined) patch.uf = rest.uf;
 
   if (rest.phone2 !== undefined) {
     if (rest.phone2 === null || rest.phone2 === '') {

@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
-import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage, LeadQualityFeedback, Imbp, Segment } from '@shared/types';
+import type { PublicLead, ImportReport, LeadStatus, LeadSource, LeadFlowStage, LeadQualityFeedback, Imbp, Segment, Uf } from '@shared/types';
 
 export interface LeadExtendedFields {
   phone2?: string | null;
   address1?: string | null;
   address2?: string | null;
   city?: string | null;
+  uf?: Uf | null;
   imbp?: Imbp | null;
   segment?: Segment | null;
 }
