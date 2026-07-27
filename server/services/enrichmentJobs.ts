@@ -11,6 +11,7 @@ import type { PublicEnrichmentJob } from '@shared/types';
 import { lookupCnpj } from './cnpjLookup';
 import { updateLead } from './leadsService';
 import { emitNotification } from './notifications';
+import { toCanonicalBrPhone } from '../lib/phoneBR';
 
 // BrasilAPI free tier ~3 req/min → 21s entre chamadas (margem de segurança).
 export const ENRICHMENT_TICK_MS = 21_000;
@@ -55,9 +56,30 @@ async function buildPublic(row: EnrichmentJob): Promise<PublicEnrichmentJob> {
     (row.status === 'running' || row.status === 'paused') && pending > 0
       ? Math.ceil((pending * ENRICHMENT_TICK_MS) / 60_000)
       : null;
+
+  // Últimos ~20 leads que ganharam telefone neste job (pra "informe na tela").
+  const found = await db
+    .select({
+      leadId: leads.id,
+      name: leads.name,
+      cnpj: leads.cnpj,
+      phone: leads.phone,
+      phone2: leads.phone2,
+    })
+    .from(enrichmentJobLeads)
+    .innerJoin(leads, eq(leads.id, enrichmentJobLeads.leadId))
+    .where(and(
+      eq(enrichmentJobLeads.jobId, row.id),
+      eq(enrichmentJobLeads.resultStatus, 'phone_found'),
+    ))
+    .orderBy(sql`${enrichmentJobLeads.processedAt} DESC NULLS LAST`)
+    .limit(20);
+
   return {
     id: row.id,
     status: row.status as PublicEnrichmentJob['status'],
+    target: row.target,
+    recentlyFound: found,
     totalLeads: row.totalLeads,
     processedCount: row.processedCount,
     succeededCount: row.succeededCount,
@@ -123,6 +145,61 @@ export async function startBulkEnrichment(userId: string): Promise<PublicEnrichm
     .returning();
 
   // Insere snapshot em chunks pra evitar SQL gigante (Postgres aceita ~32k params).
+  const CHUNK = 500;
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const slice = candidates.slice(i, i + CHUNK);
+    await db.insert(enrichmentJobLeads).values(
+      slice.map((c) => ({ jobId: job.id, leadId: c.id })),
+    );
+  }
+
+  return buildPublic(job);
+}
+
+/**
+ * Cria um job de enriquecimento escopado a um conjunto explícito de leadIds
+ * (não usa o snapshot global de incompletos). Usado pela audiência de campanha,
+ * com `target='phone2'`. Filtra só CNPJs de 14 dígitos (BrasilAPI é CNPJ-only).
+ * Throws 409 se já houver job ativo, 400 se nenhum lead elegível.
+ */
+export async function startScopedEnrichment(
+  leadIds: string[],
+  target: PublicEnrichmentJob['target'],
+  userId: string,
+): Promise<PublicEnrichmentJob> {
+  const active = await loadActiveRow();
+  if (active) {
+    throw new HttpError(409, 'Já existe um enriquecimento em andamento. Aguarde ele terminar.');
+  }
+  if (leadIds.length === 0) {
+    throw new HttpError(400, 'Nenhum lead para enriquecer');
+  }
+
+  const candidates = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(and(
+      inArray(leads.id, leadIds),
+      sql`${leads.cnpj} IS NOT NULL`,
+      sql`length(${leads.cnpj}) = 14`,
+    ));
+
+  if (candidates.length === 0) {
+    throw new HttpError(400, 'Nenhum lead com CNPJ válido para enriquecer');
+  }
+
+  const now = new Date();
+  const [job] = await db
+    .insert(enrichmentJobs)
+    .values({
+      status: 'running',
+      target: target ?? 'phone',
+      totalLeads: candidates.length,
+      startedAt: now,
+      createdByUserId: userId,
+    })
+    .returning();
+
   const CHUNK = 500;
   for (let i = 0; i < candidates.length; i += CHUNK) {
     const slice = candidates.slice(i, i + CHUNK);
@@ -348,20 +425,40 @@ export async function processNextEnrichment(): Promise<TickResult> {
   let errorMessage: string | null = null;
   let succeeded = false;
 
+  const target = job.target ?? 'phone';
+
   if (!lead) {
     resultStatus = 'lead_deleted';
     errorMessage = 'Lead removido depois do snapshot';
-  } else if (lead.phone) {
+  } else if (target === 'phone' && lead.phone) {
     // Já tem phone — alguém preencheu manualmente entre snapshot e agora.
     resultStatus = 'already_has_phone';
-  } else if (!lead.cnpj) {
+  } else if (target === 'phone2' && lead.phone2) {
+    // Tel 2 já preenchido — não sobrescreve.
+    resultStatus = 'already_has_phone2';
+  } else if (!lead.cnpj || lead.cnpj.length !== 14) {
+    // Sem CNPJ ou CPF (11 díg) — BrasilAPI é só CNPJ.
     resultStatus = 'no_cnpj';
   } else {
     try {
       const r = await lookupCnpj(lead.cnpj);
       if (r.status === 'active' && r.telefone) {
         const normalized = normalizeBrasilApiPhone(r.telefone);
-        if (normalized) {
+        if (normalized && target === 'phone2') {
+          // Compara as formas canônicas (o número da BrasilAPI e o phone1 podem
+          // estar em formatos diferentes).
+          const canonNew = toCanonicalBrPhone(normalized) ?? normalized;
+          const canonPhone1 = lead.phone ? (toCanonicalBrPhone(lead.phone) ?? lead.phone) : null;
+          if (canonPhone1 && canonNew === canonPhone1) {
+            // Número igual ao Tel 1 — nada novo pra gravar.
+            resultStatus = 'phone_not_in_brasilapi';
+          } else {
+            await updateLead({ id: lead.id, phone2: normalized });
+            phoneFound = normalized;
+            resultStatus = 'phone_found';
+            succeeded = true;
+          }
+        } else if (normalized) {
           await updateLead({ id: lead.id, phone: normalized });
           phoneFound = normalized;
           resultStatus = 'phone_found';

@@ -3,10 +3,13 @@ import multer from 'multer';
 import { authGuard } from '../middleware/authGuard';
 import { requireRole } from '../middleware/requireRole';
 import { multerCampaignMedia } from '../middleware/multerCampaignMedia';
+import { multerCsv } from '../middleware/multerCsv';
 import {
   listHandler,
   getHandler,
   dryRunHandler,
+  importAudienceHandler,
+  enrichAudienceHandler,
   createHandler,
   dispatchHandler,
   pauseHandler,
@@ -41,6 +44,23 @@ router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);
 router.get('/:id/recipients', ...guard, recipientsHandler);
 router.post('/dry-run', ...guard, dryRunHandler);
+// Import de audiência por CNPJ (reusa o parser de Cadastros).
+router.post(
+  '/audience/import',
+  ...guard,
+  (req, res, next) => {
+    multerCsv.single('file')(req, res, (err) => {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'Arquivo muito grande' });
+      }
+      if (err instanceof multer.MulterError) return res.status(400).json({ error: err.message });
+      if (err) return next(err);
+      next();
+    });
+  },
+  importAudienceHandler,
+);
+router.post('/audience/enrich', ...guard, enrichAudienceHandler);
 router.post('/', ...guard, createHandler);
 router.post('/:id/dispatch', ...guard, dispatchHandler);
 router.post('/:id/pause', ...guard, pauseHandler);

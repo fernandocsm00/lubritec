@@ -29,6 +29,9 @@ import {
   listCampaignReportCities,
 } from '../services/campaignsService';
 import { dryRun } from '../services/campaignsAudience';
+import { importCampaignAudience } from '../services/campaignAudienceImport';
+import { startScopedEnrichment } from '../services/enrichmentJobs';
+import { HttpError } from '../middleware/errorHandler';
 import { resolvePeriod, type PeriodKey } from '../lib/period';
 
 const idParams = z.object({ id: z.string().uuid() });
@@ -39,6 +42,7 @@ const audienceFilterSchema = z.object({
   daysSinceCreated: z.number().int().min(0).max(3650).optional(),
   excludeLeadIds: z.array(z.string().uuid()).optional(),
   phoneCsv: z.array(z.string().min(8).max(20)).optional(),
+  importedLeadIds: z.array(z.string().uuid()).optional(),
 });
 
 const listQuery = z.object({
@@ -239,6 +243,26 @@ export async function dryRunHandler(req: Request, res: Response, next: NextFunct
     // page/pageSize vem do query string (opcional, default page=1, pageSize=50).
     const opts = dryRunOptsSchema.parse(req.query);
     res.json(await dryRun(filters, opts));
+  } catch (e) { next(e); }
+}
+
+export async function importAudienceHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new HttpError(400, 'Nenhum arquivo enviado (campo "file").');
+    const result = await importCampaignAudience(req.file.buffer, req.user!.userId);
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
+const enrichAudienceBody = z.object({
+  leadIds: z.array(z.string().uuid()).min(1, 'Nenhum lead para enriquecer.'),
+});
+
+export async function enrichAudienceHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { leadIds } = enrichAudienceBody.parse(req.body);
+    const job = await startScopedEnrichment(leadIds, 'phone2', req.user!.userId);
+    res.status(201).json(job);
   } catch (e) { next(e); }
 }
 

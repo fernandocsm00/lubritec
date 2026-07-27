@@ -407,10 +407,26 @@ export async function importLeadsFromCsv(
   buf: Buffer,
   opts: { throttleMs?: number; userId?: string } = {},
 ): Promise<ImportReport> {
+  const { report } = await importLeadsFromCsvWithIds(buf, opts);
+  return report;
+}
+
+/**
+ * Igual ao importLeadsFromCsv, mas também devolve os `leadId`s dos CNPJs do
+ * arquivo (novos + existentes) — usado pelo import de audiência de campanha,
+ * que precisa dos leads pra montar a audiência e enriquecer.
+ */
+export async function importLeadsFromCsvWithIds(
+  buf: Buffer,
+  opts: { throttleMs?: number; userId?: string } = {},
+): Promise<{ report: ImportReport; leadIds: string[] }> {
   const { rows, rejected, missingHeaders } = await parseLeadsCsv(buf);
   if (missingHeaders.length > 0) {
     throw new HttpError(400, `Coluna obrigatória ausente: ${missingHeaders.join(', ')}`);
   }
+
+  // leadIds dos CNPJs do arquivo (novos + existentes), na ordem das linhas.
+  const leadIds: string[] = [];
 
   // Sem mais validacao SINCRONA de CNPJ — todas linhas com formato valido
   // (validado em parseLeadsCsv) sao inseridas. O enrichmentWorker em background
@@ -455,10 +471,12 @@ export async function importLeadsFromCsv(
           flowStage: stage,
         }).returning({ id: leads.id });
         newLeads.push({ id: created.id, stage });
+        leadIds.push(created.id);
         if (stage === 'complete') toEnroll.push(created.id);
         inserted++;
         continue;
       }
+      leadIds.push(existing.id);
 
       // Existing lead with this CNPJ: backfill empty fields only. Never
       // overwrite name, source already set by previous interactions.
@@ -533,5 +551,6 @@ export async function importLeadsFromCsv(
     enrichmentTriggered = await triggerAutoEnrichment(newIncompleteIds, opts.userId);
   }
 
-  return { inserted, updated, skipped: 0, rejected, enrichmentTriggered };
+  const report: ImportReport = { inserted, updated, skipped: 0, rejected, enrichmentTriggered };
+  return { report, leadIds };
 }

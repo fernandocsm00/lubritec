@@ -33,7 +33,14 @@ function buildWhere(filter: AudienceFilters, csvActive: boolean): SQL | undefine
     isNotNull(leads.phone),
   ];
 
-  if (!csvActive) {
+  // Audiência por leads importados (CSV por CNPJ): filtra pelos ids e ignora
+  // status/source/dias — a intenção é "disparar pra esses clientes".
+  const importedIds = realLeadIds(filter.importedLeadIds);
+  const importScoped = importedIds.length > 0;
+
+  if (importScoped) {
+    conds.push(inArray(leads.id, importedIds));
+  } else if (!csvActive) {
     if (filter.status?.length) conds.push(inArray(leads.status, filter.status));
     if (filter.source?.length) conds.push(inArray(leads.source, filter.source));
     if (filter.daysSinceCreated != null && filter.daysSinceCreated >= 0) {
