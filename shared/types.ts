@@ -192,6 +192,16 @@ export interface PublicLead {
   /** Ultimo resultado de enriquecimento BrasilAPI (null se nunca foi enriquecido). */
   lastEnrichmentResult: LeadEnrichmentResult | null;
   campaigns: LeadCampaignSummary[];
+  /** Nº de campanhas que o lead participou (linhas em campaign_recipients). */
+  campaignCount: number;
+  /** Participação mais recente (por COALESCE(sent_at, created_at)); null se nenhuma. */
+  lastCampaign: {
+    id: string;
+    name: string;
+    recipientStatus: CampaignRecipientStatus;
+    campaignStatus: CampaignStatus;
+    participatedAt: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }

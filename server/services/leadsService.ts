@@ -29,6 +29,8 @@ function toPublic(row: typeof leads.$inferSelect & {
   cadastroStage?: CadastroStage | string | null;
   lastEnrichmentResult?: LeadEnrichmentResult | string | null;
   campaigns?: LeadCampaignSummary[];
+  campaignCount?: number;
+  lastCampaign?: PublicLead['lastCampaign'];
 }): PublicLead {
   // Defensivo: result_status no DB pode ter strings antigas/desconhecidas;
   // so retornamos os valores que o tipo conhece, resto vira null.
@@ -65,6 +67,8 @@ function toPublic(row: typeof leads.$inferSelect & {
     hasDeal: row.hasDeal ?? false,
     lastEnrichmentResult: result,
     campaigns: row.campaigns ?? [],
+    campaignCount: row.campaignCount ?? 0,
+    lastCampaign: row.lastCampaign ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -306,12 +310,31 @@ export async function getLeadById(id: string): Promise<PublicLead> {
     .select({
       lead: leads,
       hasDeal: sql<boolean>`EXISTS (SELECT 1 FROM deals d WHERE d.lead_id = ${leads.id})`,
+      campaignCount: sql<number>`(SELECT COUNT(*)::int FROM campaign_recipients cr WHERE cr.lead_id = ${sql.raw('leads.id')})`,
+      lastCampaign: sql<PublicLead['lastCampaign']>`(
+        SELECT json_build_object(
+          'id', c.id, 'name', c.name,
+          'recipientStatus', cr.status,
+          'campaignStatus', c.status,
+          'participatedAt', COALESCE(cr.sent_at, cr.created_at)
+        )
+        FROM campaign_recipients cr
+        JOIN campaigns c ON c.id = cr.campaign_id
+        WHERE cr.lead_id = ${sql.raw('leads.id')}
+        ORDER BY COALESCE(cr.sent_at, cr.created_at) DESC
+        LIMIT 1
+      )`,
     })
     .from(leads)
     .where(eq(leads.id, id))
     .limit(1);
   if (!row) throw new HttpError(404, 'Lead not found');
-  return toPublic({ ...row.lead, hasDeal: Boolean(row.hasDeal) });
+  return toPublic({
+    ...row.lead,
+    hasDeal: Boolean(row.hasDeal),
+    campaignCount: row.campaignCount ?? 0,
+    lastCampaign: row.lastCampaign ?? null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +527,24 @@ export async function listLeads(params: {
     '[]'::json
   )`;
 
+  // Campos de campanha derivados (todas as participações, não só as enviadas).
+  const campaignCountSql = sql<number>`(
+    SELECT COUNT(*)::int FROM campaign_recipients cr WHERE cr.lead_id = ${sql.raw('leads.id')}
+  )`;
+  const lastCampaignSql = sql<PublicLead['lastCampaign']>`(
+    SELECT json_build_object(
+      'id', c.id, 'name', c.name,
+      'recipientStatus', cr.status,
+      'campaignStatus', c.status,
+      'participatedAt', COALESCE(cr.sent_at, cr.created_at)
+    )
+    FROM campaign_recipients cr
+    JOIN campaigns c ON c.id = cr.campaign_id
+    WHERE cr.lead_id = ${sql.raw('leads.id')}
+    ORDER BY COALESCE(cr.sent_at, cr.created_at) DESC
+    LIMIT 1
+  )`;
+
   const rows = await db
     .select({
       lead: leads,
@@ -514,6 +555,8 @@ export async function listLeads(params: {
       cadastroStage: cadastroStageSql(),
       lastEnrichmentResult: LATEST_ENRICHMENT_RESULT_SQL,
       campaigns: campaignsSql,
+      campaignCount: campaignCountSql,
+      lastCampaign: lastCampaignSql,
     })
     .from(leads)
     .where(where)
@@ -528,6 +571,8 @@ export async function listLeads(params: {
       cadastroStage: r.cadastroStage,
       lastEnrichmentResult: r.lastEnrichmentResult,
       campaigns: (r.campaigns ?? []) as LeadCampaignSummary[],
+      campaignCount: r.campaignCount ?? 0,
+      lastCampaign: r.lastCampaign ?? null,
     })),
     total,
     page,

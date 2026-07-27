@@ -128,6 +128,7 @@ export function LeadsTable(props: Props) {
               <TableHead>Status</TableHead>
               <TableHead>Pipeline</TableHead>
               <TableHead>Origem</TableHead>
+              <TableHead>Campanhas</TableHead>
               <TableHead>
                 <SortHeader
                   label="Cadastro"
@@ -144,7 +145,7 @@ export function LeadsTable(props: Props) {
             {loading
               ? Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 10 }).map((_, j) => (
+                    {Array.from({ length: 11 }).map((_, j) => (
                       <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
@@ -152,7 +153,7 @@ export function LeadsTable(props: Props) {
               : items.length === 0
                 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground py-10">
                       Nenhum lead encontrado.
                     </TableCell>
                   </TableRow>
@@ -199,6 +200,18 @@ export function LeadsTable(props: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{SOURCE_LABEL[l.source]}</TableCell>
+                      <TableCell className="text-xs">
+                        {l.campaignCount > 0 ? (
+                          <span title={l.lastCampaign?.name ?? undefined}>
+                            <span className="font-medium">{l.campaignCount}</span>
+                            {l.lastCampaign && (
+                              <span className="text-muted-foreground"> · <span className="inline-block max-w-[110px] truncate align-bottom">{l.lastCampaign.name}</span></span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>{fmtDateTime(l.createdAt)}</TableCell>
                       <TableCell><LeadActions lead={l} /></TableCell>
                     </TableRow>

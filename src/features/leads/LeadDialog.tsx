@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCreateLead, useUpdateLead } from './api';
+import { RECIPIENT_STATUS_LABEL, CAMPAIGN_STATUS_LABEL } from './campaignLabels';
 import { translateError } from './translateError';
 import { StageTimeline } from './StageTimeline';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -325,6 +326,36 @@ export function LeadDialog({
     </div>
   );
 
+  // Campos de campanha (derivados; só aparecem se o lead já participou de alguma).
+  const lc = lead?.lastCampaign ?? null;
+  const campaignsBlock = isEdit && lead && lead.campaignCount > 0 ? (
+    <div className="border-t pt-4 space-y-2">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        Campanhas
+      </div>
+      <div className="grid grid-cols-3 gap-4 text-sm">
+        <div>
+          <div className="text-xs text-muted-foreground">Quantidade</div>
+          <div className="font-medium">{lead.campaignCount}</div>
+        </div>
+        <div className="col-span-2">
+          <div className="text-xs text-muted-foreground">Última campanha</div>
+          <div className="font-medium truncate">
+            {lc ? `${lc.name} · ${new Date(lc.participatedAt).toLocaleDateString('pt-BR')}` : '—'}
+          </div>
+        </div>
+        {lc && (
+          <div className="col-span-3">
+            <div className="text-xs text-muted-foreground">Status da última campanha</div>
+            <div className="font-medium">
+              {RECIPIENT_STATUS_LABEL[lc.recipientStatus]} · {CAMPAIGN_STATUS_LABEL[lc.campaignStatus]}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -438,6 +469,7 @@ export function LeadDialog({
               )}
             />
             {extendedFieldsBlock}
+            {campaignsBlock}
             {isEdit && lead && (
               <details className="border-t pt-3 -mx-1 px-1">
                 <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
