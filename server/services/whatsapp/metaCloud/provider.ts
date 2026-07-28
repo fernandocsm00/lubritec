@@ -82,6 +82,7 @@ export class MetaCloudProvider implements WhatsAppProvider {
         accessToken: this.decToken(),
         to: opts.to,
         text: opts.text,
+        replyToProviderMsgId: opts.replyToProviderMsgId,
       });
       return { providerMsgId: res.messageId, rawPayload: res.rawPayload };
     } catch (err) {
@@ -105,6 +106,7 @@ export class MetaCloudProvider implements WhatsAppProvider {
         kind: opts.kind,
         mediaUrl: opts.mediaUrl,
         caption: opts.caption,
+        replyToProviderMsgId: opts.replyToProviderMsgId,
       });
       return { providerMsgId: res.messageId, rawPayload: res.rawPayload };
     } catch (err) {

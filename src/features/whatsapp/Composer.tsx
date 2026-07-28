@@ -32,9 +32,13 @@ function sendErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-interface Props { conversationId: string }
+interface Props {
+  conversationId: string;
+  replyingTo?: import('./types').PublicMessage | null;
+  onClearReply?: () => void;
+}
 
-export function Composer({ conversationId }: Props) {
+export function Composer({ conversationId, replyingTo, onClearReply }: Props) {
   const [text, setText] = useState('');
   const send = useSendMessage(conversationId);
   const upload = useUploadConversationMedia();
@@ -100,8 +104,9 @@ export function Composer({ conversationId }: Props) {
     const body = text.trim();
     if (!body || send.isPending) return;
     try {
-      await send.mutateAsync({ kind: 'text', body });
+      await send.mutateAsync({ kind: 'text', body, replyToMessageId: replyingTo?.id });
       setText('');
+      onClearReply?.();
     } catch (err) {
       toast.error(sendErrorMessage(err, 'Falha ao enviar mensagem.'));
     }
@@ -114,8 +119,10 @@ export function Composer({ conversationId }: Props) {
         mediaUrl: input.mediaUrl,
         mediaMime: input.mediaMime,
         body: input.caption,
+        replyToMessageId: replyingTo?.id,
       });
       toast.success('Mídia enviada.');
+      onClearReply?.();
     } catch (err) {
       toast.error(sendErrorMessage(err, 'Falha ao enviar mídia.'));
     }
@@ -153,7 +160,28 @@ export function Composer({ conversationId }: Props) {
   }, []);
 
   return (
-    <div className="border-t border-border bg-background px-3 py-2 flex items-end gap-2">
+    <div className="border-t border-border bg-background">
+      {replyingTo && !recording && (
+        <div className="px-3 pt-2 flex items-center gap-2">
+          <div className="flex-1 min-w-0 border-l-2 border-primary/70 pl-2 bg-muted/40 rounded py-1 text-xs">
+            <div className="font-medium text-primary/90">
+              Respondendo {replyingTo.direction === 'out' ? 'você' : 'o cliente'}
+            </div>
+            <div className="truncate text-muted-foreground">
+              {replyingTo.body?.trim() || '[mídia]'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClearReply}
+            title="Cancelar resposta"
+            className="p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      <div className="px-3 py-2 flex items-end gap-2">
       {recording ? (
         <>
           <Button
@@ -221,6 +249,7 @@ export function Composer({ conversationId }: Props) {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }

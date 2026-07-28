@@ -10,6 +10,7 @@ import {
   numeric,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import {
@@ -147,6 +148,8 @@ export const messages = pgTable('messages', {
   editedAt: timestamp('edited_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   originalBody: text('original_body'),
+  // "Responder citando" (migration 039): mensagem citada (self-FK).
+  replyToMessageId: uuid('reply_to_message_id').references((): AnyPgColumn => messages.id, { onDelete: 'set null' }),
 }, (t) => ({
   providerMsgidUniq: uniqueIndex('idx_messages_provider_msgid')
     .on(t.provider, t.providerMsgId)

@@ -23,6 +23,8 @@ export interface NormalizedInbound {
   mediaUrl?: string;
   mediaMime?: string;
   providerMsgId: string;
+  /** providerMsgId da mensagem citada pelo lead ("responder citando"). */
+  replyToProviderMsgId?: string | null;
   sentAt: Date;
   rawPayload: unknown;
 }
@@ -270,6 +272,21 @@ export async function ingestInboundMessage(
     // o check de duplicata no topo é só fast-path FORA do tx — dois webhooks
     // duplicados simultâneos passam por ele juntos. A fonte de verdade é o
     // unique do banco: se não inseriu, aborta o tx (rollback do unread bump).
+    // "Responder citando": o lead citou uma mensagem nossa — mapeia o wamid
+    // citado pro nosso registro (na mesma conversa) pra renderizar a citação.
+    let inboundReplyToId: string | null = null;
+    if (input.replyToProviderMsgId) {
+      const [rm] = await tx
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.providerMsgId, input.replyToProviderMsgId),
+        ))
+        .limit(1);
+      inboundReplyToId = rm?.id ?? null;
+    }
+
     const [insertedMsg] = await tx.insert(messages).values({
       conversationId,
       direction: 'in',
@@ -281,6 +298,7 @@ export async function ingestInboundMessage(
       provider: input.provider,
       rawPayload: input.rawPayload as object,
       sentAt,
+      replyToMessageId: inboundReplyToId,
     })
       .onConflictDoNothing()
       .returning({ id: messages.id });

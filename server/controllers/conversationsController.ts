@@ -157,6 +157,7 @@ const sendBody = z
     body: z.string().max(4000).optional(),
     mediaUrl: mediaUrlSchema.optional(),
     mediaMime: z.string().max(120).optional(),
+    replyToMessageId: z.string().uuid().optional(),
   })
   .superRefine((d, ctx) => {
     if (d.kind === 'text' && !d.body) {
@@ -178,6 +179,7 @@ export async function sendMessageHandler(req: Request, res: Response, next: Next
       body: data.body ?? null,
       mediaUrl: data.mediaUrl ?? null,
       mediaMime: data.mediaMime ?? null,
+      replyToMessageId: data.replyToMessageId ?? null,
       appBaseUrl: `${req.protocol}://${req.get('host')}`,
     });
     res.json(msg);

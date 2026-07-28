@@ -19,6 +19,8 @@ export interface ProviderStatus {
 export interface SendTextOpts {
   to: string;
   text: string;
+  /** providerMsgId da mensagem citada ("responder citando"), se houver. */
+  replyToProviderMsgId?: string | null;
 }
 
 export interface SendMediaOpts {
@@ -27,6 +29,7 @@ export interface SendMediaOpts {
   mediaUrl: string;
   mediaMime?: string;
   caption?: string;
+  replyToProviderMsgId?: string | null;
 }
 
 export interface SendTemplateOpts {

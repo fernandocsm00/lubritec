@@ -287,6 +287,13 @@ export interface PublicMessage {
   sentAt: string;
   editedAt: string | null;
   deletedAt: string | null;
+  /** Mensagem citada ("responder citando"), snapshot pra render; null se não é reply. */
+  replyTo: {
+    id: string;
+    direction: MessageDirection;
+    kind: MessageKind;
+    body: string | null;
+  } | null;
 }
 
 export interface PublicMessageTemplate {

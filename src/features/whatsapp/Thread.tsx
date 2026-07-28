@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMessages, useMarkRead } from './api';
 import { MessageBubble } from './MessageBubble';
 import { DayDivider } from './DayDivider';
@@ -13,6 +13,11 @@ export function Thread({ conversationId }: Props) {
   const markRead = useMarkRead();
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const lastConvIdRef = useRef<string | null>(null);
+  // "Responder citando": mensagem selecionada pra citar no Composer.
+  const [replyingTo, setReplyingTo] = useState<PublicMessage | null>(null);
+
+  // Troca de conversa limpa a citação pendente.
+  useEffect(() => { setReplyingTo(null); }, [conversationId]);
 
   useEffect(() => {
     if (lastConvIdRef.current !== conversationId) {
@@ -46,12 +51,16 @@ export function Thread({ conversationId }: Props) {
         {blocks.map((b, i) => (
           <div key={i}>
             <DayDivider label={b.dayLabel} />
-            {b.messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
+            {b.messages.map((m) => <MessageBubble key={m.id} msg={m} onReply={setReplyingTo} />)}
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
-      <Composer conversationId={conversationId} />
+      <Composer
+        conversationId={conversationId}
+        replyingTo={replyingTo}
+        onClearReply={() => setReplyingTo(null)}
+      />
     </>
   );
 }

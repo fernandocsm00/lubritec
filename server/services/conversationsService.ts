@@ -293,7 +293,15 @@ export async function listMessages(
   if (before) conds.push(lt(messages.sentAt, before));
 
   const rows = await db
-    .select({ msg: messages, sender: users })
+    .select({
+      msg: messages,
+      sender: users,
+      // Snapshot da mensagem citada ("responder citando"). null quando não é reply.
+      replyTo: sql<PublicMessage['replyTo']>`(
+        SELECT json_build_object('id', rm.id, 'direction', rm.direction, 'kind', rm.kind, 'body', rm.body)
+        FROM messages rm WHERE rm.id = ${messages.replyToMessageId}
+      )`,
+    })
     .from(messages)
     .leftJoin(users, eq(messages.sentByUserId, users.id))
     .where(and(...conds))
@@ -313,6 +321,7 @@ export async function listMessages(
     sentAt: r.msg.sentAt.toISOString(),
     editedAt: r.msg.editedAt?.toISOString() ?? null,
     deletedAt: r.msg.deletedAt?.toISOString() ?? null,
+    replyTo: r.replyTo ?? null,
   }));
 
   return { items, hasMore };
@@ -480,6 +489,8 @@ export interface SendInput {
   /** Base URL do request (req.protocol + host); usado pra montar a URL
    * absoluta da mídia enviada ao provider quando mediaUrl é relativa. */
   appBaseUrl?: string;
+  /** Id (nosso) da mensagem citada ("responder citando"), se houver. */
+  replyToMessageId?: string | null;
 }
 
 export async function sendMessage(input: SendInput): Promise<PublicMessage> {
@@ -498,6 +509,28 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     ? `*${sender.name}:*\n${input.body}`
     : input.body ?? null;
 
+  // "Responder citando": resolve o providerMsgId da mensagem citada (precisa ser
+  // da MESMA conversa) e monta o snapshot pra devolver ao frontend.
+  let replyToProviderMsgId: string | null = null;
+  let replyToSnapshot: PublicMessage['replyTo'] = null;
+  if (input.replyToMessageId) {
+    const [rt] = await db
+      .select({
+        id: messages.id,
+        providerMsgId: messages.providerMsgId,
+        body: messages.body,
+        kind: messages.kind,
+        direction: messages.direction,
+      })
+      .from(messages)
+      .where(and(eq(messages.id, input.replyToMessageId), eq(messages.conversationId, conv.id)))
+      .limit(1);
+    if (rt) {
+      replyToProviderMsgId = rt.providerMsgId;
+      replyToSnapshot = { id: rt.id, direction: rt.direction, kind: rt.kind, body: rt.body };
+    }
+  }
+
   // Envia pelo provider da instância da conversa (não assume UazAPI default —
   // conversas Meta Cloud quebravam aqui antes deste fix).
   const provider = await resolveProvider(conv.instanceId);
@@ -507,6 +540,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
       sendResult = await provider.sendText({
         to: conv.phone,
         text: outboundBody ?? '',
+        replyToProviderMsgId,
       });
     } else {
       if (!input.mediaUrl) {
@@ -518,6 +552,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         mediaUrl: toAbsoluteMediaUrl(input.mediaUrl, input.appBaseUrl),
         mediaMime: input.mediaMime ?? undefined,
         caption: outboundBody ?? undefined,
+        replyToProviderMsgId,
       });
     }
   } catch (err) {
@@ -549,6 +584,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         provider: provider.kind,
         rawPayload: sendResult.rawPayload as object,
         sentAt,
+        replyToMessageId: input.replyToMessageId ?? null,
       })
       .returning();
 
@@ -603,6 +639,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     sentAt: msg.sentAt.toISOString(),
     editedAt: msg.editedAt?.toISOString() ?? null,
     deletedAt: msg.deletedAt?.toISOString() ?? null,
+    replyTo: replyToSnapshot,
   };
 }
 
@@ -732,7 +769,14 @@ export async function editOutboundMessage(
 
 async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
   const [row] = await db
-    .select({ msg: messages, sender: users })
+    .select({
+      msg: messages,
+      sender: users,
+      replyTo: sql<PublicMessage['replyTo']>`(
+        SELECT json_build_object('id', rm.id, 'direction', rm.direction, 'kind', rm.kind, 'body', rm.body)
+        FROM messages rm WHERE rm.id = ${messages.replyToMessageId}
+      )`,
+    })
     .from(messages)
     .leftJoin(users, eq(messages.sentByUserId, users.id))
     .where(eq(messages.id, messageId))
@@ -750,6 +794,7 @@ async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
     sentAt: row.msg.sentAt.toISOString(),
     editedAt: row.msg.editedAt?.toISOString() ?? null,
     deletedAt: row.msg.deletedAt?.toISOString() ?? null,
+    replyTo: row.replyTo ?? null,
   };
 }
 

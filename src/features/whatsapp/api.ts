@@ -132,6 +132,7 @@ export function useSendMessage(conversationId: string) {
       body?: string;
       mediaUrl?: string;
       mediaMime?: string;
+      replyToMessageId?: string;
     }) =>
       api<PublicMessage>(`/conversations/${conversationId}/messages`, {
         method: 'POST',

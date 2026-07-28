@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { MoreVertical, Pencil, Trash2, Check, X } from 'lucide-react';
+import { MoreVertical, Pencil, Trash2, Check, X, CornerUpLeft } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
@@ -22,7 +22,17 @@ function renderWhatsappBold(text: string) {
   });
 }
 
-export function MessageBubble({ msg }: { msg: PublicMessage }) {
+const KIND_LABEL: Record<string, string> = {
+  image: '📷 Imagem', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Documento',
+};
+
+/** Texto curto da mensagem citada (body ou rótulo de mídia). */
+function quoteText(reply: NonNullable<PublicMessage['replyTo']>): string {
+  if (reply.body?.trim()) return reply.body;
+  return KIND_LABEL[reply.kind] ?? 'Mensagem';
+}
+
+export function MessageBubble({ msg, onReply }: { msg: PublicMessage; onReply?: (m: PublicMessage) => void }) {
   const isOut = msg.direction === 'out';
   const time = new Date(msg.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const user = useAuthStore((s) => s.user);
@@ -33,7 +43,9 @@ export function MessageBubble({ msg }: { msg: PublicMessage }) {
   const ageMs = Date.now() - new Date(msg.sentAt).getTime();
   const canEdit = canMutate && msg.kind === 'text' && ageMs <= EDIT_WINDOW_MS;
   const canDelete = canMutate && ageMs <= DELETE_WINDOW_MS;
-  const showMenu = canEdit || canDelete;
+  // "Responder citando": disponível pra qualquer mensagem (in ou out).
+  const canReply = !!onReply;
+  const showMenu = canReply || canEdit || canDelete;
 
   const del = useDeleteMessage();
   const edit = useEditMessage();
@@ -135,6 +147,11 @@ export function MessageBubble({ msg }: { msg: PublicMessage }) {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
+                {canReply && (
+                  <DropdownMenuItem onSelect={() => onReply?.(msg)}>
+                    <CornerUpLeft className="h-3.5 w-3.5 mr-2" /> Responder
+                  </DropdownMenuItem>
+                )}
                 {canEdit && (
                   <DropdownMenuItem onSelect={() => setEditing(true)}>
                     <Pencil className="h-3.5 w-3.5 mr-2" /> Editar
@@ -150,6 +167,18 @@ export function MessageBubble({ msg }: { msg: PublicMessage }) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+        )}
+
+        {/* Citação ("responder citando") */}
+        {msg.replyTo && (
+          <div className="mb-1 border-l-2 border-primary/70 pl-2 py-0.5 bg-black/15 rounded text-xs">
+            <div className="font-medium text-primary/90">
+              {msg.replyTo.direction === 'out' ? 'Você' : 'Cliente'}
+            </div>
+            <div className="truncate max-w-[240px] text-muted-foreground">
+              {quoteText(msg.replyTo)}
+            </div>
           </div>
         )}
 

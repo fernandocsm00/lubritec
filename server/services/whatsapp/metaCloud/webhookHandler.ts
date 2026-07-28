@@ -23,6 +23,8 @@ interface MetaInboundMessage {
   document?: { id: string; mime_type: string; caption?: string; filename?: string };
   button?: { text: string };
   interactive?: { button_reply?: { title: string }; list_reply?: { title: string } };
+  // "Responder citando": id (wamid) da mensagem que o lead citou.
+  context?: { id?: string };
 }
 
 interface MetaWebhookValue {
@@ -178,6 +180,7 @@ async function processOneMessage(
     mediaUrl,
     mediaMime,
     providerMsgId: msg.id,
+    replyToProviderMsgId: msg.context?.id ?? null,
     sentAt: new Date(parseInt(msg.timestamp, 10) * 1000),
     rawPayload: msg,
   };

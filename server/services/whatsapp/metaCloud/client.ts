@@ -66,6 +66,8 @@ export interface SendTextInput {
   accessToken: string;
   to: string;
   text: string;
+  /** message_id (wamid) da mensagem citada — vira context (responder citando). */
+  replyToProviderMsgId?: string | null;
 }
 
 export interface SendResult {
@@ -83,6 +85,7 @@ export async function sendText(input: SendTextInput): Promise<SendResult> {
         to: input.to,
         type: 'text',
         text: { body: input.text },
+        ...(input.replyToProviderMsgId ? { context: { message_id: input.replyToProviderMsgId } } : {}),
       }),
     });
     const msgs = (body as { messages?: Array<{ id: string }> }).messages;
@@ -105,6 +108,7 @@ export interface SendMediaInput {
   kind: 'image' | 'video' | 'audio' | 'document';
   mediaUrl: string;
   caption?: string;
+  replyToProviderMsgId?: string | null;
 }
 
 export async function sendMedia(input: SendMediaInput): Promise<SendResult> {
@@ -122,6 +126,7 @@ export async function sendMedia(input: SendMediaInput): Promise<SendResult> {
         to: input.to,
         type: input.kind,
         [input.kind]: mediaObj,
+        ...(input.replyToProviderMsgId ? { context: { message_id: input.replyToProviderMsgId } } : {}),
       }),
     });
     const msgs = (body as { messages?: Array<{ id: string }> }).messages;
