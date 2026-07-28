@@ -923,6 +923,7 @@ export const NOTIFICATION_KINDS = [
   'campaign_cooldown_high',
   'sla_escalation',         // lead aguardando atendimento na fila Comercial além do SLA
   'ai_fallback',            // IA falhou repetidamente — conversa movida pra recepção
+  'new_message',            // nova mensagem inbound no WhatsApp (conversa passou a ter não-lida)
   'system',                 // generic
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

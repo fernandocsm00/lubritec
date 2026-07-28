@@ -10,7 +10,9 @@ export function useNotifications(opts: { enabled?: boolean } = {}) {
     queryKey: KEY,
     queryFn: () => api<NotificationsListResponse>('/notifications'),
     enabled: opts.enabled ?? true,
-    refetchInterval: 30_000,  // sino atualiza ainda que dropdown fechado
+    // 15s: responsivo o bastante pro alerta de nova mensagem (a query é barata).
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 }
 

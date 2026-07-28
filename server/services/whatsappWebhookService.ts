@@ -4,6 +4,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import type { InboundMessage } from '../lib/uazapiSchema';
 import type { ConversationQueue, LeadFlowStage, MessageKind, ProviderKind } from '@shared/types';
 import { recordTransition } from './stageTransitions';
+import { emitNotification } from './notifications';
 import { HttpError } from '../middleware/errorHandler';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 
@@ -116,6 +117,9 @@ export async function ingestInboundMessage(
   let outLeadId: string | undefined;
   // Captura mudança de stage pra registrar audit trail fora do tx.
   let stageTransition: { from: LeadFlowStage | null; to: LeadFlowStage } | null = null;
+  // Notifica só quando a conversa PASSA a ter não-lida (0 → 1), pra não spammar
+  // o sino a cada mensagem de uma rajada. null = não notificar.
+  let notifyCtx: { assignedTo: string | null; queue: ConversationQueue } | null = null;
 
   await db.transaction(async (tx) => {
     // 0. Advisory lock transacional por telefone: serializa webhooks simultâneos
@@ -209,6 +213,8 @@ export async function ingestInboundMessage(
         .returning({ id: conversations.id });
       if (created) {
         conversationId = created.id;
+        // Conversa nova (sem dono ainda) → sempre "passa a ter não-lida".
+        notifyCtx = { assignedTo: null, queue: initialQueue };
       } else {
         // Race: outro webhook criou a conversa entre o select e o insert.
         // Re-seleciona e cai no fluxo de conversa existente abaixo.
@@ -233,6 +239,10 @@ export async function ingestInboundMessage(
 
     if (existingConv.length > 0) {
       const c = existingConv[0];
+      // Só notifica se a conversa estava sem não-lidas (evita 1 sino por msg).
+      if (c.unreadCount === 0) {
+        notifyCtx = { assignedTo: c.assignedTo, queue: c.queue };
+      }
       const newStatus =
         c.status === 'encerrada' ? 'aguardando_atendimento' as const : c.status;
       await tx
@@ -296,8 +306,43 @@ export async function ingestInboundMessage(
     });
   }
 
+  // Notificação "nova mensagem" (best-effort, fora do tx). Só quando a conversa
+  // passou a ter não-lida. Fila 'ia' não alerta humano (a IA responde sozinha).
+  // Cast: o TS não rastreia a atribuição feita dentro do callback do tx (mesmo
+  // padrão do stageTransition acima).
+  const ctx = notifyCtx as { assignedTo: string | null; queue: ConversationQueue } | null;
+  if (ctx && outLeadId && ctx.queue !== 'ia') {
+    const [ld] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, outLeadId)).limit(1);
+    const leadName = ld?.name ?? 'Cliente';
+    const txt = input.text?.trim();
+    const preview = txt
+      ? (txt.length > 80 ? `${txt.slice(0, 80)}…` : txt)
+      : (MEDIA_PREVIEW[input.kind] ?? '[mídia]');
+    const notif = {
+      kind: 'new_message' as const,
+      title: 'Nova mensagem no WhatsApp',
+      body: `${leadName}: ${preview}`,
+      actionUrl: `/whatsapp?lead=${outLeadId}`,
+      metadata: { conversationId: outConversationId, leadId: outLeadId },
+    };
+    if (ctx.assignedTo) {
+      await emitNotification({ userIds: [ctx.assignedTo], ...notif });
+    } else if (ctx.queue === 'recepcao') {
+      await emitNotification({ toRoles: ['recepcao', 'admin'], ...notif });
+    } else if (ctx.queue === 'comercial') {
+      await emitNotification({ toRoles: ['comercial', 'admin'], ...notif });
+    }
+  }
+
   return { status: 'inserted', conversationId: outConversationId, leadId: outLeadId };
 }
+
+const MEDIA_PREVIEW: Record<string, string> = {
+  image: '📷 Imagem',
+  audio: '🎤 Áudio',
+  video: '🎬 Vídeo',
+  document: '📄 Documento',
+};
 
 /**
  * UazAPI wrapper — preserves the existing controller contract. Builds a
