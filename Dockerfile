@@ -33,8 +33,9 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000
 
-# wget is used by the HEALTHCHECK and is not in node:alpine by default.
-RUN apk add --no-cache wget
+# wget: usado pelo HEALTHCHECK. ffmpeg: converte áudio gravado no navegador
+# (webm/opus) para ogg/opus antes de enviar à Meta (que não aceita webm).
+RUN apk add --no-cache wget ffmpeg
 
 # Production deps only (includes tsx)
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules

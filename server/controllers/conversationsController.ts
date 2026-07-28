@@ -24,6 +24,8 @@ import {
   editOutboundMessage,
 } from '../services/conversationsService';
 
+import { ensureSendableAudio } from '../lib/audioConvert';
+
 const csvOf = <T extends string>(values: readonly T[]) =>
   z
     .string()
@@ -255,10 +257,16 @@ export async function uploadMediaHandler(req: Request, res: Response, next: Next
     if (!req.file) {
       return res.status(400).json({ error: 'Invalid or missing file' });
     }
-    const filename = req.file.filename;
+    // Áudio gravado no navegador vem em webm/opus — a Meta não aceita. Converte
+    // pra ogg/opus (formatos já aceitos passam direto).
+    const { filename, mimetype } = await ensureSendableAudio({
+      path: req.file.path,
+      filename: req.file.filename,
+      mimetype: req.file.mimetype,
+    });
     res.json({
       mediaUrl: `/uploads/conversations/${filename}`,
-      mediaMime: req.file.mimetype,
+      mediaMime: mimetype,
     });
   } catch (e) { next(e); }
 }
