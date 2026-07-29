@@ -306,6 +306,21 @@ describe('GET /api/conversations/counts', () => {
 
     const res = await request(app).get('/api/conversations/counts').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ia: 0, recepcao: 1, comercial: 1 });
+    expect(res.body).toEqual({ ia: 0, recepcao: 1, comercial: 1, unread: 0 });
+  });
+
+  it('unread conta conversas com não-lidas (não encerradas)', async () => {
+    const token = await seedAuth();
+    const l1 = await createLead({ phone: '11000020010' });
+    await createConversation({ phone: '11000020010', leadId: l1.id, queue: 'recepcao', unreadCount: 3 });
+    const l2 = await createLead({ phone: '11000020011' });
+    await createConversation({ phone: '11000020011', leadId: l2.id, queue: 'comercial', unreadCount: 0 });
+    const l3 = await createLead({ phone: '11000020012' });
+    await createConversation({ phone: '11000020012', leadId: l3.id, queue: 'recepcao', unreadCount: 5, status: 'encerrada' });
+
+    const res = await request(app).get('/api/conversations/counts').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    // Só a conversa não-lida e não-encerrada conta (a encerrada com unread não).
+    expect(res.body.unread).toBe(1);
   });
 });

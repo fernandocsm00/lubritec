@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/features/auth/store';
+import { useConversationCounts } from '@/features/whatsapp/api';
 import { BrandLockup } from '@/components/brand/BrandMark';
 
 interface NavItem {
@@ -37,6 +38,8 @@ const items: NavItem[] = [
 export function Sidebar() {
   const role = useAuthStore((s) => s.user?.role);
   const user = useAuthStore((s) => s.user);
+  const { data: counts } = useConversationCounts();
+  const unread = counts?.unread ?? 0;
   const visible = items.filter((i) => {
     if (i.adminOnly && role !== 'admin') return false;
     if (i.salesOnly && role !== 'admin' && role !== 'comercial') return false;
@@ -79,7 +82,11 @@ export function Sidebar() {
           Operação
         </div>
         {ops.map((item) => (
-          <SidebarLink key={item.to} item={item} />
+          <SidebarLink
+            key={item.to}
+            item={item}
+            badge={item.to === '/whatsapp' ? unread : undefined}
+          />
         ))}
 
         <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/55 px-2 pt-3.5 pb-1.5">
@@ -122,7 +129,7 @@ export function Sidebar() {
   );
 }
 
-function SidebarLink({ item }: { item: NavItem }) {
+function SidebarLink({ item, badge }: { item: NavItem; badge?: number }) {
   return (
     <NavLink
       to={item.to}
@@ -148,6 +155,15 @@ function SidebarLink({ item }: { item: NavItem }) {
             style={{ color: isActive ? 'var(--lc-amber)' : '#9CB0C7' }}
           />
           <span>{item.label}</span>
+          {badge != null && badge > 0 && (
+            <span
+              className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold flex items-center justify-center"
+              style={{ background: 'var(--lc-amber)', color: 'var(--lc-navy)' }}
+              title={`${badge} conversa(s) com mensagem não-lida`}
+            >
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </>
       )}
     </NavLink>

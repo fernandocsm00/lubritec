@@ -218,7 +218,13 @@ export async function getConversationCounts(): Promise<ConversationCounts> {
       AND (${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')`)
     .groupBy(conversations.queue);
 
-  const counts: ConversationCounts = { ia: 0, recepcao: 0, comercial: 0 };
+  // Pendentes: conversas com mensagem não-lida (não encerradas). Independe da fila.
+  const [{ unread }] = await db
+    .select({ unread: sql<number>`count(*)::int` })
+    .from(conversations)
+    .where(sql`${conversations.unreadCount} > 0 AND ${conversations.status} != 'encerrada'`);
+
+  const counts: ConversationCounts = { ia: 0, recepcao: 0, comercial: 0, unread: unread ?? 0 };
   for (const r of rows) {
     if (r.queue === 'ia' || r.queue === 'recepcao' || r.queue === 'comercial') {
       counts[r.queue] = r.total;

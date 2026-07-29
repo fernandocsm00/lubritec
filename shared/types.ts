@@ -309,6 +309,8 @@ export interface ConversationCounts {
   ia: number;
   recepcao: number;
   comercial: number;
+  /** Conversas com mensagem não-lida (pendentes), não encerradas. */
+  unread: number;
 }
 
 export interface ConversationFilters {
