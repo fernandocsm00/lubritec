@@ -262,6 +262,9 @@ export const orgSettings = pgTable(
     aiBusinessHoursEnd: integer('ai_business_hours_end').notNull().default(18),
     aiBusinessHoursDays: text('ai_business_hours_days').notNull().default('1,2,3,4,5'),
     ai24x7: boolean('ai_24x7').notNull().default(false),
+    // Resposta em < N segundos após o disparo = auto-reply → IA responde mas não
+    // passa pro Comercial (só passa em resposta genuína). Migration 040.
+    aiAutoReplyWindowSeconds: integer('ai_auto_reply_window_seconds').notNull().default(15),
     // ── Janela de envio (auto-disparo Sprint 4) ──
     dispatchStartHour: integer('dispatch_start_hour').notNull().default(8),
     dispatchEndHour: integer('dispatch_end_hour').notNull().default(18),

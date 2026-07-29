@@ -12,7 +12,7 @@ import {
   parseQualificationTag,
   processInboundWithAi,
 } from '../services/aiAtendimento';
-import { createLead, createConversation } from './helpers';
+import { createLead, createConversation, createMessage, createUser } from './helpers';
 
 vi.mock('../services/geminiClient', () => ({
   generateReply: vi.fn(),
@@ -235,6 +235,59 @@ describe('processInboundWithAi', () => {
     expect(msgs[0].body).toBe('Olá! Posso te ajudar. Qual o tamanho da sua frota?');
     expect(msgs[0].sentByUserId).toBeNull(); // null = enviado pela IA
     expect(msgs[0].providerMsgId).toBe('uazapi-ai-001');
+  });
+
+  it('auto-reply (<15s): IA responde mas NÃO passa pro comercial mesmo qualificado', async () => {
+    await enableAi();
+    mockGeminiText('Perfeito, vou te conectar. [QUALIFICADO]');
+    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({ messageId: 'ai-ar-1', rawPayload: {} });
+    const owner = await createUser({ email: 'ar-owner@x.com', role: 'comercial' });
+    const lead = await createLead({ phone: '5511900000010', flowStage: 'engaged' });
+    const conv = await createConversation({ phone: '5511900000010', leadId: lead.id, queue: 'ia', originKind: 'campaign' });
+    const t0 = new Date(Date.now() - 60_000);
+    // Disparo (outbound de um usuário) + auto-reply 5s depois.
+    await createMessage({ conversationId: conv.id, direction: 'out', body: 'disparo', sentByUserId: owner.id, sentAt: t0 });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'auto', sentAt: new Date(t0.getTime() + 5_000) });
+
+    const r = await processInboundWithAi({ conversationId: conv.id, leadId: lead.id, phone: '5511900000010', inboundText: 'auto' });
+    expect(r.status).toBe('replied'); // respondeu, mas não handoff
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.queue).toBe('ia'); // ficou na IA
+  });
+
+  it('resposta genuína (>=15s): qualificado move pro comercial', async () => {
+    await enableAi();
+    mockGeminiText('Perfeito, vou te conectar. [QUALIFICADO]');
+    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({ messageId: 'ai-ar-2', rawPayload: {} });
+    const owner = await createUser({ email: 'ar-owner2@x.com', role: 'comercial' });
+    const lead = await createLead({ phone: '5511900000011', flowStage: 'engaged' });
+    const conv = await createConversation({ phone: '5511900000011', leadId: lead.id, queue: 'ia', originKind: 'campaign' });
+    const t0 = new Date(Date.now() - 120_000);
+    await createMessage({ conversationId: conv.id, direction: 'out', body: 'disparo', sentByUserId: owner.id, sentAt: t0 });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'oi quero orçamento', sentAt: new Date(t0.getTime() + 60_000) });
+
+    const r = await processInboundWithAi({ conversationId: conv.id, leadId: lead.id, phone: '5511900000011', inboundText: 'oi quero orçamento' });
+    expect(r.status).toBe('qualified_and_replied');
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.queue).toBe('comercial');
+  });
+
+  it('anti-loop: 2º auto-reply após msg da IA é ignorado (nem chama Gemini)', async () => {
+    await enableAi();
+    const owner = await createUser({ email: 'ar-owner3@x.com', role: 'comercial' });
+    const lead = await createLead({ phone: '5511900000012', flowStage: 'engaged' });
+    const conv = await createConversation({ phone: '5511900000012', leadId: lead.id, queue: 'ia', originKind: 'campaign' });
+    const t0 = new Date(Date.now() - 120_000);
+    await createMessage({ conversationId: conv.id, direction: 'out', body: 'disparo', sentByUserId: owner.id, sentAt: t0 });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'auto1', sentAt: new Date(t0.getTime() + 3_000) });
+    await createMessage({ conversationId: conv.id, direction: 'out', body: 'resposta IA', sentByUserId: null, sentAt: new Date(t0.getTime() + 6_000) });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'auto2', sentAt: new Date(t0.getTime() + 8_000) });
+
+    const r = await processInboundWithAi({ conversationId: conv.id, leadId: lead.id, phone: '5511900000012', inboundText: 'auto2' });
+    expect(r.status).toBe('auto_reply_ignored');
+    expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.queue).toBe('ia');
   });
 
   it('quando Gemini retorna [QUALIFICADO], move conversa pra Comercial + lead pra qualified', async () => {

@@ -218,7 +218,8 @@ export interface ProcessResult {
     | 'queue_not_ia'
     | 'gemini_error'
     | 'send_error'
-    | 'after_hours_queued';
+    | 'after_hours_queued'
+    | 'auto_reply_ignored';
   reply?: string;
   errorMessage?: string;
 }
@@ -262,6 +263,45 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
         .where(eq(conversations.id, conv.id));
     }
     return { status: 'queue_not_ia' };
+  }
+
+  // "Auto-reply": resposta que chega em < N s após o nosso último outbound
+  // (disparo ou msg da IA) é quase certo um auto-responder, não um humano lendo e
+  // digitando. Nesse caso a IA ainda RESPONDE (pra tentar provocar um humano),
+  // mas NÃO passa a conversa pro Comercial — só passa numa resposta genuína (>= N s).
+  const autoReplyWindowMs = (settings.aiAutoReplyWindowSeconds ?? 15) * 1000;
+  let isAutoReply = false;
+  let lastOutWasAi = false;
+  if (autoReplyWindowMs > 0) {
+    const [lastOut] = await db
+      .select({ sentAt: messages.sentAt, sentByUserId: messages.sentByUserId })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conv.id), eq(messages.direction, 'out')))
+      .orderBy(desc(messages.sentAt))
+      .limit(1);
+    const [lastIn] = await db
+      .select({ sentAt: messages.sentAt })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conv.id), eq(messages.direction, 'in')))
+      .orderBy(desc(messages.sentAt))
+      .limit(1);
+    if (lastOut && lastIn) {
+      const gap = lastIn.sentAt.getTime() - lastOut.sentAt.getTime();
+      isAutoReply = gap >= 0 && gap < autoReplyWindowMs;
+      lastOutWasAi = lastOut.sentByUserId === null; // dispatch tem user; IA = null
+    }
+  }
+
+  // Guard anti-loop: a IA responde UMA vez ao auto-reply. Se o último outbound já
+  // foi da própria IA e vem outro auto-reply (<Ns), é um robô ecoando — para de
+  // responder (mantém na IA, sem incomodar o comercial e sem gastar API à toa).
+  if (isAutoReply && lastOutWasAi) {
+    if (conv.pendingAiResponse) {
+      await db.update(conversations)
+        .set({ pendingAiResponse: false, updatedAt: new Date() })
+        .where(eq(conversations.id, conv.id));
+    }
+    return { status: 'auto_reply_ignored' };
   }
 
   // Gate de horario comercial. Pedido de humano (abaixo) tem prioridade sobre
@@ -442,6 +482,10 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     return { status: 'gemini_error', errorMessage: 'reply was empty after stripping tag' };
   }
 
+  // Só passa pro Comercial se o Gemini qualificou E não é um auto-reply. Auto-reply
+  // qualificado fica na IA (a IA responde, mas não incomoda o comercial).
+  const shouldHandoff = qualification === 'qualified' && !isAutoReply;
+
   // Delay humanizado antes do envio — alvo proporcional ao tamanho da resposta,
   // descontando o que ja foi gasto no pipeline (Gemini, IO etc).
   const elapsedMs = Date.now() - pipelineStartedAt;
@@ -486,7 +530,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       pendingAiResponse: false,
     };
 
-    if (qualification === 'qualified') {
+    if (shouldHandoff) {
       convPatch.queue = 'comercial';
       convPatch.status = 'aguardando_atendimento';
       convPatch.enteredQueueAt = sentAt;
@@ -495,7 +539,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
 
     await tx.update(conversations).set(convPatch).where(eq(conversations.id, input.conversationId));
 
-    if (qualification === 'qualified') {
+    if (shouldHandoff) {
       // NOTE (Sprint Calibracao IA — B4): flowStage='qualified' eh ESTADO TRANSITORIO.
       // O createDeal logo abaixo desta transacao promove imediatamente pra 'handed_off'.
       // Se voce ve um lead parado em 'qualified' por mais que segundos, o createDeal
@@ -507,8 +551,9 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     }
   });
 
-  // Audit trail + métricas de IA fora do tx.
-  if (qualification === 'qualified') {
+  // Audit trail + métricas de IA fora do tx. Só cria deal/transição se de fato
+  // houve handoff (qualificado E não auto-reply).
+  if (shouldHandoff) {
     await recordTransition({
       leadId: input.leadId,
       fromStage: 'engaged',
@@ -583,7 +628,8 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   }
 
   return {
-    status: qualification === 'qualified' ? 'qualified_and_replied' : 'replied',
+    // Reflete o handoff REAL: auto-reply qualificado responde mas não passa (=replied).
+    status: shouldHandoff ? 'qualified_and_replied' : 'replied',
     reply: cleanReply,
   };
 }

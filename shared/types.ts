@@ -738,6 +738,8 @@ export interface PublicOrgSettings {
   aiBusinessHoursEnd: number;
   aiBusinessHoursDays: string;  // CSV de ISO weekdays (1=seg .. 7=dom)
   ai24x7: boolean;
+  /** Resposta em < N s após o disparo = auto-reply → IA não passa pro comercial. */
+  aiAutoReplyWindowSeconds: number;
   // ── Janela de envio (Sprint 4 — auto-disparo respeitando horário comercial) ──
   dispatchStartHour: number;
   dispatchEndHour: number;
@@ -765,6 +767,7 @@ export interface UpdateOrgSettingsInput {
   aiBusinessHoursEnd?: number;
   aiBusinessHoursDays?: string;
   ai24x7?: boolean;
+  aiAutoReplyWindowSeconds?: number;
   dispatchStartHour?: number;
   dispatchEndHour?: number;
   dispatchSkipWeekends?: boolean;

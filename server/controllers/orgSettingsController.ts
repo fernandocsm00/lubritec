@@ -25,6 +25,7 @@ const putBody = z.object({
   dispatchTimezone: z.string().min(1).max(64).optional(),
   aiBusinessHoursStart: z.number().int().min(0).max(23).optional(),
   aiBusinessHoursEnd: z.number().int().min(1).max(24).optional(),
+  aiAutoReplyWindowSeconds: z.number().int().min(0).max(300).optional(),
   aiBusinessHoursDays: z.string().regex(/^[1-7](,[1-7])*$/).optional(),
   ai24x7: z.boolean().optional(),
 });

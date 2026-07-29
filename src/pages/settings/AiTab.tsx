@@ -12,7 +12,8 @@ type FormState = Pick<PublicOrgSettings,
   | 'aiEnabled' | 'aiAgentName' | 'aiBusinessName' | 'aiBusinessDesc' | 'aiProducts'
   | 'aiTargetAudience' | 'aiTone' | 'aiObjective' | 'aiDontTalk' | 'aiAlwaysAsk'
   | 'aiQualifyWhen' | 'aiBusinessHours' | 'aiAfterHoursMsg'
-  | 'aiBusinessHoursStart' | 'aiBusinessHoursEnd' | 'aiBusinessHoursDays' | 'ai24x7'>;
+  | 'aiBusinessHoursStart' | 'aiBusinessHoursEnd' | 'aiBusinessHoursDays' | 'ai24x7'
+  | 'aiAutoReplyWindowSeconds'>;
 
 // Labels human-friendly pros campos que aparecem em erro de validacao.
 // Cobre todos os campos editaveis em AiTab + os de horario comercial.
@@ -33,6 +34,7 @@ const FIELD_LABELS: Record<string, string> = {
   aiBusinessHoursEnd: 'Fim do horário comercial',
   aiBusinessHoursDays: 'Dias da semana (ISO)',
   ai24x7: 'IA 24/7',
+  aiAutoReplyWindowSeconds: 'Janela de auto-reply (segundos)',
 };
 
 const EMPTY: FormState = {
@@ -53,6 +55,7 @@ const EMPTY: FormState = {
   aiBusinessHoursEnd: 18,
   aiBusinessHoursDays: '1,2,3,4,5',
   ai24x7: false,
+  aiAutoReplyWindowSeconds: 15,
 };
 
 export default function AiTab() {
@@ -85,6 +88,7 @@ export default function AiTab() {
           aiBusinessHoursEnd: s.aiBusinessHoursEnd,
           aiBusinessHoursDays: s.aiBusinessHoursDays,
           ai24x7: s.ai24x7,
+          aiAutoReplyWindowSeconds: s.aiAutoReplyWindowSeconds,
         });
         setLoaded(true);
       })
@@ -245,6 +249,23 @@ export default function AiTab() {
           <p className="text-[11px] text-muted-foreground mt-1">
             Quando esse critério bater, a IA marca a conversa como qualificada e move automaticamente
             pra fila Comercial.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="ai-autoreply">Ignorar respostas automáticas em menos de (segundos)</Label>
+          <Input
+            id="ai-autoreply"
+            type="number"
+            min={0}
+            max={300}
+            className="max-w-[140px]"
+            value={form.aiAutoReplyWindowSeconds}
+            onChange={(e) => patch('aiAutoReplyWindowSeconds', Number(e.target.value) || 0)}
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Resposta que chega em menos desse tempo após o disparo é tratada como auto-responder:
+            a IA responde, mas <strong>não</strong> passa a conversa pro Comercial — só passa quando
+            vier uma resposta genuína (acima do limite). 0 desliga o filtro.
           </p>
         </div>
         <div>
