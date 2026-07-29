@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { macroFunnel } from '../services/dashboardService';
-import { createUser, createLead } from './helpers';
+import { createUser, createLead, createDeal, createCampaign, createCampaignRecipient } from './helpers';
 
 const app = createApp();
 
@@ -85,6 +85,31 @@ describe('macroFunnel service', () => {
     expect(r.stages.complete.pctOfTotal).toBe(60);
     // 4 incomplete = 40%
     expect(r.sidelines.incomplete.pctOfTotal).toBe(40);
+  });
+
+  it('won conta leads com deal ganho', async () => {
+    const past = new Date(Date.now() - 60_000);
+    const lead = await createLead({ flowStage: 'handed_off', createdAt: past });
+    await createDeal({ leadId: lead.id, stage: 'ganho' });
+    await createLead({ flowStage: 'handed_off', createdAt: past }); // sem deal ganho
+    const r = await macroFunnel({ period: '30d' });
+    expect(r.stages.handedOff.count).toBe(2);
+    expect(r.stages.won.count).toBe(1);
+  });
+
+  it('filtro por campanha escopa aos leads da campanha e ignora o período', async () => {
+    const owner = await createUser({ email: 'mf-owner@x.com', role: 'comercial' });
+    const veryOld = new Date('2020-01-01'); // fora de qualquer período recente
+    const inCamp = await createLead({ flowStage: 'engaged', phone: '5511999990000', createdAt: veryOld });
+    await createLead({ flowStage: 'engaged', createdAt: veryOld }); // fora da campanha
+    const camp = await createCampaign({ createdByUserId: owner.id });
+    await createCampaignRecipient({ campaignId: camp.id, leadId: inCamp.id, phone: '5511999990000', status: 'sent', sentAt: veryOld });
+
+    const scoped = await macroFunnel({ period: 'today', campaignIds: [camp.id] });
+    // Só o lead da campanha entra (mesmo sendo de 2020 — período ignorado).
+    expect(scoped.stages.complete.count).toBe(1);
+    expect(scoped.stages.engaged.count).toBe(1);
+    expect(scoped.period.label).toBe('Campanha selecionada');
   });
 });
 

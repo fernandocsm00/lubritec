@@ -36,6 +36,7 @@ export interface MacroFunnelQueryArgs {
   from?: string;  // ISO datetime
   to?: string;    // ISO datetime
   filters?: DashboardLeadFilters;
+  campaignIds?: string[];
 }
 
 export function useDashboardAiMetrics(args: MacroFunnelQueryArgs, enabled: boolean) {
@@ -52,7 +53,7 @@ export function useDashboardAiMetrics(args: MacroFunnelQueryArgs, enabled: boole
 export function useDashboardMacroFunnel(args: MacroFunnelQueryArgs, enabled: boolean) {
   const periodKey = args.from && args.to ? `${args.from}|${args.to}` : (args.period ?? '30d');
   return useQuery({
-    queryKey: ['dashboard', 'macro-funnel', periodKey, args.filters?.imbp, args.filters?.segment, args.filters?.city],
+    queryKey: ['dashboard', 'macro-funnel', periodKey, args.filters?.imbp, args.filters?.segment, args.filters?.city, (args.campaignIds ?? []).join(',')],
     queryFn: () => fetchMacroFunnel(args),
     staleTime: 60_000,
     refetchInterval: 60_000,

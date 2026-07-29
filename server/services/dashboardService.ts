@@ -1,6 +1,6 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { deals, dealActivities, leads, conversations, messages, users, whatsappInstance } from '../db/schema';
+import { deals, dealActivities, leads, conversations, messages, users, whatsappInstance, campaignRecipients } from '../db/schema';
 import { getOrgSettings } from './orgSettingsService';
 import { resolvePeriod, type PeriodKey } from '../lib/period';
 import type {
@@ -438,6 +438,9 @@ interface MacroFunnelArgs {
   rangeEnd?: Date;
   now?: Date;
   leadFilters?: DashboardLeadFilters;
+  // Filtro por campanha(s): quando presente, o funil mostra os leads dessas
+  // campanhas e IGNORA o período (base completa da(s) campanha(s)).
+  campaignIds?: string[];
 }
 
 export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacroFunnel> {
@@ -458,11 +461,24 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
   }
 
   const lf = args.leadFilters;
+  // Escopo por campanha: ignora o período e restringe aos leads que participaram
+  // das campanhas selecionadas (via campaign_recipients).
+  const scopedByCampaign = (args.campaignIds?.length ?? 0) > 0;
+  if (scopedByCampaign) {
+    label = args.campaignIds!.length === 1 ? 'Campanha selecionada' : `${args.campaignIds!.length} campanhas`;
+  }
+  const periodPart = scopedByCampaign
+    ? sql``
+    : sql` AND ${leads.createdAt} >= ${start} AND ${leads.createdAt} < ${end}`;
+  const campaignPart = scopedByCampaign
+    ? sql` AND EXISTS (SELECT 1 FROM ${campaignRecipients} cr WHERE cr.lead_id = ${leads.id} AND cr.campaign_id IN (${sql.join(args.campaignIds!.map((id) => sql`${id}`), sql`, `)}))`
+    : sql``;
+
   // Counts cumulativos por stage — uma query.
   const filterDirect = leadFilterDirect(lf);
   const [row] = await db.execute<{
     total: number; incomplete: number; complete: number; dispatched: number;
-    engaged: number; qualified: number; handed_off: number; lost: number;
+    engaged: number; qualified: number; handed_off: number; lost: number; won: number;
   }>(sql`
     SELECT
       count(*)::int as total,
@@ -472,9 +488,10 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
       count(*) filter (where ${leads.flowStage} in ('engaged','qualified','handed_off'))::int as engaged,
       count(*) filter (where ${leads.flowStage} in ('qualified','handed_off'))::int as qualified,
       count(*) filter (where ${leads.flowStage} = 'handed_off')::int as handed_off,
-      count(*) filter (where ${leads.flowStage} = 'lost')::int as lost
+      count(*) filter (where ${leads.flowStage} = 'lost')::int as lost,
+      count(*) filter (where EXISTS (SELECT 1 FROM ${deals} d WHERE d.lead_id = ${leads.id} AND d.stage = 'ganho'))::int as won
     FROM ${leads}
-    WHERE ${leads.createdAt} >= ${start} AND ${leads.createdAt} < ${end}
+    WHERE 1=1${periodPart}${campaignPart}
     ${filterDirect}
   `).then((r) => ((r as any).rows ?? r) as any[]);
   const handedOff = row.handed_off;
@@ -534,6 +551,7 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
       engaged:    { count: row.engaged,    pctOfTotal: pct(row.engaged),    convFromPrev: conv(row.engaged, row.dispatched) },
       qualified:  { count: row.qualified,  pctOfTotal: pct(row.qualified),  convFromPrev: conv(row.qualified, row.engaged) },
       handedOff:  { count: handedOff,      pctOfTotal: pct(handedOff),      convFromPrev: conv(handedOff, row.qualified) },
+      won:        { count: row.won,        pctOfTotal: pct(row.won),        convFromPrev: conv(row.won, handedOff) },
     },
     sidelines: {
       incomplete: { count: row.incomplete, pctOfTotal: pct(row.incomplete) },

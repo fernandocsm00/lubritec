@@ -41,7 +41,7 @@ export function fetchWhatsapp() {
   return api<DashboardWhatsappStats>('/dashboard/whatsapp');
 }
 
-export function fetchMacroFunnel(args: { period?: DashboardPeriod; from?: string; to?: string; filters?: DashboardLeadFilters }) {
+export function fetchMacroFunnel(args: { period?: DashboardPeriod; from?: string; to?: string; filters?: DashboardLeadFilters; campaignIds?: string[] }) {
   const params = new URLSearchParams();
   if (args.from && args.to) {
     params.set('from', args.from);
@@ -50,6 +50,7 @@ export function fetchMacroFunnel(args: { period?: DashboardPeriod; from?: string
     params.set('period', args.period ?? '30d');
   }
   appendLeadFilters(params, args.filters);
+  if (args.campaignIds?.length) params.set('campaignIds', args.campaignIds.join(','));
   return api<DashboardMacroFunnel>(`/dashboard/macro-funnel?${params.toString()}`);
 }
 

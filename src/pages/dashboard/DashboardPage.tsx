@@ -18,6 +18,7 @@ import { BlockError } from './components/BlockError';
 import { StatusRibbon } from './components/StatusRibbon';
 import { OperationsHero } from './components/OperationsHero';
 import { BigFunnelChart } from './components/BigFunnelChart';
+import { FunnelCampaignFilter } from './components/FunnelCampaignFilter';
 import { Leaderboard } from './components/Leaderboard';
 import { RecentActivities } from './components/RecentActivities';
 import { RefreshCcw } from 'lucide-react';
@@ -63,11 +64,16 @@ export default function DashboardPage() {
   const [view, setView] = useState<DashboardView>(isAdmin ? 'org' : 'me');
   const [period, setPeriod] = useState<DashboardPeriod>('month');
   const [leadFilters, setLeadFilters] = useState<DashboardLeadFilters>({});
+  // Filtro do funil por campanha(s). Vazio = global.
+  const [funnelCampaignIds, setFunnelCampaignIds] = useState<string[]>([]);
 
   const summary = useDashboardSummary(view, period, leadFilters);
   const attention = useDashboardAttention(view);
   const whatsapp = useDashboardWhatsapp(view === 'org');
-  const macroFunnel = useDashboardMacroFunnel({ period, filters: leadFilters }, isAdmin && view === 'org');
+  const macroFunnel = useDashboardMacroFunnel(
+    { period, filters: leadFilters, campaignIds: funnelCampaignIds },
+    isAdmin && view === 'org',
+  );
 
   const isRefreshing =
     summary.isFetching ||
@@ -140,7 +146,10 @@ export default function DashboardPage() {
           {macroFunnel.error ? (
             <BlockError onRetry={() => macroFunnel.refetch()} />
           ) : macroFunnel.data ? (
-            <BigFunnelChart data={macroFunnel.data} />
+            <BigFunnelChart
+              data={macroFunnel.data}
+              headerRight={<FunnelCampaignFilter selected={funnelCampaignIds} onChange={setFunnelCampaignIds} />}
+            />
           ) : (
             <BlockSkeleton height={400} />
           )}

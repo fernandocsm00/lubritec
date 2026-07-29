@@ -1051,6 +1051,7 @@ export interface DashboardMacroFunnel {
     engaged: MacroFunnelStage;      // respondeu pelo menos 1x
     qualified: MacroFunnelStage;    // IA marcou QUALIFICADO
     handedOff: MacroFunnelStage;    // comercial assumiu (deal criado)
+    won: MacroFunnelStage;          // deal ganho
   };
   sidelines: {
     incomplete: MacroFunnelStage;   // travados sem telefone

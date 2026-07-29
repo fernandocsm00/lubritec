@@ -33,6 +33,12 @@ const macroFunnelQuery = z
     period: z.enum(['today', '7d', 'month', '30d', 'quarter']).optional(),
     from: z.string().datetime().optional(),
     to: z.string().datetime().optional(),
+    campaignIds: z
+      .preprocess(
+        (v) => (typeof v === 'string' ? v.split(',').filter(Boolean) : v),
+        z.array(z.string().uuid()),
+      )
+      .optional(),
     ...leadFiltersShape,
   })
   .refine(
@@ -113,6 +119,7 @@ export async function macroFunnelHandler(req: Request, res: Response, next: Next
       rangeStart: q.from ? new Date(q.from) : undefined,
       rangeEnd: q.to ? new Date(q.to) : undefined,
       leadFilters: pickLeadFilters(q),
+      campaignIds: q.campaignIds,
     }));
   } catch (e) { next(e); }
 }
