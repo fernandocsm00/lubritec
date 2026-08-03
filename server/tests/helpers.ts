@@ -250,7 +250,12 @@ export async function createWhatsappInstance(opts: {
     ? {
         baseUrl: 'https://api.uazapi.com',
         instanceId: null,
-        instanceToken: null,
+        // Token presente por padrão: o envio via provider (UazapiProvider) usa a
+        // config DA instância, então uma linha sem token lançaria antes do mock.
+        // Reflete produção (linha conectada tem token). Texto puro: decryptSecret
+        // faz passthrough sem a chave. Testes que precisam de "sem token" passam
+        // providerConfig explícito.
+        instanceToken: 'test-instance-token',
         webhookSecret: null,
         webhookUrl: null,
         webhookSynced: false,

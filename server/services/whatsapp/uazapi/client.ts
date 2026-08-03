@@ -21,6 +21,17 @@ export interface UazapiSendResponse {
   rawPayload: unknown;
 }
 
+/**
+ * Config de envio por-instância. Quando o caller (ex.: UazapiProvider resolvido
+ * por `resolveProvider(conv.instanceId)`) passa isto, o envio sai pela linha DA
+ * CONVERSA. Sem isto, cai em `loadSendConfig()` (linha padrão) — backward-compat
+ * pros callers legados que ainda não roteiam por instância.
+ */
+export interface UazapiSendConfig {
+  baseUrl: string;
+  token: string;
+}
+
 // Map MessageKind to uazapiGO `type` field for /send/media.
 function mapMediaType(kind: MessageKind): string {
   switch (kind) {
@@ -32,8 +43,11 @@ function mapMediaType(kind: MessageKind): string {
   }
 }
 
-export async function sendUazapiMessage(opts: SendMessageOpts): Promise<UazapiSendResponse> {
-  const cfg = await loadSendConfig();
+export async function sendUazapiMessage(
+  opts: SendMessageOpts,
+  sendCfg?: UazapiSendConfig,
+): Promise<UazapiSendResponse> {
+  const cfg = sendCfg ?? await loadSendConfig();
   const endpoint = opts.kind === 'text' ? '/send/text' : '/send/media';
 
   const body: Record<string, unknown> = { number: opts.to };

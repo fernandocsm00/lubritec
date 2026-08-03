@@ -120,7 +120,13 @@ export class UazapiProvider implements WhatsAppProvider {
 
   private async sendInternal(opts: SendInternal): Promise<SendResult> {
     try {
-      const res = await sendUazapiMessage(opts);
+      // Envia pela config DESTA instância (não a padrão) — sem isto, uma linha
+      // UazAPI não-padrão manda pela linha errada ou falha quando a padrão é
+      // meta_cloud (loadSendConfig lança ao parsear config Meta como UazAPI).
+      const res = await sendUazapiMessage(opts, {
+        baseUrl: this.cfg.baseUrl,
+        token: this.decToken(),
+      });
       return { providerMsgId: res.messageId, rawPayload: res.rawPayload };
     } catch (err) {
       if (err instanceof UazapiError) {
