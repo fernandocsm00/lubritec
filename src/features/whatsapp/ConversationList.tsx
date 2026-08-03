@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConversationRow } from './ConversationRow';
 import { useConversations } from './api';
+import { useInstancesList } from '@/features/settings/whatsapp/api';
 import type { ConversationFilters, PublicConversation } from './types';
 
 interface Props {
@@ -12,6 +13,13 @@ interface Props {
 
 export function ConversationList({ filters, selectedId, currentUserId, onSelect }: Props) {
   const { data, isLoading, isError } = useConversations(filters);
+  const { data: instancesData } = useInstancesList();
+  // Selo por linha só faz sentido com 2+ linhas ativas; senão fica poluído.
+  const activeLines = (instancesData?.items ?? []).filter((l) => !l.isArchived);
+  const lineNameById =
+    activeLines.length >= 2
+      ? new Map(activeLines.map((l) => [l.id, l.displayName]))
+      : null;
   if (isLoading) {
     return (
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -34,6 +42,7 @@ export function ConversationList({ filters, selectedId, currentUserId, onSelect 
           active={c.id === selectedId}
           currentUserId={currentUserId}
           onClick={() => onSelect(c)}
+          lineLabel={lineNameById?.get(c.instanceId)}
         />
       ))}
     </div>

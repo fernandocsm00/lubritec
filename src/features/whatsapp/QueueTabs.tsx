@@ -12,10 +12,12 @@ const QUEUES: { key: ConversationQueue; label: string }[] = [
 interface Props {
   active: ConversationQueue;
   onChange: (queue: ConversationQueue) => void;
+  /** Linha selecionada — filtra os contadores por linha (undefined = todas). */
+  instanceId?: string;
 }
 
-export function QueueTabs({ active, onChange }: Props) {
-  const { data } = useConversationCounts();
+export function QueueTabs({ active, onChange, instanceId }: Props) {
+  const { data } = useConversationCounts(instanceId);
   return (
     <div className="flex border-b border-border bg-background">
       {QUEUES.map((q) => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
-import { createUser, createLead, createConversation, createMessage, createCampaign, createHsmTemplate, getOrCreateDefaultInstance } from './helpers';
+import { createUser, createLead, createConversation, createMessage, createCampaign, createHsmTemplate, getOrCreateDefaultInstance, createWhatsappInstance } from './helpers';
 
 const app = createApp();
 
@@ -19,6 +19,36 @@ describe('GET /api/conversations', () => {
   it('401 sem token', async () => {
     const res = await request(app).get('/api/conversations');
     expect(res.status).toBe(401);
+  });
+
+  it('filtra por linha (instanceId) e expõe instanceId no item', async () => {
+    const token = await seedAuth();
+    const lineA = await getOrCreateDefaultInstance();
+    const lineB = await createWhatsappInstance({ displayName: 'Linha B', isDefault: false });
+
+    const leadA = await createLead({ phone: '11000019001' });
+    const convA = await createConversation({ phone: '11000019001', leadId: leadA.id, instanceId: lineA });
+    await createMessage({ conversationId: convA.id, body: 'da linha A' });
+
+    const leadB = await createLead({ phone: '11000019002' });
+    const convB = await createConversation({ phone: '11000019002', leadId: leadB.id, instanceId: lineB.id });
+    await createMessage({ conversationId: convB.id, body: 'da linha B' });
+
+    // Sem filtro: as duas aparecem, cada uma com seu instanceId.
+    const all = await request(app).get('/api/conversations').set('Authorization', `Bearer ${token}`);
+    expect(all.status).toBe(200);
+    const ids = all.body.items.map((i: { instanceId: string }) => i.instanceId);
+    expect(ids).toContain(lineA);
+    expect(ids).toContain(lineB.id);
+
+    // Filtrando pela linha B: só a conversa da B.
+    const onlyB = await request(app)
+      .get(`/api/conversations?instanceId=${lineB.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(onlyB.status).toBe(200);
+    expect(onlyB.body.items).toHaveLength(1);
+    expect(onlyB.body.items[0].id).toBe(convB.id);
+    expect(onlyB.body.items[0].instanceId).toBe(lineB.id);
   });
 
   it('200 lista paginada', async () => {

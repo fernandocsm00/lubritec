@@ -247,6 +247,8 @@ export type OriginKind = (typeof ORIGIN_KINDS)[number];
 export interface PublicConversation {
   id: string;
   phone: string;
+  /** Linha (whatsapp_instance) dona da conversa — usado pro selo/filtro por linha. */
+  instanceId: string;
   lead: {
     id: string;
     name: string;
@@ -330,6 +332,8 @@ export interface ConversationFilters {
   assignment?: 'mine' | 'unassigned' | 'all';
   /** UF do lead (cadastro). 'RS' também casa leads sem UF definida (null → RS). */
   uf?: Uf;
+  /** Filtra conversas por linha (whatsapp_instance). Omitido = todas as linhas. */
+  instanceId?: string;
   q?: string;
   page?: number;
 }

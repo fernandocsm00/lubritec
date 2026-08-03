@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
-import { Image as ImageIcon, Bot, Clock, Megaphone } from 'lucide-react';
+import { Image as ImageIcon, Bot, Clock, Megaphone, Smartphone } from 'lucide-react';
 import {
   formatRelativeTime,
   avatarInitials,
@@ -15,9 +15,11 @@ interface Props {
   active: boolean;
   currentUserId: string;
   onClick: () => void;
+  /** Nome da linha (whatsapp_instance) — mostrado como selo quando há 2+ linhas. */
+  lineLabel?: string;
 }
 
-export function ConversationRow({ conv, active, currentUserId, onClick }: Props) {
+export function ConversationRow({ conv, active, currentUserId, onClick, lineLabel }: Props) {
   const isMine = conv.assignedTo?.id === currentUserId;
   const ownerLabel = !conv.assignedTo
     ? '● Sem dono'
@@ -59,6 +61,15 @@ export function ConversationRow({ conv, active, currentUserId, onClick }: Props)
                 className="inline-flex items-center gap-0.5 rounded bg-primary/10 text-primary text-[9px] uppercase tracking-wide px-1 py-0.5"
               >
                 <Bot className="h-2.5 w-2.5" /> IA
+              </span>
+            )}
+            {lineLabel && (
+              <span
+                title={`Linha: ${lineLabel}`}
+                className="inline-flex items-center gap-0.5 rounded bg-muted text-muted-foreground text-[9px] font-medium px-1 py-0.5 shrink-0 max-w-[90px]"
+              >
+                <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{lineLabel}</span>
               </span>
             )}
           </span>

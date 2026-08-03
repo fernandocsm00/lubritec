@@ -23,6 +23,7 @@ export default function WhatsappPage() {
   const ufParam = searchParams.get('uf');
   const uf: Uf | 'all' = ufParam === 'RS' || ufParam === 'BA' ? ufParam : 'all';
   const q = searchParams.get('q') ?? '';
+  const instanceId = searchParams.get('line') || undefined;
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
 
@@ -32,9 +33,10 @@ export default function WhatsappPage() {
     origin: origins,
     assignment,
     uf: uf === 'all' ? undefined : uf,
+    instanceId,
     q: q || undefined,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [queue, statusKeys.join(','), origins.join(','), assignment, uf, q]);
+  }), [queue, statusKeys.join(','), origins.join(','), assignment, uf, instanceId, q]);
 
   const { data: convsData } = useConversations(filters);
   const selectedConv = convsData?.items.find((c) => c.id === selectedConvId) ?? null;
@@ -122,6 +124,7 @@ export default function WhatsappPage() {
         <QueueTabs
           active={queue}
           onChange={(q) => { patch({ queue: q }); setSelectedConvId(null); }}
+          instanceId={instanceId}
         />
         <FilterBar
           q={q}
@@ -139,6 +142,8 @@ export default function WhatsappPage() {
           onAssignmentChange={(a) => patch({ assignment: a === 'all' ? null : a })}
           origins={origins}
           onOriginsChange={(o) => patch({ origin: o.join(',') })}
+          instanceId={instanceId}
+          onInstanceChange={(id) => { patch({ line: id ?? null }); setSelectedConvId(null); }}
         />
         <ConversationList
           filters={filters}

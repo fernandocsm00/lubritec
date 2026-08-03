@@ -98,6 +98,7 @@ export async function listConversations(input: ListInput): Promise<{
   }
   if (input.origin?.length) conds.push(inArray(conversations.originKind, input.origin));
   if (input.campaignId) conds.push(eq(conversations.originCampaignId, input.campaignId));
+  if (input.instanceId) conds.push(eq(conversations.instanceId, input.instanceId));
   if (input.assignment === 'mine') conds.push(eq(conversations.assignedTo, input.currentUserId));
   if (input.assignment === 'unassigned') conds.push(isNull(conversations.assignedTo));
   // UF vem do cadastro (leads.uf). Sem UF definida conta como RS (regra do produto).
@@ -170,6 +171,7 @@ export async function listConversations(input: ListInput): Promise<{
     return {
       id: r.conv.id,
       phone: r.conv.phone,
+      instanceId: r.conv.instanceId,
       lead: {
         id: lead.id,
         name: lead.name,
@@ -207,7 +209,13 @@ export async function listConversations(input: ListInput): Promise<{
   return { items, total, page, pageSize: PAGE_SIZE };
 }
 
-export async function getConversationCounts(): Promise<ConversationCounts> {
+export async function getConversationCounts(instanceId?: string): Promise<ConversationCounts> {
+  // Filtro opcional por linha: quando uma linha está selecionada na Inbox, os
+  // contadores das filas refletem só ela (consistente com a lista filtrada).
+  const lineFilter = instanceId
+    ? sql`AND ${conversations.instanceId} = ${instanceId}`
+    : sql``;
+
   const rows = await db
     .select({
       queue: conversations.queue,
@@ -215,14 +223,15 @@ export async function getConversationCounts(): Promise<ConversationCounts> {
     })
     .from(conversations)
     .where(sql`${conversations.status} != 'encerrada'
-      AND (${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')`)
+      AND (${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')
+      ${lineFilter}`)
     .groupBy(conversations.queue);
 
   // Pendentes: conversas com mensagem não-lida (não encerradas). Independe da fila.
   const [{ unread }] = await db
     .select({ unread: sql<number>`count(*)::int` })
     .from(conversations)
-    .where(sql`${conversations.unreadCount} > 0 AND ${conversations.status} != 'encerrada'`);
+    .where(sql`${conversations.unreadCount} > 0 AND ${conversations.status} != 'encerrada' ${lineFilter}`);
 
   const counts: ConversationCounts = { ia: 0, recepcao: 0, comercial: 0, unread: unread ?? 0 };
   for (const r of rows) {

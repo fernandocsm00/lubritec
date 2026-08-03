@@ -42,6 +42,7 @@ const listQuery = z.object({
   campaignId: z.string().uuid().optional(),
   assignment: z.enum(['mine', 'unassigned', 'all']).optional(),
   uf: z.enum(UF_VALUES).optional(),
+  instanceId: z.string().uuid().optional(),
   q: z.string().optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });
@@ -59,9 +60,12 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
-export async function countsHandler(_req: Request, res: Response, next: NextFunction) {
+const countsQuery = z.object({ instanceId: z.string().uuid().optional() });
+
+export async function countsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await getConversationCounts());
+    const { instanceId } = countsQuery.parse(req.query);
+    res.json(await getConversationCounts(instanceId));
   } catch (e) { next(e); }
 }
 

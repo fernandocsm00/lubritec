@@ -30,6 +30,7 @@ function buildQuery(filters: ConversationFilters): string {
   if (filters.campaignId) u.set('campaignId', filters.campaignId);
   if (filters.assignment && filters.assignment !== 'all') u.set('assignment', filters.assignment);
   if (filters.uf) u.set('uf', filters.uf);
+  if (filters.instanceId) u.set('instanceId', filters.instanceId);
   if (filters.q) u.set('q', filters.q);
   if (filters.page && filters.page > 1) u.set('page', String(filters.page));
   const s = u.toString();
@@ -51,10 +52,13 @@ export function useConversations(filters: ConversationFilters) {
   });
 }
 
-export function useConversationCounts() {
+export function useConversationCounts(instanceId?: string) {
   return useQuery({
-    queryKey: ['conversations', 'counts'],
-    queryFn: () => api<ConversationCounts>('/conversations/counts'),
+    queryKey: ['conversations', 'counts', instanceId ?? null],
+    queryFn: () =>
+      api<ConversationCounts>(
+        `/conversations/counts${instanceId ? `?instanceId=${instanceId}` : ''}`,
+      ),
     refetchInterval: LIST_POLL_MS,
     refetchIntervalInBackground: false,
   });
