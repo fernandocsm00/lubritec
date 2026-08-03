@@ -4,7 +4,7 @@ import { db } from '../db/client';
 import { messages } from '../db/schema';
 import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
-import { loadValidWebhookTokens } from '../services/whatsappInstanceService';
+import { loadValidWebhookTokens, resolveInstanceIdByWebhookToken } from '../services/whatsappInstanceService';
 import { processInboundWithAi } from '../services/aiAtendimento';
 import {
   pushDebugEntry,
@@ -205,7 +205,10 @@ export async function whatsappWebhookHandler(
       fromMe: inbound.fromMe,
     };
 
-    const ingestResult = await ingestInbound(inbound, parsed.data);
+    // Roteia pra instância dona do token (multi-linha). `got` já foi validado
+    // acima. Se não mapear (ex.: token do env), ingestInbound cai na padrão.
+    const routedInstanceId = (await resolveInstanceIdByWebhookToken(got)) ?? undefined;
+    const ingestResult = await ingestInbound(inbound, parsed.data, routedInstanceId);
     debug.result = { kind: ingestResult.status, messageId: inbound.id };
     pushDebugEntry(debug);
 

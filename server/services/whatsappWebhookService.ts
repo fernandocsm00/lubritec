@@ -370,10 +370,13 @@ const MEDIA_PREVIEW: Record<string, string> = {
 export async function ingestInbound(
   m: InboundMessage,
   rawPayload: unknown,
+  instanceId?: string,
 ): Promise<{ status: 'inserted' | 'duplicate' | 'ignored'; conversationId?: string; leadId?: string }> {
-  const instanceId = await getDefaultInstanceId();
+  // instanceId vem do controller (resolvido pelo token do webhook). Se ausente
+  // (ex.: webhook autenticado via env UAZAPI_WEBHOOK_SECRET), cai na padrão.
+  const resolvedInstanceId = instanceId ?? await getDefaultInstanceId();
   return ingestInboundMessage({
-    instanceId,
+    instanceId: resolvedInstanceId,
     provider: 'uazapi',
     leadPhone: normalizePhone(m.from),
     leadName: m.contactName ?? undefined,

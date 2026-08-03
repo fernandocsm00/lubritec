@@ -4,6 +4,20 @@ import {
   loadValidWebhookTokens,
   resolveInstanceIdByWebhookToken,
 } from '../services/whatsappInstanceService';
+import request from 'supertest';
+import { createApp } from '../app';
+import { db } from '../db/client';
+import { conversations } from '../db/schema';
+import { eq } from 'drizzle-orm';
+
+const app = createApp();
+
+function inboundBody(messageid: string, sender: string) {
+  return {
+    EventType: 'messages',
+    message: { messageid, sender, messageType: 'conversation', text: 'oi', timestamp: 1746115200 },
+  };
+}
 
 // Tokens em texto puro de propósito: decryptSecret faz passthrough de valores
 // sem prefixo "enc:", então os testes não precisam da WHATSAPP_CREDENTIALS_KEY.
@@ -90,5 +104,58 @@ describe('resolveInstanceIdByWebhookToken', () => {
       providerConfig: uazCfg('inst-A', 'token-A'),
     });
     expect(await resolveInstanceIdByWebhookToken('nao-existe')).toBeNull();
+  });
+});
+
+describe('POST /api/whatsapp/webhook — roteamento multi-instância', () => {
+  it('inbound com token da linha B cria conversa na instância B (não na padrão A)', async () => {
+    const a = await createWhatsappInstance({
+      provider: 'uazapi', isDefault: true, displayName: 'A',
+      providerConfig: uazCfg('inst-A', 'token-A'),
+    });
+    const b = await createWhatsappInstance({
+      provider: 'uazapi', isDefault: false, displayName: 'B',
+      providerConfig: uazCfg('inst-B', 'token-B'),
+    });
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook?instanceToken=token-B')
+      .send(inboundBody('MSG-B-1', '5511987650001@s.whatsapp.net'));
+    expect(res.status).toBe(200);
+
+    const [conv] = await db.select().from(conversations)
+      .where(eq(conversations.phone, '5511987650001'));
+    expect(conv).toBeDefined();
+    expect(conv.instanceId).toBe(b.id);
+    expect(conv.instanceId).not.toBe(a.id);
+  });
+
+  it('inbound com token desconhecido → 401', async () => {
+    await createWhatsappInstance({
+      provider: 'uazapi', isDefault: true, displayName: 'A',
+      providerConfig: uazCfg('inst-A', 'token-A'),
+    });
+    const res = await request(app)
+      .post('/api/whatsapp/webhook?instanceToken=token-ERRADO')
+      .send(inboundBody('MSG-X', '5511987650002@s.whatsapp.net'));
+    expect(res.status).toBe(401);
+  });
+
+  it('token do env UAZAPI_WEBHOOK_SECRET continua roteando pra linha padrão (backward-compat)', async () => {
+    process.env.UAZAPI_WEBHOOK_SECRET = 'env-secret';
+    const a = await createWhatsappInstance({
+      provider: 'uazapi', isDefault: true, displayName: 'A',
+      providerConfig: uazCfg('inst-A', 'token-A'),
+    });
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', 'env-secret')
+      .send(inboundBody('MSG-ENV', '5511987650003@s.whatsapp.net'));
+    expect(res.status).toBe(200);
+
+    const [conv] = await db.select().from(conversations)
+      .where(eq(conversations.phone, '5511987650003'));
+    expect(conv.instanceId).toBe(a.id);
   });
 });
