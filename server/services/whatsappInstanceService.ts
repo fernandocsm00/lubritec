@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { db } from '../db/client';
 import { whatsappInstance } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type { InstanceStatusResponse } from '@shared/types';
 import {
@@ -342,15 +342,44 @@ export async function loadWebhookSecret(): Promise<string | null> {
 }
 
 export async function loadValidWebhookTokens(): Promise<string[]> {
-  const row = await loadDefaultRow();
+  // Multi-instância: aceita o token de QUALQUER linha UazAPI ativa (não só a
+  // padrão). safeParse ignora linhas cujo providerConfig não é UazAPI (ex.:
+  // meta_cloud) sem lançar.
+  const rows = await db.select().from(whatsappInstance)
+    .where(and(
+      eq(whatsappInstance.provider, 'uazapi'),
+      eq(whatsappInstance.isArchived, false),
+    ));
   const tokens: string[] = [];
-  if (row) {
-    const cfg = uazCfg(row);
-    if (cfg.webhookSecret) tokens.push(decryptSecret(cfg.webhookSecret));
-    if (cfg.instanceToken) tokens.push(decryptSecret(cfg.instanceToken));
+  for (const row of rows) {
+    const parsed = uazapiConfigSchema.safeParse(row.providerConfig);
+    if (!parsed.success) continue;
+    if (parsed.data.webhookSecret) tokens.push(decryptSecret(parsed.data.webhookSecret));
+    if (parsed.data.instanceToken) tokens.push(decryptSecret(parsed.data.instanceToken));
   }
   if (process.env.UAZAPI_WEBHOOK_SECRET) tokens.push(process.env.UAZAPI_WEBHOOK_SECRET);
   return tokens;
+}
+
+/**
+ * Mapeia um token de webhook (instanceToken OU webhookSecret) pra qual linha
+ * UazAPI ativa ele pertence. Usado pra rotear inbound multi-linha pra instância
+ * certa — sem isso o inbound cai sempre na linha padrão. Retorna null se nenhum
+ * casar (ex.: token do env UAZAPI_WEBHOOK_SECRET, que não é de uma linha).
+ */
+export async function resolveInstanceIdByWebhookToken(token: string): Promise<string | null> {
+  const rows = await db.select().from(whatsappInstance)
+    .where(and(
+      eq(whatsappInstance.provider, 'uazapi'),
+      eq(whatsappInstance.isArchived, false),
+    ));
+  for (const row of rows) {
+    const parsed = uazapiConfigSchema.safeParse(row.providerConfig);
+    if (!parsed.success) continue;
+    if (parsed.data.instanceToken && decryptSecret(parsed.data.instanceToken) === token) return row.id;
+    if (parsed.data.webhookSecret && decryptSecret(parsed.data.webhookSecret) === token) return row.id;
+  }
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
