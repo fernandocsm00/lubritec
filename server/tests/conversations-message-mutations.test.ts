@@ -4,7 +4,7 @@ import { createApp } from '../app';
 import { db } from '../db/client';
 import { messages } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createConversation, createMessage } from './helpers';
+import { createUser, createLead, createConversation, createMessage, createWhatsappInstance } from './helpers';
 
 // Mock UazAPI: delete/edit nao chamam rede de verdade nos testes.
 vi.mock('../services/whatsapp/uazapi/client', () => ({
@@ -72,7 +72,38 @@ describe('DELETE /api/conversations/:id/messages/:msgId', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.deletedAt).not.toBeNull();
-    expect(uazapiClient.deleteMessage).toHaveBeenCalledWith(msg.providerMsgId);
+    // 2º arg: config da linha DA conversa (multi-linha) — token da instância.
+    expect(uazapiClient.deleteMessage).toHaveBeenCalledWith(
+      msg.providerMsgId,
+      expect.objectContaining({ token: 'test-instance-token' }),
+    );
+  });
+
+  it('apaga por linha NÃO-padrão: usa o token da linha da conversa', async () => {
+    const { token: authToken, userId } = await loginAs('lineb@x.com', 'admin');
+    const lineB = await createWhatsappInstance({
+      displayName: 'Linha B', isDefault: false,
+      providerConfig: {
+        baseUrl: 'https://oriondigital.uazapi.com', instanceId: 'inst-B',
+        instanceToken: 'token-da-linha-B', webhookSecret: null, webhookUrl: null, webhookSynced: false,
+      },
+    });
+    const lead = await createLead({});
+    const conv = await createConversation({ leadId: lead.id, instanceId: lineB.id });
+    const msg = await createMessage({
+      conversationId: conv.id, direction: 'out', body: 'oi',
+      sentByUserId: userId, providerMsgId: `provid-B-${Date.now()}`, sentAt: new Date(),
+    });
+    vi.mocked(uazapiClient.deleteMessage).mockResolvedValueOnce(undefined);
+
+    const res = await request(app)
+      .delete(`/api/conversations/${conv.id}/messages/${msg.id}`)
+      .set('Authorization', `Bearer ${authToken}`);
+    expect(res.status).toBe(200);
+    expect(uazapiClient.deleteMessage).toHaveBeenCalledWith(
+      msg.providerMsgId,
+      expect.objectContaining({ token: 'token-da-linha-B' }),
+    );
 
     const [row] = await db.select().from(messages).where(eq(messages.id, msg.id));
     expect(row.deletedAt).not.toBeNull();
@@ -171,7 +202,11 @@ describe('PATCH /api/conversations/:id/messages/:msgId', () => {
     expect(res.status).toBe(200);
     expect(res.body.body).toBe('texto novo');
     expect(res.body.editedAt).not.toBeNull();
-    expect(uazapiClient.editMessage).toHaveBeenCalledWith(msg.providerMsgId, 'texto novo');
+    expect(uazapiClient.editMessage).toHaveBeenCalledWith(
+      msg.providerMsgId,
+      'texto novo',
+      expect.objectContaining({ token: 'test-instance-token' }),
+    );
 
     const [row] = await db.select().from(messages).where(eq(messages.id, msg.id));
     expect(row.body).toBe('texto novo');

@@ -488,6 +488,7 @@ export async function markRead(
 // ---------------------------------------------------------------------------
 
 import { uazapiClient } from './whatsapp/uazapi/client';
+import { loadSendConfig } from './whatsappInstanceService';
 import { resolveProvider } from './whatsapp/providerRegistry';
 import {
   ProviderError,
@@ -725,7 +726,10 @@ export async function deleteOutboundMessage(messageId: string, userId: string): 
     throw new HttpError(409, 'Mensagem sem providerMsgId — nao pode ser revogada no WhatsApp');
   }
 
-  await uazapiClient.deleteMessage(msg.providerMsgId);
+  // Apaga pela linha DA conversa (não a padrão) — multi-linha.
+  const [dc] = await db.select({ instanceId: conversations.instanceId })
+    .from(conversations).where(eq(conversations.id, msg.conversationId)).limit(1);
+  await uazapiClient.deleteMessage(msg.providerMsgId, await loadSendConfig(dc?.instanceId));
 
   await db
     .update(messages)
@@ -767,7 +771,10 @@ export async function editOutboundMessage(
     return loadPublicMessage(messageId);
   }
 
-  await uazapiClient.editMessage(msg.providerMsgId, trimmed);
+  // Edita pela linha DA conversa (não a padrão) — multi-linha.
+  const [ec] = await db.select({ instanceId: conversations.instanceId })
+    .from(conversations).where(eq(conversations.id, msg.conversationId)).limit(1);
+  await uazapiClient.editMessage(msg.providerMsgId, trimmed, await loadSendConfig(ec?.instanceId));
 
   await db
     .update(messages)

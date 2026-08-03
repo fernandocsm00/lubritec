@@ -5,6 +5,7 @@ import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
 import { recordAiCall, countRecentErrorsForConversation } from './aiMetrics';
 export { recordAiCall } from './aiMetrics';
 import { uazapiClient } from './whatsapp/uazapi/client';
+import { loadSendConfig } from './whatsappInstanceService';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
 import { emitNotification } from './notifications';
@@ -249,6 +250,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       queue: conversations.queue,
       status: conversations.status,
       pendingAiResponse: conversations.pendingAiResponse,
+      instanceId: conversations.instanceId,
     })
     .from(conversations)
     .where(eq(conversations.id, input.conversationId))
@@ -336,7 +338,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
           to: input.phone,
           kind: 'text',
           text: afterMsg,
-        });
+        }, await loadSendConfig(conv.instanceId));
         await db.insert(messages).values({
           conversationId: input.conversationId,
           direction: 'out',
@@ -501,7 +503,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       to: input.phone,
       kind: 'text',
       text: cleanReply,
-    });
+    }, await loadSendConfig(conv.instanceId));
   } catch (err) {
     return {
       status: 'send_error',

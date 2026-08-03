@@ -318,16 +318,22 @@ export interface SendUazapiConfig {
   token: string;
 }
 
-export async function loadSendConfig(): Promise<SendUazapiConfig> {
-  const row = await loadOrSeedDefault();
+export async function loadSendConfig(instanceId?: string): Promise<SendUazapiConfig> {
+  // instanceId explícito: envia/edita/apaga pela linha DA conversa (multi-linha).
+  // Omitido: linha padrão (comportamento legado). Envio (/send, /message/*) usa
+  // só baseUrl+token — instanceId da config é vestigial, então não é exigido.
+  const row = instanceId
+    ? (await db.select().from(whatsappInstance)
+        .where(eq(whatsappInstance.id, instanceId)).limit(1))[0] ?? null
+    : await loadOrSeedDefault();
   if (!row) throw new UazapiInstanceError(503, 'WhatsApp instance not configured');
   const cfg = uazCfg(row);
-  if (!cfg.instanceId || !cfg.instanceToken) {
+  if (!cfg.instanceToken) {
     throw new UazapiInstanceError(503, 'WhatsApp instance not configured');
   }
   return {
     baseUrl: cfg.baseUrl,
-    instanceId: cfg.instanceId,
+    instanceId: cfg.instanceId ?? '',
     token: decryptSecret(cfg.instanceToken),
   };
 }

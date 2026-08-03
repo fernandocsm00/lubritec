@@ -117,8 +117,8 @@ export async function sendUazapiMessage(
  *
  * UazAPI gera webhook 'messages_update' status=Deleted ao concluir.
  */
-export async function deleteUazapiMessage(id: string): Promise<void> {
-  const cfg = await loadSendConfig();
+export async function deleteUazapiMessage(id: string, sendCfg?: UazapiSendConfig): Promise<void> {
+  const cfg = sendCfg ?? await loadSendConfig();
   await retry(
     async () => {
       const res = await fetch(`${cfg.baseUrl}/message/delete`, {
@@ -147,8 +147,8 @@ export async function deleteUazapiMessage(id: string): Promise<void> {
  * UazAPI exige que a msg tenha sido enviada pela propria instancia e esteja
  * na janela permitida pelo WhatsApp (~15min). Retorna 4xx fora disso.
  */
-export async function editUazapiMessage(id: string, text: string): Promise<void> {
-  const cfg = await loadSendConfig();
+export async function editUazapiMessage(id: string, text: string, sendCfg?: UazapiSendConfig): Promise<void> {
+  const cfg = sendCfg ?? await loadSendConfig();
   await retry(
     async () => {
       const res = await fetch(`${cfg.baseUrl}/message/edit`, {
