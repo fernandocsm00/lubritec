@@ -341,22 +341,46 @@ export async function loadWebhookSecret(): Promise<string | null> {
   return process.env.UAZAPI_WEBHOOK_SECRET ?? null;
 }
 
-export async function loadValidWebhookTokens(): Promise<string[]> {
-  // Multi-instância: aceita o token de QUALQUER linha UazAPI ativa (não só a
-  // padrão). safeParse ignora linhas cujo providerConfig não é UazAPI (ex.:
-  // meta_cloud) sem lançar.
+/**
+ * Carrega as linhas UazAPI ativas e devolve, por linha, os tokens de webhook
+ * já decriptados (instanceToken + webhookSecret). Isola falha de decrypt por
+ * linha: uma linha com ciphertext corrompido/cifrado com chave antiga é pulada
+ * (log + continue) em vez de derrubar auth/roteamento de TODAS as linhas.
+ *
+ * Assume tokens únicos entre linhas ativas (não é forçado no banco).
+ */
+async function loadActiveUazapiTokensByInstance(): Promise<Array<{ id: string; tokens: string[] }>> {
   const rows = await db.select().from(whatsappInstance)
     .where(and(
       eq(whatsappInstance.provider, 'uazapi'),
       eq(whatsappInstance.isArchived, false),
     ));
-  const tokens: string[] = [];
+  const out: Array<{ id: string; tokens: string[] }> = [];
   for (const row of rows) {
     const parsed = uazapiConfigSchema.safeParse(row.providerConfig);
     if (!parsed.success) continue;
-    if (parsed.data.webhookSecret) tokens.push(decryptSecret(parsed.data.webhookSecret));
-    if (parsed.data.instanceToken) tokens.push(decryptSecret(parsed.data.instanceToken));
+    const tokens: string[] = [];
+    for (const enc of [parsed.data.instanceToken, parsed.data.webhookSecret]) {
+      if (!enc) continue;
+      try {
+        tokens.push(decryptSecret(enc));
+      } catch (err) {
+        console.warn(`[whatsapp] falha ao decriptar credencial da instância ${row.id}, pulando:`, err instanceof Error ? err.message : err);
+      }
+    }
+    out.push({ id: row.id, tokens });
   }
+  return out;
+}
+
+/**
+ * Aceita o token de QUALQUER linha UazAPI ativa (não só a padrão). Ignora
+ * linhas cujo providerConfig não é UazAPI (ex.: meta_cloud) e linhas com
+ * credencial corrompida, sem lançar.
+ */
+export async function loadValidWebhookTokens(): Promise<string[]> {
+  const byInstance = await loadActiveUazapiTokensByInstance();
+  const tokens = byInstance.flatMap((r) => r.tokens);
   if (process.env.UAZAPI_WEBHOOK_SECRET) tokens.push(process.env.UAZAPI_WEBHOOK_SECRET);
   return tokens;
 }
@@ -368,16 +392,9 @@ export async function loadValidWebhookTokens(): Promise<string[]> {
  * casar (ex.: token do env UAZAPI_WEBHOOK_SECRET, que não é de uma linha).
  */
 export async function resolveInstanceIdByWebhookToken(token: string): Promise<string | null> {
-  const rows = await db.select().from(whatsappInstance)
-    .where(and(
-      eq(whatsappInstance.provider, 'uazapi'),
-      eq(whatsappInstance.isArchived, false),
-    ));
-  for (const row of rows) {
-    const parsed = uazapiConfigSchema.safeParse(row.providerConfig);
-    if (!parsed.success) continue;
-    if (parsed.data.instanceToken && decryptSecret(parsed.data.instanceToken) === token) return row.id;
-    if (parsed.data.webhookSecret && decryptSecret(parsed.data.webhookSecret) === token) return row.id;
+  const byInstance = await loadActiveUazapiTokensByInstance();
+  for (const r of byInstance) {
+    if (r.tokens.includes(token)) return r.id;
   }
   return null;
 }
