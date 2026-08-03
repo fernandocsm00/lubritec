@@ -219,6 +219,30 @@ describe('parseLeadsCsv', () => {
     expect(rows[0].phone).toBeNull();
   });
 
+  it('não estoura (500) com aspa solta no meio do campo — CSV sujo do Excel', async () => {
+    // Antes: csv-parse lançava "Invalid Opening Quote" e virava 500. Agora
+    // relax_quotes absorve e a linha é importada.
+    const csv = `name,phone,cnpj\nCia 25" Polegadas,11999990300,${VALID_CNPJ_1}\n`;
+    const { rows, missingHeaders } = await parseLeadsCsv(Buffer.from(csv));
+    expect(missingHeaders).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cnpj).toBe(VALID_CNPJ_1);
+    expect(rows[0].name).toMatch(/25/);
+  });
+
+  it('não estoura com linha de colunas irregulares (a mais/a menos)', async () => {
+    // Linha 2 tem colunas extras; linha 3 tem menos. relax_column_count evita o throw.
+    const csv =
+      `name,phone,cnpj\n` +
+      `Empresa X,11999990301,${VALID_CNPJ_2},extra,demais\n` +
+      `Empresa Y,${VALID_CNPJ_3}\n`;
+    const { rows } = await parseLeadsCsv(Buffer.from(csv));
+    // Empresa X importa (colunas extras ignoradas); Empresa Y tem cnpj deslocado
+    // pro campo phone, então rejeita por cnpj — mas o import NÃO estoura.
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0].name).toBe('Empresa X');
+  });
+
   it('aceita arquivo com BOM UTF-8 (Excel)', async () => {
     const bom = Buffer.from([0xef, 0xbb, 0xbf]);
     const csv = Buffer.concat([

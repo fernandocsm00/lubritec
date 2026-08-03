@@ -261,7 +261,28 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
     buf = buf.subarray(3);
   }
   const delimiter = detectDelimiter(buf);
-  const records = parse(buf, { delimiter, columns: false, skip_empty_lines: true, trim: true });
+  // CSV exportado do Excel costuma vir "sujo": aspas soltas no meio de um campo
+  // (ex: 25" ou nome com "), colunas irregulares por linha, etc. Sem tolerância
+  // o csv-parse LANÇA e o erro vira 500 genérico. relax_quotes + relax_column_count
+  // absorvem esses casos; qualquer outra falha vira 400 acionável (aponta a linha).
+  let records: string[][];
+  try {
+    records = parse(buf, {
+      delimiter,
+      columns: false,
+      skip_empty_lines: true,
+      trim: true,
+      relax_quotes: true,
+      relax_column_count: true,
+    }) as string[][];
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'formato inválido';
+    throw new HttpError(
+      400,
+      `Não consegui ler o CSV (${detail}). Reabra a planilha no Excel e salve como ` +
+      `"CSV UTF-8 (delimitado por vírgula)" ou como XLSX, e tente de novo.`,
+    );
+  }
   if (records.length === 0) return { rows: [], rejected: [], missingHeaders: [...REQUIRED] };
 
   const headerRow = records[0] as string[];
