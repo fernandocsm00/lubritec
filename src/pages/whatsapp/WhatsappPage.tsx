@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QueueTabs } from '@/features/whatsapp/QueueTabs';
+import { LineTabs } from '@/features/whatsapp/LineTabs';
 import { FilterBar, statusChipsToFilters } from '@/features/whatsapp/FilterBar';
 import { ConversationList } from '@/features/whatsapp/ConversationList';
 import { Thread } from '@/features/whatsapp/Thread';
@@ -121,6 +122,10 @@ export default function WhatsappPage() {
           <h2 className="text-base font-semibold">Inbox</h2>
           <NewConversationDialog onCreated={(id) => setSelectedConvId(id)} />
         </div>
+        <LineTabs
+          instanceId={instanceId}
+          onChange={(id) => { patch({ line: id ?? null }); setSelectedConvId(null); }}
+        />
         <QueueTabs
           active={queue}
           onChange={(q) => { patch({ queue: q }); setSelectedConvId(null); }}
@@ -142,8 +147,6 @@ export default function WhatsappPage() {
           onAssignmentChange={(a) => patch({ assignment: a === 'all' ? null : a })}
           origins={origins}
           onOriginsChange={(o) => patch({ origin: o.join(',') })}
-          instanceId={instanceId}
-          onInstanceChange={(id) => { patch({ line: id ?? null }); setSelectedConvId(null); }}
         />
         <ConversationList
           filters={filters}

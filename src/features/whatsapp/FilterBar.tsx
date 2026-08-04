@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import { UF_VALUES, type ConversationStatus, type OriginKind, type Uf } from '@shared/types';
-import { useInstancesList } from '@/features/settings/whatsapp/api';
 
 const STATUS_OPTIONS: { key: 'aguardando' | 'em_atendimento' | 'expirada' | 'sem_retorno' | 'encerrada'; label: string }[] = [
   { key: 'aguardando', label: 'Aguardando' },
@@ -34,16 +33,10 @@ interface Props {
   onAssignmentChange: (a: 'mine' | 'unassigned' | 'all') => void;
   origins: OriginKind[];
   onOriginsChange: (o: OriginKind[]) => void;
-  instanceId?: string;
-  onInstanceChange: (id: string | undefined) => void;
 }
 
 export function FilterBar(props: Props) {
   const [searchInput, setSearchInput] = useState(props.q);
-  const { data: instancesData } = useInstancesList();
-  // Só mostra o filtro por linha quando há 2+ linhas ativas (senão é ruído).
-  const lines = (instancesData?.items ?? []).filter((l) => !l.isArchived);
-  const showLineFilter = lines.length >= 2;
   return (
     <div className="border-b border-border bg-background">
       <div className="px-3 py-2">
@@ -67,22 +60,6 @@ export function FilterBar(props: Props) {
           <Chip key={v} active={props.uf === v} onClick={() => props.onUfChange(v)}>{v}</Chip>
         ))}
       </div>
-
-      {showLineFilter && (
-        <div className="px-3 pb-2 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-medium text-muted-foreground mr-1">Linha:</span>
-          <Chip active={!props.instanceId} onClick={() => props.onInstanceChange(undefined)}>Todas</Chip>
-          {lines.map((l) => (
-            <Chip
-              key={l.id}
-              active={props.instanceId === l.id}
-              onClick={() => props.onInstanceChange(l.id)}
-            >
-              {l.displayName}
-            </Chip>
-          ))}
-        </div>
-      )}
 
       <div className="px-3 pb-2 flex flex-wrap gap-1.5">
         {STATUS_OPTIONS.map((s) => (
