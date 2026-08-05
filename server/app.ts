@@ -10,6 +10,7 @@ import whatsappRoutes from './routes/whatsapp';
 import conversationRoutes from './routes/conversations';
 import messageTemplateRoutes from './routes/messageTemplates';
 import dealRoutes from './routes/deals';
+import budgetDetectionRoutes from './routes/budgetDetections';
 import whatsappInstanceRoutes from './routes/whatsappInstance';
 import whatsappInstancesRouter from './routes/whatsappInstances';
 import hsmTemplatesRouter from './routes/hsmTemplates';
@@ -132,6 +133,7 @@ export function createApp() {
   app.use('/api/conversations', conversationRoutes);
   app.use('/api/message-templates', messageTemplateRoutes);
   app.use('/api/deals', dealRoutes);
+  app.use('/api/budget-detections', budgetDetectionRoutes);
   app.use('/api/whatsapp-instance', whatsappInstanceRoutes);
   app.use('/api/whatsapp/instances', whatsappInstancesRouter);
   app.use('/api/whatsapp/instances/:instanceId/templates', hsmTemplatesRouter);
