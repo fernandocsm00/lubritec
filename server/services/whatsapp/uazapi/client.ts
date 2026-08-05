@@ -109,6 +109,75 @@ export async function sendUazapiMessage(
   );
 }
 
+export interface UazapiMediaDownload {
+  buffer: Buffer;
+  mime: string | null;
+}
+
+/**
+ * Baixa a midia DECIFRADA de uma mensagem recebida.
+ *
+ * Por que isso existe: o webhook entrega `content.URL` apontando pra CDN do
+ * WhatsApp (mmg.whatsapp.net). O conteudo la e cifrado com o `mediaKey` da
+ * mensagem — um <img src> do navegador so consegue byte lixo (quando nao toma
+ * 403). O endpoint /message/download faz a UazAPI baixar e decifrar, e devolve
+ * `fileURL` apontando pro arquivo limpo no host dela.
+ *
+ * Nao gravamos essa fileURL direto: baixamos o binario e persistimos local
+ * (uploads/inbound), igual ao fluxo do Meta Cloud. Assim a inbox nao depende da
+ * retencao/disponibilidade do host da UazAPI pra exibir historico.
+ *
+ * O `id` aceita 'owner:messageid' OU 'messageid' puro — ambos testados contra a
+ * instancia de producao.
+ */
+export async function downloadUazapiMedia(
+  messageId: string,
+  sendCfg?: UazapiSendConfig,
+): Promise<UazapiMediaDownload> {
+  const cfg = sendCfg ?? await loadSendConfig();
+
+  const json = await retry(
+    async () => {
+      const res = await fetch(`${cfg.baseUrl}/message/download`, {
+        method: 'POST',
+        headers: { token: cfg.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: messageId }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new UazapiError(res.status, text);
+      }
+      return (await res.json()) as Record<string, unknown> | null;
+    },
+    {
+      // 2 tentativas (e nao 3 como no resto do client): isso roda DENTRO do
+      // handler do webhook, e a UazAPI reentrega por timeout. Segurar o handler
+      // demais so gera reentrega — o insert e idempotente, mas o download seria
+      // refeito. Melhor falhar rapido e deixar o backfill recuperar depois.
+      attempts: 2,
+      baseDelayMs: 500,
+      shouldRetry: (err) =>
+        err instanceof UazapiError ? err.status >= 500 || err.status === 429 : true,
+    },
+  );
+
+  const fileUrl = typeof json?.fileURL === 'string' ? json.fileURL : null;
+  if (!fileUrl) {
+    throw new UazapiError(502, `Missing fileURL in download response: ${JSON.stringify(json)}`);
+  }
+  const reportedMime = typeof json?.mimetype === 'string' ? json.mimetype : null;
+
+  // A fileURL e publica (sem token) e estavel enquanto a UazAPI a mantiver em
+  // cache — so precisamos dela por alguns segundos, ate copiar pro disco.
+  const fileRes = await fetch(fileUrl, { signal: AbortSignal.timeout(15_000) });
+  if (!fileRes.ok) {
+    throw new UazapiError(fileRes.status, `Failed to fetch decrypted media at ${fileUrl}`);
+  }
+  const buffer = Buffer.from(await fileRes.arrayBuffer());
+  return { buffer, mime: reportedMime ?? fileRes.headers.get('content-type') };
+}
+
 /**
  * Revoga (apaga pra todos) uma mensagem ja enviada via UazAPI.
  * Endpoint: POST /message/delete  body: { id }

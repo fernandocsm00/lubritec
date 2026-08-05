@@ -15,6 +15,8 @@ import { STAGE_LABELS } from '@/features/inside-sales/helpers';
 import { GanhoValueDialog } from '@/features/inside-sales/GanhoValueDialog';
 import { LossReasonDialog } from '@/features/inside-sales/LossReasonDialog';
 import { DEAL_STAGES, type DealStage, type LossReason, type LeadQualityFeedback } from '@shared/types';
+import { BudgetDetectionCard } from './BudgetDetectionCard';
+import { DealValueField } from './DealValueField';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import { formatCnpj } from '@/lib/utils';
@@ -221,6 +223,12 @@ function PipelinePhasePicker({ leadId }: { leadId: string }) {
           ))}
         </SelectContent>
       </Select>
+
+      <BudgetDetectionCard leadId={leadId} currentStage={deal?.stage ?? null} />
+
+      {deal && (
+        <DealValueField dealId={deal.id} proposalValue={deal.proposalValue} />
+      )}
 
       {deal && (
         <a

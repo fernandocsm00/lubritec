@@ -174,3 +174,45 @@ export function useAssignableUsers() {
     staleTime: 5 * 60_000,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Orçamento detectado em print (sugestão de valor pro card)
+// ---------------------------------------------------------------------------
+
+export interface PendingBudgetDetection {
+  id: string;
+  messageId: string;
+  leadId: string;
+  detectedValue: number;
+  createdAt: string;
+}
+
+export function usePendingBudgetDetection(leadId: string | null) {
+  return useQuery({
+    queryKey: ['budget-detection', leadId],
+    queryFn: () => api<PendingBudgetDetection | null>(`/budget-detections/pending/${leadId}`),
+    enabled: !!leadId,
+  });
+}
+
+export function useConfirmBudgetDetection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; value: number; stage?: DealStage }) => {
+      const { id, ...body } = input;
+      return api(`/budget-detections/${id}/confirm`, { method: 'POST', body: JSON.stringify(body) });
+    },
+    onSuccess: () => {
+      invalidateAll(qc);
+      qc.invalidateQueries({ queryKey: ['budget-detection'] });
+    },
+  });
+}
+
+export function useDismissBudgetDetection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api(`/budget-detections/${id}/dismiss`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['budget-detection'] }),
+  });
+}

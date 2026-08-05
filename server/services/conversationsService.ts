@@ -692,6 +692,15 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     console.warn('[pipeline] maybeAddDealFromConversation failed:', err);
   }
 
+  // Lê o print de orçamento e sugere valor+etapa no painel do lead. Roda DEPOIS
+  // do maybeAddDealFromConversation, que é quem garante que o deal existe.
+  // Fire-and-forget: a mensagem já foi enviada, nada aqui pode afetar isso.
+  if (input.kind === 'image') {
+    import('./budgetDetection')
+      .then(({ detectBudgetFromMessage }) => detectBudgetFromMessage(msg.id))
+      .catch((err) => console.warn('[budget] detecção falhou:', err));
+  }
+
   return {
     id: msg.id,
     conversationId: msg.conversationId,

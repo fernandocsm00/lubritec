@@ -35,6 +35,12 @@ export async function setup() {
     password: PG_PASSWORD,
     port: PG_PORT,
     persistent: false,
+    // initdb herda o locale do SO: num Windows pt-BR o cluster nasce WIN1252 e
+    // QUALQUER emoji estoura no insert ("no equivalent in encoding WIN1252") —
+    // ex.: os labels de fallback de mídia ("🖼️ Imagem") e o texto que os
+    // clientes mandam no WhatsApp, que é cheio de emoji. Produção (Supabase) é
+    // UTF8; forçamos aqui pro teste rodar contra o mesmo encoding.
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
     onLog: () => {},
     onError: () => {},
   });

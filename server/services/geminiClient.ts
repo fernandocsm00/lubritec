@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { retry } from '../lib/retry';
+import { isTotalLabel } from '../lib/budgetLabel';
 
 /**
  * Cliente Gemini Flash 2.5 — IA de atendimento.
@@ -113,4 +114,77 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
 // Test seam — permite resetar o singleton em testes (quando vi.mock não é usado).
 export function _resetGeminiClient(): void {
   _client = null;
+}
+
+// ---------------------------------------------------------------------------
+// Visao — leitura do print de orcamento
+// ---------------------------------------------------------------------------
+
+export interface BudgetExtraction {
+  total: number;
+  rotulo: string;
+}
+
+const BUDGET_PROMPT = `Você recebe a imagem de um documento enviado por um vendedor.
+
+Responda APENAS com JSON, sem cercas de código, no formato:
+{"ehOrcamento": boolean, "total": number|null, "rotulo": string|null}
+
+- ehOrcamento: true somente se a imagem for um ORÇAMENTO/PROPOSTA comercial com valor.
+  Foto de produto, print de conversa, comprovante ou nota fiscal => false.
+- total: o valor TOTAL DO ORÇAMENTO INTEIRO, como número (ponto decimal, sem
+  separador de milhar, sem "R$"). NÃO use o preço de um item da tabela de produtos.
+- rotulo: o texto do rótulo exatamente como aparece ao lado do valor que você usou
+  (ex: "Valor total"). É o que nos permite verificar que você não pegou a coluna errada.
+
+Se não tiver certeza do total, responda ehOrcamento false.`;
+
+/**
+ * Le o valor total de um print de orcamento. Retorna null sempre que houver
+ * qualquer duvida — este numero alimenta previsao de receita, entao "nao sugerir"
+ * e sempre melhor que "sugerir errado".
+ *
+ * NAO lanca: quem chama esta num caminho best-effort pos-envio, onde a mensagem
+ * ja foi entregue ao cliente e nada aqui pode afetar isso.
+ */
+export async function extractBudgetFromImage(
+  image: Buffer,
+  mimeType: string,
+): Promise<BudgetExtraction | null> {
+  let raw: string;
+  try {
+    const client = getClient();
+    const response = await client.models.generateContent({
+      model: MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: BUDGET_PROMPT },
+          { inlineData: { mimeType, data: image.toString('base64') } },
+        ],
+      }],
+      config: { temperature: 0, maxOutputTokens: 200 },
+    });
+    raw = response.text ?? '';
+  } catch (err) {
+    console.warn('[budget] Gemini falhou:', err instanceof Error ? err.message : err);
+    return null;
+  }
+
+  // O modelo as vezes embrulha em ```json apesar da instrucao.
+  const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+  let parsed: { ehOrcamento?: unknown; total?: unknown; rotulo?: unknown };
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+
+  if (parsed.ehOrcamento !== true) return null;
+  const total = typeof parsed.total === 'number' ? parsed.total : null;
+  if (total === null || !Number.isFinite(total) || total <= 0) return null;
+  const rotulo = typeof parsed.rotulo === 'string' ? parsed.rotulo : null;
+  if (!isTotalLabel(rotulo)) return null;
+
+  return { total, rotulo: rotulo as string };
 }

@@ -26,8 +26,15 @@ export interface InboundMessage {
   contactName: string | null;
   text: string | null;
   kind: MessageKind;
+  /**
+   * URL da mídia. Sai daqui como a URL CRUA do provider (CDN do WhatsApp,
+   * conteúdo cifrado — não renderizável) e é SUBSTITUÍDA pela URL local por
+   * `materializeInboundMedia()` antes do ingest. Ver uazapi/inboundMedia.ts.
+   */
   mediaUrl: string | null;
   mediaMime: string | null;
+  /** Figurinha — muda só o label fallback ("🎞️ Figurinha" em vez de "🖼️ Imagem"). */
+  isSticker: boolean;
   timestamp: Date;
   fromMe: boolean;
 }
@@ -77,8 +84,8 @@ function mapKind(raw: string | null): MessageKind {
 }
 
 /** Texto fallback pra bubble nao ficar em branco quando nao da pra renderizar
- *  a media (sem URL, kind nao suportado, etc). */
-function fallbackBodyFor(kind: MessageKind, isSticker: boolean): string {
+ *  a media (sem URL, kind nao suportado, download falhou, etc). */
+export function fallbackBodyFor(kind: MessageKind, isSticker: boolean): string {
   if (isSticker) return '🎞️ Figurinha';
   if (kind === 'image') return '🖼️ Imagem';
   if (kind === 'audio') return '🎵 Áudio';
@@ -234,6 +241,7 @@ export function extractInbound(payload: UazapiInbound): InboundMessage | null {
     kind,
     mediaUrl: kind === 'text' ? null : mediaUrl,
     mediaMime: kind === 'text' ? null : mediaMime,
+    isSticker,
     timestamp,
     fromMe,
   };

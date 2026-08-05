@@ -26,6 +26,7 @@ import {
   DEAL_STAGES,
   LOSS_REASONS,
   DEAL_ACTIVITY_KINDS,
+  BUDGET_DETECTION_STATUS,
   CAMPAIGN_STATUSES,
   CAMPAIGN_RECIPIENT_STATUSES,
   PROVIDER_KINDS,
@@ -195,6 +196,26 @@ export const dealActivities = pgTable('deal_activities', {
   kind: text('kind', { enum: DEAL_ACTIVITY_KINDS }).notNull(),
   actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
   metadata: jsonb('metadata').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Valor de orcamento lido de um print pela IA, aguardando confirmacao humana.
+ *
+ * Guardado por MENSAGEM (nao em deals) porque a deteccao pode acontecer antes de
+ * o deal existir, e porque o rastro de qual imagem gerou qual valor e o que
+ * responde "por que esse card esta R$ 3.443?".
+ */
+export const budgetDetections = pgTable('budget_detections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  messageId: uuid('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  detectedValue: numeric('detected_value', { precision: 12, scale: 2 }).notNull(),
+  detectedLabel: text('detected_label'),
+  status: text('status', { enum: BUDGET_DETECTION_STATUS }).notNull().default('pending'),
+  confirmedValue: numeric('confirmed_value', { precision: 12, scale: 2 }),
+  resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

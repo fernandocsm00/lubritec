@@ -149,6 +149,53 @@ describe('parseQualificationTag', () => {
     expect(r.qualification).toBe('not_qualified');
     expect(r.summary).toBeNull();
   });
+
+  // ---------------------------------------------------------------------
+  // Vazamento de conteúdo interno pro cliente. Os dois casos abaixo foram
+  // observados em produção em 05/08/2026 — ver comentários em cada um.
+  // ---------------------------------------------------------------------
+
+  it('bloco [RESUMO] SEM fechamento (resposta truncada) não vaza pro cliente', () => {
+    // Prod: a resposta do Gemini bateu no limite de tokens e o [/RESUMO] nunca
+    // veio. O parser exigia a tag de fechamento, então o resumo interno foi
+    // enviado ao cliente cortado no meio da palavra.
+    const r = parseQualificationTag(
+      'Sim, podemos verificar o Paraná. Qual produto te interessa?\n' +
+      '[RESUMO]\n' +
+      'Cliente Robson Cordeiro pergunt'
+    );
+    expect(r.cleanReply).toBe('Sim, podemos verificar o Paraná. Qual produto te interessa?');
+    expect(r.cleanReply).not.toContain('RESUMO');
+    expect(r.cleanReply).not.toContain('Robson');
+    // O que deu pra recuperar do resumo vira contexto pro vendedor, não vai pro chat.
+    expect(r.summary).toContain('Robson');
+  });
+
+  it('resposta que é só rubrica entre parênteses vira silêncio', () => {
+    // Prod: o briefing manda "não responda, aguarde" em alguns casos, mas a IA
+    // não tinha como ficar calada — narrava a decisão e isso ia pro cliente.
+    const r = parseQualificationTag('(Não responder. Aguardar nova mensagem do contato.)');
+    expect(r.silence).toBe(true);
+    expect(r.cleanReply).toBe('');
+  });
+
+  it('tag explícita [SEM_RESPOSTA] vira silêncio', () => {
+    const r = parseQualificationTag('[SEM_RESPOSTA]');
+    expect(r.silence).toBe(true);
+    expect(r.cleanReply).toBe('');
+  });
+
+  it('parênteses DENTRO de uma resposta legítima não viram silêncio', () => {
+    const r = parseQualificationTag('Temos Mobil Super (linha sintética) em estoque. Qual volume?');
+    expect(r.silence).toBe(false);
+    expect(r.cleanReply).toBe('Temos Mobil Super (linha sintética) em estoque. Qual volume?');
+  });
+
+  it('resposta legítima que começa com parêntese não vira silêncio', () => {
+    const r = parseQualificationTag('(11) 3635-1333 é o nosso telefone. Posso ajudar em algo mais?');
+    expect(r.silence).toBe(false);
+    expect(r.cleanReply).toContain('3635-1333');
+  });
 });
 
 describe('buildSystemPrompt', () => {
@@ -454,5 +501,57 @@ describe('processInboundWithAi', () => {
     expect(sendTextMock).not.toHaveBeenCalled();
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(msgs).toHaveLength(0);
+  });
+
+  it('IA decide não responder: nada é enviado e o pending é liberado', async () => {
+    await enableAi();
+    // O briefing manda ficar calada em certos casos (ex.: mensagem automática de
+    // "agradecemos seu contato"). Sem caminho de silêncio, a IA narrava a decisão
+    // e a rubrica ia pro cliente. Ver parseQualificationTag.
+    mockGeminiText('(Não responder. Aguardar nova mensagem do contato.)');
+
+    const lead = await createLead({ phone: '5511900000031' });
+    const conv = await createConversation({ phone: '5511900000031', leadId: lead.id, queue: 'ia' });
+    await db.update(conversations)
+      .set({ pendingAiResponse: true })
+      .where(eq(conversations.id, conv.id));
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id,
+      leadId: lead.id,
+      phone: '5511900000031',
+      inboundText: 'Olá, seja bem vindo. Digite o número do setor.',
+    });
+
+    expect(r.status).toBe('silenced');
+    expect(sendTextMock).not.toHaveBeenCalled();
+    const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
+    expect(msgs).toHaveLength(0);
+    // Sem isso o aiPendingWorker reprocessaria a conversa a cada ~3min pra sempre.
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.pendingAiResponse).toBe(false);
+  });
+
+  it('resposta truncada não manda o [RESUMO] interno pro cliente', async () => {
+    await enableAi();
+    mockGeminiText(
+      'Claro, posso verificar isso pra você. Qual produto te interessa?\n[RESUMO]\nCliente pergunt'
+    );
+    mockSendOk('uazapi-ai-trunc');
+
+    const lead = await createLead({ phone: '5511900000032' });
+    const conv = await createConversation({ phone: '5511900000032', leadId: lead.id, queue: 'ia' });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id,
+      leadId: lead.id,
+      phone: '5511900000032',
+      inboundText: 'vocês atendem no Paraná?',
+    });
+
+    expect(r.status).toBe('replied');
+    const sentText = sendTextMock.mock.calls[0][0].text as string;
+    expect(sentText).toBe('Claro, posso verificar isso pra você. Qual produto te interessa?');
+    expect(sentText).not.toContain('RESUMO');
   });
 });
