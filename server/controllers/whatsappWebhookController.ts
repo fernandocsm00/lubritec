@@ -4,6 +4,7 @@ import { db } from '../db/client';
 import { messages } from '../db/schema';
 import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
+import { materializeInboundMedia } from '../services/whatsapp/uazapi/inboundMedia';
 import { loadValidWebhookTokens, resolveInstanceIdByWebhookToken } from '../services/whatsappInstanceService';
 import { processInboundWithAi } from '../services/aiAtendimento';
 import {
@@ -208,6 +209,14 @@ export async function whatsappWebhookHandler(
     // Roteia pra instância dona do token (multi-linha). `got` já foi validado
     // acima. Se não mapear (ex.: token do env), ingestInbound cai na padrão.
     const routedInstanceId = (await resolveInstanceIdByWebhookToken(got)) ?? undefined;
+
+    // Baixa a mídia ANTES de gravar: o webhook entrega URL da CDN do WhatsApp
+    // com conteúdo cifrado, que o <img> do frontend não renderiza. Troca pela
+    // URL local. Síncrono de propósito — a mensagem entra no banco já completa,
+    // e o insert é idempotente (unique em provider_msg_id), então um retry da
+    // UazAPI por timeout não duplica. Nunca lança: falha vira bolha com label.
+    await materializeInboundMedia(inbound, routedInstanceId);
+
     const ingestResult = await ingestInbound(inbound, parsed.data, routedInstanceId);
     debug.result = { kind: ingestResult.status, messageId: inbound.id };
     pushDebugEntry(debug);

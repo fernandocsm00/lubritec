@@ -1,5 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+
+// Mídia inbound: o webhook baixa o arquivo decifrado da UazAPI e persiste local
+// antes de gravar. Mockamos essas duas bordas (rede + disco) pra testar o
+// WIRING do controller — que a URL da CDN do WhatsApp nunca chega no banco.
+vi.mock('../services/whatsapp/uazapi/client', () => ({
+  downloadUazapiMedia: vi.fn(async () => ({
+    buffer: Buffer.from('bytes'),
+    mime: 'image/jpeg',
+  })),
+  UazapiError: class UazapiError extends Error {},
+}));
+vi.mock('../services/whatsapp/inboundMediaStore', () => ({
+  persistInboundMedia: vi.fn(async () => '/uploads/inbound/abc123.jpg'),
+}));
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,6 +22,7 @@ import { db } from '../db/client';
 import { conversations, messages, leads } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { createConversation, createLead, createWhatsappInstance } from './helpers';
+import { downloadUazapiMedia } from '../services/whatsapp/uazapi/client';
 
 const app = createApp();
 
@@ -142,7 +157,7 @@ describe('POST /api/whatsapp/webhook', () => {
     expect(conv.unreadCount).toBe(1);
   });
 
-  it('mensagem com mídia: kind=image, mediaUrl preenchido, body null', async () => {
+  it('mensagem com mídia: kind=image, mediaUrl local (não a URL do provider), body null', async () => {
     await request(app)
       .post('/api/whatsapp/webhook')
       .set('X-Webhook-Token', SECRET)
@@ -151,9 +166,27 @@ describe('POST /api/whatsapp/webhook', () => {
     const [conv] = await db.select().from(conversations).where(eq(conversations.phone, '5511987654321'));
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(msgs[0].kind).toBe('image');
-    expect(msgs[0].mediaUrl).toBe('https://uazapi-cdn.example.com/media/abc123.jpg');
+    // A URL do provider aponta pra CDN do WhatsApp, com conteúdo cifrado — se
+    // ela chegar no banco, a inbox mostra imagem quebrada. Tem que virar local.
+    expect(msgs[0].mediaUrl).toBe('/uploads/inbound/abc123.jpg');
     expect(msgs[0].mediaMime).toBe('image/jpeg');
     expect(msgs[0].body).toBeNull();
+  });
+
+  it('mídia: download falhou → grava sem URL e cai no label, nunca a URL quebrada', async () => {
+    vi.mocked(downloadUazapiMedia).mockRejectedValueOnce(new Error('provider fora do ar'));
+
+    await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('X-Webhook-Token', SECRET)
+      .send(imageFixture);
+
+    const [conv] = await db.select().from(conversations).where(eq(conversations.phone, '5511987654321'));
+    const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
+    // A mensagem entra do mesmo jeito — mídia quebrada não pode sumir com ela.
+    expect(msgs[0].kind).toBe('image');
+    expect(msgs[0].mediaUrl).toBeNull();
+    expect(msgs[0].body).toBe('🖼️ Imagem');
   });
 
   // -------------------------------------------------------------------------
@@ -263,8 +296,10 @@ describe('POST /api/whatsapp/webhook', () => {
     const [m] = await db.select().from(messages).where(eq(messages.providerMsgId, 'UAZGO-IMG-001'));
     expect(m).toBeDefined();
     expect(m.kind).toBe('image');
-    expect(m.mediaUrl).toBe('https://cdn.example.com/photo.jpg');
+    expect(m.mediaUrl).toBe('/uploads/inbound/abc123.jpg');
     expect(m.mediaMime).toBe('image/jpeg');
+    // Legenda do cliente sobrevive ao download da mídia.
+    expect(m.body).toBe('olha essa foto');
   });
 
   it('200 quando payload não é mensagem (presence, status, etc.)', async () => {

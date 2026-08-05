@@ -17,6 +17,7 @@
     "seed": "tsx server/scripts/seed.ts",
     "merge-duplicate-phones": "tsx server/scripts/mergeDuplicatePhones.ts",
     "backfill-meta-inbound-media": "tsx server/scripts/backfillMetaInboundMedia.ts",
+    "backfill-uazapi-inbound-media": "tsx server/scripts/backfillUazapiInboundMedia.ts",
     "update-meta-token": "tsx server/scripts/updateMetaToken.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down"
