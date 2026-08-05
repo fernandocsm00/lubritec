@@ -388,6 +388,20 @@ export const DEAL_ACTIVITY_KINDS = [
 ] as const;
 export type DealActivityKind = (typeof DEAL_ACTIVITY_KINDS)[number];
 
+// Valor de orçamento lido de um print pela IA, aguardando confirmação humana.
+// Nada entra em deals.proposalValue sem alguém confirmar. Ver
+// docs/superpowers/specs/2026-08-05-orcamento-valor-no-pipeline-design.md
+export const BUDGET_DETECTION_STATUS = ['pending', 'confirmed', 'dismissed'] as const;
+export type BudgetDetectionStatus = (typeof BUDGET_DETECTION_STATUS)[number];
+
+export interface PublicBudgetDetection {
+  id: string;
+  messageId: string;
+  leadId: string;
+  detectedValue: number;
+  createdAt: string;
+}
+
 export interface PublicDeal {
   id: string;
   lead: {
