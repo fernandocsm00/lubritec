@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
-import { Users, Clock, Bot, MessageSquare, Target } from 'lucide-react';
+import { Users, Clock, Bot, MessageSquare, Target, TrendingUp } from 'lucide-react';
 import type {
   DashboardKpis,
   DashboardGoal,
+  DashboardPipelineOpen,
   DashboardWhatsappStats,
   DashboardAttentionResponse,
 } from '@shared/types';
@@ -11,22 +12,94 @@ import { formatCurrency, formatCurrencyCompact } from '@/lib/utils';
 interface Props {
   kpis: DashboardKpis | undefined;
   goal: DashboardGoal | null | undefined;
+  pipelineOpen: DashboardPipelineOpen | undefined;
   whatsapp: DashboardWhatsappStats | undefined;
   attention: DashboardAttentionResponse | undefined;
 }
 
 /**
- * Hero do dashboard — 2 colunas pra "bate o olho" diário:
- * - Esquerda (60%): faturamento do mes + gauge contra meta (se houver) + delta vs anterior
- * - Direita (40%): "AGORA" — estado em tempo real (fila, IA hoje, conversas ativas)
+ * Hero do dashboard — 3 colunas de peso igual pra "bate o olho" diário:
+ * - Vendas do mes + gauge contra meta (se houver) + delta vs anterior
+ * - Pipeline em aberto — o que ainda pode virar venda
+ * - "AGORA" — estado em tempo real (fila, IA hoje, conversas ativas)
+ *
+ * Vendas e pipeline dividem a largura de proposito: venda fechada conta o
+ * passado, pipeline aberto conta o que esta em jogo. Uma sem a outra da
+ * leitura torta do mes.
  *
  * Quando goal=null, o gauge some e o numero fica solo (CTA "Definir meta" link).
  */
-export function OperationsHero({ kpis, goal, whatsapp, attention }: Props) {
+export function OperationsHero({ kpis, goal, pipelineOpen, whatsapp, attention }: Props) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
       <RevenueCard kpis={kpis} goal={goal} />
+      <PipelineCard data={pipelineOpen} />
       <NowCard whatsapp={whatsapp} attention={attention} />
+    </div>
+  );
+}
+
+const STAGE_LABEL_SHORT: Record<string, string> = {
+  lead_no_comercial: 'No comercial',
+  proposta_enviada: 'Proposta',
+  em_negociacao: 'Negociação',
+};
+
+function PipelineCard({ data }: { data: DashboardPipelineOpen | undefined }) {
+  const total = data?.totalValue ?? 0;
+  const abertos = data?.openCount ?? 0;
+  const comValor = data?.withValueCount ?? 0;
+  // Deal sem valor entra como zero na soma. Se a maioria está assim, o total
+  // engana — avisamos em vez de deixar o gestor decidir em cima de um número
+  // que parece completo e não é.
+  const semValor = abertos - comValor;
+
+  return (
+    <div className="lg:col-span-2 rounded-xl border border-border bg-card p-6 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground">
+          Pipeline em aberto
+        </span>
+        <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+
+      <div className="flex items-baseline gap-2">
+        <span className="text-4xl font-bold text-foreground tabular-nums">
+          {formatCurrencyCompact(total)}
+        </span>
+        {abertos > 0 && (
+          <span className="text-sm text-muted-foreground">
+            em {abertos} {abertos === 1 ? 'deal' : 'deals'}
+          </span>
+        )}
+      </div>
+
+      {abertos === 0 ? (
+        <p className="text-xs text-muted-foreground">Nenhum deal aberto.</p>
+      ) : (
+        <>
+          <ul className="space-y-1 text-xs">
+            {(data?.byStage ?? []).map((s) => (
+              <li key={s.stage} className="flex items-baseline justify-between">
+                <span className="text-muted-foreground">
+                  {STAGE_LABEL_SHORT[s.stage] ?? s.stage}
+                </span>
+                <span className="tabular-nums">
+                  {formatCurrency(s.valueSum)}{' '}
+                  <span className="text-muted-foreground">({s.count})</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {semValor > 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-500">
+              {semValor} {semValor === 1 ? 'deal sem valor' : 'deals sem valor'} —
+              o total está subestimado.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -38,7 +111,9 @@ function RevenueCard({ kpis, goal }: { kpis: DashboardKpis | undefined; goal: Da
   const gaugePct = hasGoal ? Math.min(100, goal.percent) : 0;
 
   return (
-    <div className="lg:col-span-3 rounded-xl border border-border bg-card p-6 flex flex-col gap-3">
+    // span-2 de 6: mesma largura do pipeline em aberto. Antes era 3 de 5 (60%),
+    // mas venda fechada e pipeline aberto merecem o mesmo peso visual.
+    <div className="lg:col-span-2 rounded-xl border border-border bg-card p-6 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
           Vendas este mês

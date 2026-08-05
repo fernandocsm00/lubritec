@@ -101,6 +101,25 @@ describe('dashboardService.summary org — funnel/pipeline/leaderboard/goal', ()
     expect(r.pipelineOpen.avgAgeDays).toBeGreaterThan(0);
   });
 
+  it('conta quantos deals abertos TÊM valor — sem isso o total engana', async () => {
+    // Em produção (05/08/2026) só 6 de 36 deals abertos tinham proposal_value.
+    // O total soma os 6 e trata os outros 30 como zero, então o número sozinho
+    // subestima o pipeline sem avisar ninguém. O card do dash mostra a cobertura.
+    const u = await createUser({ role: 'comercial' });
+    const comValor = await createLead({});
+    const semValor1 = await createLead({});
+    const semValor2 = await createLead({});
+    await createDeal({ leadId: comValor.id, stage: 'proposta_enviada', proposalValue: 800, ownerUserId: u.id });
+    await createDeal({ leadId: semValor1.id, stage: 'proposta_enviada', ownerUserId: u.id });
+    await createDeal({ leadId: semValor2.id, stage: 'em_negociacao', ownerUserId: u.id });
+
+    const r = await summary({ view: 'org', period: 'month', now: new Date('2026-05-15T16:00:00Z') });
+
+    expect(r.pipelineOpen.totalValue).toBe(800);
+    expect(r.pipelineOpen.openCount).toBe(3);
+    expect(r.pipelineOpen.withValueCount).toBe(1);
+  });
+
   it('returns leaderboard sorted by wonValue desc, top 5', async () => {
     const u1 = await createUser({ role: 'comercial', name: 'Alice', email: 'a@x.com' });
     const u2 = await createUser({ role: 'comercial', name: 'Bob',   email: 'b@x.com' });
