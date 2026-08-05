@@ -15,7 +15,7 @@ import type { OrgSettings } from '../db/schema';
 
 // Bump esta string a cada mudanca material no system prompt (buildSystemPrompt).
 // Permite filtrar metricas de calibracao por versao.
-export const PROMPT_VERSION = 'v1-2026-05-26';
+export const PROMPT_VERSION = 'v2-2026-08-05';
 
 const MAX_HISTORY = 20;
 // Tempo alvo de resposta da IA — simula leitura/digitacao humana. Proporcional
@@ -39,6 +39,22 @@ const QUALIFY_TAG = '[QUALIFICADO]';
 const NOT_QUALIFY_TAG = '[NAO_QUALIFICADO]';
 const SUMMARY_OPEN = '[RESUMO]';
 const SUMMARY_CLOSE = '[/RESUMO]';
+/** Tag pra IA declarar que NAO deve responder nada. Ver buildSystemPrompt. */
+const SILENCE_TAG = '[SEM_RESPOSTA]';
+
+/**
+ * Resposta que e so uma rubrica entre parenteses — a IA narrando a decisao de
+ * nao responder ("(Nao responder. Aguardar nova mensagem.)") em vez de ficar
+ * calada. Isso ia direto pro cliente.
+ *
+ * Casado de forma ESTREITA de proposito: parenteses envolvendo a resposta
+ * INTEIRA, sem parenteses aninhados. Mensagem legitima pro cliente praticamente
+ * nunca tem esse formato, e assim "(11) 3635-1333 e nosso telefone" ou "Mobil
+ * Super (linha sintetica) em estoque" continuam passando normalmente.
+ */
+function isStageDirection(text: string): boolean {
+  return /^\([^()]*\)$/.test(text.trim());
+}
 
 /**
  * Detecta se o cliente quer falar com humano. Porta a heurística do APP_ORION.
@@ -90,6 +106,20 @@ export function buildSystemPrompt(s: OrgSettings, leadName: string | null, leadP
   sections.push('- Seja direto e objetivo. Mensagens curtas (max 3 paragrafos).');
   sections.push('- Nao invente informacoes que nao estejam no seu contexto. Se nao souber, diga que vai verificar.');
   sections.push('- Nunca mencione que voce e uma IA, automacao, bot, ou detalhes tecnicos internos.');
+  sections.push(
+    '- Tudo que voce escrever e ENVIADO LITERALMENTE ao cliente pelo WhatsApp. ' +
+    'NUNCA narre decisoes, raciocinio ou acoes entre parenteses (ex: "(Nao responder...)", ' +
+    '"(Aguardando resposta)"). Escreva apenas a mensagem que o cliente deve ler.',
+  );
+
+  sections.push('', '# QUANDO NAO RESPONDER');
+  sections.push(
+    `Se a situacao pedir que voce NAO responda nada (ex: mensagem automatica do tipo ` +
+    `"agradecemos seu contato", menu de atendimento, "seja bem-vindo", ou o briefing ` +
+    `mandar aguardar), responda APENAS com ${SILENCE_TAG} e mais nada. ` +
+    `Essa tag nao e enviada ao cliente — ela faz o sistema ficar em silencio de verdade. ` +
+    `NUNCA escreva uma frase explicando que nao vai responder.`,
+  );
   if (s.aiDontTalk.trim()) sections.push(`- NAO FALAR sobre: ${s.aiDontTalk.trim()}`);
   if (s.aiAlwaysAsk.trim()) sections.push(`- SEMPRE perguntar (quando ainda nao souber): ${s.aiAlwaysAsk.trim()}`);
 
@@ -143,9 +173,14 @@ export function parseQualificationTag(reply: string): {
   cleanReply: string;
   qualification: 'qualified' | 'not_qualified' | null;
   summary: string | null;
+  silence: boolean;
 } {
   let working = reply.trim();
   let qualification: 'qualified' | 'not_qualified' | null = null;
+
+  // Silencio explicito: a IA pediu pra nao responder nada.
+  let silence = working.includes(SILENCE_TAG);
+  if (silence) working = working.split(SILENCE_TAG).join('').trim();
 
   if (working.endsWith(QUALIFY_TAG)) {
     qualification = 'qualified';
@@ -167,7 +202,26 @@ export function parseQualificationTag(reply: string): {
     }
   }
 
-  return { cleanReply: working, qualification, summary };
+  // Bloco ABERTO e nao fechado: a resposta do Gemini bateu no limite de tokens e
+  // o [/RESUMO] nunca chegou. Sem isto o resumo INTERNO era enviado ao cliente,
+  // cortado no meio da palavra (visto em prod). Corta do [RESUMO] pra frente e
+  // aproveita o que deu como summary — o vendedor ainda ganha algum contexto.
+  const openIdx = working.lastIndexOf(SUMMARY_OPEN);
+  if (openIdx !== -1) {
+    const orphan = working.slice(openIdx + SUMMARY_OPEN.length).trim();
+    if (!summary && orphan) summary = orphan;
+    working = working.slice(0, openIdx).trim();
+  }
+
+  // Rede de seguranca: mesmo instruida a usar a tag, a IA as vezes narra a
+  // decisao em vez de emiti-la. Prompt nao e garantia — tratamos como silencio.
+  if (!silence && isStageDirection(working)) {
+    console.warn('[ai] resposta descartada (rubrica, nao mensagem):', working.slice(0, 120));
+    silence = true;
+  }
+  if (silence) working = '';
+
+  return { cleanReply: working, qualification, summary, silence };
 }
 
 /**
@@ -221,7 +275,8 @@ export interface ProcessResult {
     | 'gemini_error'
     | 'send_error'
     | 'after_hours_queued'
-    | 'auto_reply_ignored';
+    | 'auto_reply_ignored'
+    | 'silenced';
   reply?: string;
   errorMessage?: string;
 }
@@ -502,7 +557,33 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   }
   const rawReply = geminiResult.text;
 
-  const { cleanReply, qualification, summary } = parseQualificationTag(rawReply);
+  const { cleanReply, qualification, summary, silence } = parseQualificationTag(rawReply);
+
+  // Silencio: a IA decidiu (ou o briefing mandou) nao responder. Nao envia nada
+  // e nao grava mensagem — mas PRECISA liberar o pending, senao o aiPendingWorker
+  // reprocessa essa conversa a cada ~3min pra sempre.
+  if (silence) {
+    await db
+      .update(conversations)
+      .set({ pendingAiResponse: false, updatedAt: new Date() })
+      .where(eq(conversations.id, input.conversationId));
+    await recordAiCall({
+      conversationId: input.conversationId,
+      leadId: input.leadId,
+      model: geminiResult.model,
+      inputTokens: geminiResult.inputTokens,
+      outputTokens: geminiResult.outputTokens,
+      latencyMs: geminiResult.latencyMs,
+      qualified: false,
+      decisionReason: 'silence',
+      qualificationPath,
+      questionsAnswers: extractQuestionsAnswers(historyRows, input.inboundText),
+      promptVersion: PROMPT_VERSION,
+      campaignId: campaignIdForLog,
+    });
+    return { status: 'silenced' };
+  }
+
   if (!cleanReply) {
     return { status: 'gemini_error', errorMessage: 'reply was empty after stripping tag' };
   }
