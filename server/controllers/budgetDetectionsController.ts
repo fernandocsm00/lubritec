@@ -44,7 +44,7 @@ export async function confirmHandler(req: Request, res: Response, next: NextFunc
   try {
     const { id } = idParams.parse(req.params);
     const { value, stage } = confirmBody.parse(req.body);
-    const userId = req.user!.id;
+    const userId = req.user!.userId;
 
     const [det] = await db.select().from(budgetDetections).where(eq(budgetDetections.id, id)).limit(1);
     if (!det) throw new HttpError(404, 'Detecção não encontrada');
@@ -90,7 +90,7 @@ export async function dismissHandler(req: Request, res: Response, next: NextFunc
     const { id } = idParams.parse(req.params);
     await db
       .update(budgetDetections)
-      .set({ status: 'dismissed', resolvedBy: req.user!.id, resolvedAt: new Date() })
+      .set({ status: 'dismissed', resolvedBy: req.user!.userId, resolvedAt: new Date() })
       .where(and(eq(budgetDetections.id, id), eq(budgetDetections.status, 'pending')));
     return res.json({ ok: true });
   } catch (e) {

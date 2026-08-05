@@ -79,7 +79,7 @@ describe('GET /api/budget-detections/pending/:leadId', () => {
 
 describe('POST /api/budget-detections/:id/confirm', () => {
   it('grava o valor no deal e move a etapa', async () => {
-    const { token } = await loginAs();
+    const { token, userId } = await loginAs();
     const { lead, det } = await seedPending();
 
     const res = await request(app)
@@ -93,6 +93,11 @@ describe('POST /api/budget-detections/:id/confirm', () => {
     expect(deal.stage).toBe('proposta_enviada');
     const [row] = await db.select().from(budgetDetections).where(eq(budgetDetections.id, det.id));
     expect(row.status).toBe('confirmed');
+    // Auditoria: quem confirmou. Sem isso o campo fica null silenciosamente e a
+    // tabela perde a razão de existir (rastrear de onde veio o valor do card).
+    expect(row.resolvedBy).toBe(userId);
+    expect(row.resolvedAt).not.toBeNull();
+    expect(deal.ownerUserId).toBe(userId);
   });
 
   it('usa o valor EDITADO pelo vendedor, não o detectado', async () => {
@@ -140,7 +145,7 @@ describe('POST /api/budget-detections/:id/confirm', () => {
 
 describe('POST /api/budget-detections/:id/dismiss', () => {
   it('marca dispensada e não toca em deals', async () => {
-    const { token } = await loginAs();
+    const { token, userId } = await loginAs();
     const { lead, det } = await seedPending();
 
     const res = await request(app)
@@ -150,6 +155,7 @@ describe('POST /api/budget-detections/:id/dismiss', () => {
     expect(res.status).toBe(200);
     const [row] = await db.select().from(budgetDetections).where(eq(budgetDetections.id, det.id));
     expect(row.status).toBe('dismissed');
+    expect(row.resolvedBy).toBe(userId);
     const dealRows = await db.select().from(deals).where(eq(deals.leadId, lead.id));
     expect(dealRows).toHaveLength(0);
   });
