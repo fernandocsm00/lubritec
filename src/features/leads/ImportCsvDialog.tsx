@@ -60,9 +60,12 @@ export function ImportCsvDialog({
 
   function downloadRejected() {
     if (!report || report.rejected.length === 0) return;
+    const q = (v: string | null | undefined) => `"${(v ?? '').replace(/"/g, '""')}"`;
     const csv =
-      'linha,motivo\n' +
-      report.rejected.map((r) => `${r.line},"${r.reason.replace(/"/g, '""')}"`).join('\n');
+      'linha,cnpj,cliente,motivo\n' +
+      report.rejected
+        .map((r) => `${r.line},${q(r.cnpj)},${q(r.name)},${q(r.reason)}`)
+        .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -135,12 +138,27 @@ export function ImportCsvDialog({
             </div>
             {report.rejected.length > 0 && (
               <>
-                <div className="max-h-48 overflow-y-auto rounded-md border p-2 text-sm">
-                  {report.rejected.map((r) => (
-                    <div key={r.line} className="font-mono">
-                      linha {r.line}: {r.reason}
-                    </div>
-                  ))}
+                <div className="max-h-48 overflow-y-auto rounded-md border p-2 text-xs">
+                  <table className="w-full">
+                    <thead className="text-muted-foreground">
+                      <tr>
+                        <th className="text-left font-medium">Linha</th>
+                        <th className="text-left font-medium">CNPJ</th>
+                        <th className="text-left font-medium">Cliente</th>
+                        <th className="text-left font-medium">Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.rejected.map((r) => (
+                        <tr key={r.line} className="align-top">
+                          <td className="pr-2 font-mono">{r.line}</td>
+                          <td className="pr-2 font-mono whitespace-nowrap">{r.cnpj || '—'}</td>
+                          <td className="pr-2">{r.name || '—'}</td>
+                          <td className="text-muted-foreground">{r.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
                 <Button variant="outline" size="sm" onClick={downloadRejected}>
                   Baixar rejeitados (CSV)

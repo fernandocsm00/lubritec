@@ -206,11 +206,25 @@ export interface PublicLead {
   updatedAt: string;
 }
 
+/**
+ * Linha rejeitada no import. Alem da linha/motivo, carrega CNPJ e nome quando
+ * a linha os traz — assim da pra saber QUAL cadastro caiu fora sem reabrir o
+ * arquivo (principalmente nos duplicados, onde o motivo sozinho nao ajuda).
+ */
+export interface ImportRejection {
+  line: number;
+  reason: string;
+  /** So digitos (canonico quando o documento e valido); null se a coluna veio vazia. */
+  cnpj?: string | null;
+  /** Nome da conta na linha; null quando vazio. */
+  name?: string | null;
+}
+
 export interface ImportReport {
   inserted: number;
   updated: number;
   skipped: number;
-  rejected: { line: number; reason: string }[];
+  rejected: ImportRejection[];
   enrichmentTriggered?: {
     jobId: string;
     mode: 'started' | 'appended';

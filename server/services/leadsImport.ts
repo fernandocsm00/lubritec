@@ -4,7 +4,7 @@ import { db } from '../db/client';
 import { leads, type NewLead } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
-import type { ImportReport, Imbp, Segment, Uf } from '@shared/types';
+import type { ImportReport, ImportRejection, Imbp, Segment, Uf } from '@shared/types';
 import { IMBP_VALUES, SEGMENT_VALUES, IMBP_TO_SEGMENT, UF_VALUES } from '@shared/types';
 import { parseTaxIdLenient } from '../lib/cnpj';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
@@ -235,7 +235,7 @@ function normalizePhone(raw: string): string {
 
 export async function parseLeadsCsv(buf: Buffer): Promise<{
   rows: CsvRow[];
-  rejected: { line: number; reason: string }[];
+  rejected: ImportRejection[];
   missingHeaders: string[];
 }> {
   // XLSX moderno: ZIP container, magic bytes "PK\x03\x04". Convertemos a
@@ -291,7 +291,7 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
   if (missingHeaders.length > 0) return { rows: [], rejected: [], missingHeaders };
 
   const rows: CsvRow[] = [];
-  const rejected: { line: number; reason: string }[] = [];
+  const rejected: ImportRejection[] = [];
   const cnpjsSeen = new Set<string>();
 
   for (let i = 1; i < records.length; i++) {
@@ -303,8 +303,17 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
     });
 
     const name = (obj.name ?? '').trim();
+    const rawTaxId = (obj.cnpj ?? '').trim();
+    // Identidade da linha no relatorio de rejeitados. Sem CNPJ+nome o usuario
+    // precisa reabrir o arquivo pra descobrir qual cadastro caiu fora (o caso
+    // dos duplicados era o pior: "linha 433" nao diz nada).
+    // `cnpjForReport` comeca com os digitos crus e vira o canonico apos o parse.
+    let cnpjForReport: string | null = rawTaxId.replace(/\D/g, '') || null;
+    const reject = (reason: string) =>
+      rejected.push({ line, reason, cnpj: cnpjForReport, name: name || null });
+
     if (!name) {
-      rejected.push({ line, reason: 'nome vazio' });
+      reject('nome vazio');
       continue;
     }
 
@@ -315,7 +324,7 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
     if (phoneRaw) {
       const cleaned = normalizePhone(phoneRaw);
       if (cleaned.length < 8) {
-        rejected.push({ line, reason: 'telefone inválido (precisa ter ao menos 8 dígitos)' });
+        reject('telefone inválido (precisa ter ao menos 8 dígitos)');
         continue;
       }
       phone = cleaned;
@@ -330,26 +339,26 @@ export async function parseLeadsCsv(buf: Buffer): Promise<{
       if (cleaned2.length >= 8) phone2 = cleaned2;
     }
 
-    const rawTaxId = (obj.cnpj ?? '').trim();
-    if (!rawTaxId || !rawTaxId.replace(/\D/g, '')) {
-      rejected.push({ line, reason: 'CNPJ vazio' });
+    if (!cnpjForReport) {
+      reject('CNPJ vazio');
       continue;
     }
     const parsed = parseTaxIdLenient(rawTaxId);
     if (!parsed) {
-      rejected.push({ line, reason: 'CPF/CNPJ inválido (dígitos verificadores)' });
+      reject('CPF/CNPJ inválido (dígitos verificadores)');
       continue;
     }
     const cnpj = parsed.value; // canônico (11 dig CPF ou 14 dig CNPJ)
+    cnpjForReport = cnpj;
     if (cnpjsSeen.has(cnpj)) {
-      rejected.push({ line, reason: 'CPF/CNPJ duplicado no arquivo' });
+      reject('CPF/CNPJ duplicado no arquivo');
       continue;
     }
     cnpjsSeen.add(cnpj);
 
     const email = (obj.email ?? '').trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      rejected.push({ line, reason: 'email inválido' });
+      reject('email inválido');
       continue;
     }
 

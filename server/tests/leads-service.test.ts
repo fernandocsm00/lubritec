@@ -198,6 +198,17 @@ describe('parseLeadsCsv', () => {
     expect(rows).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason).toMatch(/duplicado/i);
+    // Identifica o cadastro descartado sem precisar reabrir o arquivo.
+    expect(rejected[0]).toMatchObject({ cnpj: VALID_CNPJ_1, name: 'B' });
+  });
+
+  it('rejeitados carregam CNPJ (digitos crus) e nome mesmo quando o documento é inválido', async () => {
+    const csv = `name,phone,cnpj\nEmpresa Ruim,11999990010,11.111.111/1111-11\n`;
+    const { rejected } = await parseLeadsCsv(Buffer.from(csv));
+    expect(rejected[0]).toMatchObject({
+      cnpj: '11111111111111',
+      name: 'Empresa Ruim',
+    });
   });
 
   it('reporta missingHeaders quando faltam obrigatórias', async () => {

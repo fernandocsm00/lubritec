@@ -100,7 +100,10 @@ export function AudienceCsvImport({ onChange }: Props) {
               <summary className="cursor-pointer text-muted-foreground">Ver {result.report.rejected.length} linha(s) rejeitada(s)</summary>
               <ul className="mt-1 max-h-32 overflow-y-auto space-y-0.5">
                 {result.report.rejected.map((r, i) => (
-                  <li key={i} className="text-muted-foreground">Linha {r.line}: {r.reason}</li>
+                  <li key={i} className="text-muted-foreground">
+                    Linha {r.line}: <span className="font-mono">{r.cnpj || '—'}</span>
+                    {r.name ? ` · ${r.name}` : ''} — {r.reason}
+                  </li>
                 ))}
               </ul>
             </details>
