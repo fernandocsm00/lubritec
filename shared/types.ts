@@ -903,6 +903,14 @@ export interface DashboardPipelineOpen {
   byStage: { stage: 'lead_no_comercial' | 'proposta_enviada' | 'em_negociacao'; count: number; valueSum: number }[];
   totalValue: number;
   avgAgeDays: number;
+  /** Total de deals abertos. */
+  openCount: number;
+  /**
+   * Quantos desses têm proposalValue preenchido. `totalValue` soma só esses —
+   * os demais entram como zero. Sem expor a cobertura, o total parece o
+   * pipeline inteiro e subestima em silêncio.
+   */
+  withValueCount: number;
 }
 
 export interface DashboardLeader {

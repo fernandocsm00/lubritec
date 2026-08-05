@@ -252,6 +252,10 @@ async function pipelineOpenFn(ownerUserId: string | null) {
     .select({
       stage: deals.stage,
       cnt: sql<number>`count(*)::int`,
+      // Quantos TÊM valor. count(coluna) ignora NULL — é o que separa "somei
+      // tudo" de "somei o que existe". Sem isso o totalValue parece o pipeline
+      // inteiro quando na prática a maioria dos deals entra como zero.
+      withValue: sql<number>`count(${deals.proposalValue})::int`,
       sum: sql<string>`coalesce(sum(${deals.proposalValue}), 0)`,
       avgAge: sql<string>`coalesce(avg(extract(epoch from (now() - ${deals.createdAt})) / 86400), 0)`,
     })
@@ -270,8 +274,9 @@ async function pipelineOpenFn(ownerUserId: string | null) {
   const totalCount = byStage.reduce((acc, r) => acc + r.count, 0);
   const weightedAge = rows.reduce((acc, r) => acc + Number(r.avgAge) * r.cnt, 0);
   const avgAgeDays = totalCount === 0 ? 0 : Math.round((weightedAge / totalCount) * 10) / 10;
+  const withValueCount = rows.reduce((acc, r) => acc + r.withValue, 0);
 
-  return { byStage, totalValue, avgAgeDays };
+  return { byStage, totalValue, avgAgeDays, openCount: totalCount, withValueCount };
 }
 
 async function leaderboardFn(start: Date, end: Date) {

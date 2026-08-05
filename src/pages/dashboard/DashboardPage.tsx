@@ -135,6 +135,7 @@ export default function DashboardPage() {
         <OperationsHero
           kpis={summary.data?.kpis}
           goal={summary.data?.goal}
+          pipelineOpen={summary.data?.pipelineOpen}
           whatsapp={whatsapp.data}
           attention={attention.data}
         />
