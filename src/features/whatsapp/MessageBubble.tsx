@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthStore } from '@/features/auth/store';
+import { ImageLightbox } from './ImageLightbox';
 import { useDeleteMessage, useEditMessage } from './api';
 import type { PublicMessage } from './types';
 
@@ -183,7 +184,7 @@ export function MessageBubble({ msg, onReply }: { msg: PublicMessage; onReply?: 
         )}
 
         {msg.kind === 'image' && msg.mediaUrl && (
-          <img src={msg.mediaUrl} alt="imagem" className="rounded mb-1 max-w-full max-h-64 object-cover" />
+          <ImageLightbox src={msg.mediaUrl} />
         )}
         {msg.kind === 'audio' && msg.mediaUrl && (
           <audio controls src={msg.mediaUrl} className="mb-1 max-w-full" />
