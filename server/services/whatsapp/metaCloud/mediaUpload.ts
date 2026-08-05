@@ -12,7 +12,8 @@ function parseBody(text: string): unknown {
 
 export interface UploadResumableInput {
   appId: string;
-  accessToken: string;
+  /** App Secret do MESMO app do appId — usado pra montar o app access token. */
+  appSecret: string;
   buffer: Buffer;
   mimeType: string;
   fileName: string;
@@ -28,9 +29,15 @@ export interface UploadResumableInput {
  *   1. POST /{app_id}/uploads?file_name&file_length&file_type  → { id: "upload:..." }
  *   2. POST /{session_id}  (Authorization: OAuth, header file_offset:0, body binário) → { h: handle }
  *
- * Requer o App ID da Meta (não é segredo) — vem do metaCloudConfig da instância.
+ * Autentica com **app access token** (`{app-id}|{app-secret}`), não com o access
+ * token do WhatsApp: o nó `/{app_id}` pertence ao app, e o token de system user
+ * da WABA não enxerga esse nó — a Meta responde 400 code 100 subcode 33
+ * ("Object with ID ... does not exist, cannot be loaded due to missing
+ * permissions"). App ID e App Secret precisam ser do MESMO app.
  */
 export async function uploadResumableHeaderSample(input: UploadResumableInput): Promise<string> {
+  const appAccessToken = `${input.appId}|${input.appSecret}`;
+
   // ── Passo 1: cria a sessão de upload ──
   const q = new URLSearchParams({
     file_name: input.fileName,
@@ -39,7 +46,7 @@ export async function uploadResumableHeaderSample(input: UploadResumableInput): 
   });
   const startRes = await fetch(`${graphBase()}/${input.appId}/uploads?${q.toString()}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${input.accessToken}` },
+    headers: { Authorization: `Bearer ${appAccessToken}` },
     signal: AbortSignal.timeout(20_000),
   });
   const startBody = parseBody(await startRes.text().catch(() => ''));
@@ -54,7 +61,7 @@ export async function uploadResumableHeaderSample(input: UploadResumableInput): 
   const upRes = await fetch(`${graphBase()}/${sessionId}`, {
     method: 'POST',
     headers: {
-      Authorization: `OAuth ${input.accessToken}`,
+      Authorization: `OAuth ${appAccessToken}`,
       file_offset: '0',
     },
     // Uint8Array é BodyInit válido; Buffer direto não tipa no lib.dom.

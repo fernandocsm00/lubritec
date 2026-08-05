@@ -109,7 +109,7 @@ export async function uploadHeaderMedia(input: {
   try {
     const handle = await uploadResumableHeaderSample({
       appId: cfg.appId,
-      accessToken: decryptSecret(cfg.accessToken),
+      appSecret: decryptSecret(cfg.appSecret),
       buffer: jpeg,
       mimeType: 'image/jpeg',
       fileName,
@@ -117,7 +117,12 @@ export async function uploadHeaderMedia(input: {
     return { url, handle };
   } catch (err) {
     if (err instanceof MetaGraphError) {
-      throw new HttpError(422, `Falha ao enviar amostra à Meta: ${err.message}`);
+      // code 100/subcode 33 no nó /{app_id} = App ID e App Secret não são do
+      // mesmo app (ou o App ID está errado). Erro opaco da Meta — traduz.
+      const hint = err.code === 100
+        ? ' Confira se o App ID e o App Secret configurados nesta linha são do MESMO app no painel da Meta.'
+        : '';
+      throw new HttpError(422, `Falha ao enviar amostra à Meta: ${err.message}${hint}`);
     }
     throw err;
   }
