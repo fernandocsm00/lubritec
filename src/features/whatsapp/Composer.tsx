@@ -27,7 +27,7 @@ function sendErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     // Backend já manda mensagens prontas pro usuário (ex.: janela 24h fechada,
     // erro do provedor). Repassa direto em vez de mostrar fallback genérico.
-    if (err.message && err.message !== 'Request failed') return err.message;
+    if (err.message && !err.message.startsWith('Request failed')) return err.message;
   }
   return fallback;
 }

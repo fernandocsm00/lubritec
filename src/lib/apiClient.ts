@@ -52,7 +52,10 @@ export async function api<T = unknown>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, body.error || 'Request failed', body);
+    // Resposta sem JSON (502/504/413 do proxy, app reiniciando) cai aqui: sem o
+    // status a tela mostra só "Request failed" e não dá pra distinguir app fora
+    // do ar de payload grande. Em HTTP/2 o statusText vem sempre vazio.
+    throw new ApiError(res.status, body.error || `Request failed (HTTP ${res.status})`, body);
   }
 
   if (res.status === 204) return undefined as T;

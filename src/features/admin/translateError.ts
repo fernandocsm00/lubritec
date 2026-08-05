@@ -9,20 +9,31 @@ const MESSAGE_MAP: Record<string, string> = {
   'User already activated': 'Esse usuário já completou o cadastro.',
   'Email already in use': 'Já existe um usuário com esse email.',
   'User not found': 'Usuário não encontrado.',
-  'Request failed': 'Falha de conexão com o servidor. Tente novamente em instantes.',
 };
+
+// 'Request failed' vem do apiClient com o status junto ("Request failed (HTTP 502)")
+// quando a resposta não é JSON. Mantém o status visível pra não perder o
+// diagnóstico, mas com texto legível na frente.
+function translateMessage(message: string): string {
+  if (MESSAGE_MAP[message]) return MESSAGE_MAP[message];
+  if (message.startsWith('Request failed')) {
+    const status = message.match(/HTTP (\d{3})/)?.[1];
+    return `Falha de conexão com o servidor${status ? ` (HTTP ${status})` : ''}. Tente novamente em instantes.`;
+  }
+  return message;
+}
 
 export function translateError(input: unknown): string {
   if (input instanceof ApiError) {
     const code = (input.body as { code?: string } | undefined)?.code;
     if (code && CODE_MAP[code]) return CODE_MAP[code];
-    return MESSAGE_MAP[input.message] ?? input.message;
+    return translateMessage(input.message);
   }
   if (input instanceof Error) {
-    return MESSAGE_MAP[input.message] ?? input.message;
+    return translateMessage(input.message);
   }
   if (typeof input === 'string') {
-    return MESSAGE_MAP[input] ?? input;
+    return translateMessage(input);
   }
   return 'Erro inesperado.';
 }
