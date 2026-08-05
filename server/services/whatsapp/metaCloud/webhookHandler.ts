@@ -5,6 +5,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { decryptSecret } from '../../../lib/crypto';
 import { metaCloudConfigSchema, type MetaCloudConfig } from './configSchema';
 import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebhookService';
+import { processInboundWithAi } from '../../aiAtendimento';
 import { getMediaUrl, downloadMedia } from './client';
 import { persistInboundMedia } from '../inboundMediaStore';
 import type { MessageKind } from '@shared/types';
@@ -184,7 +185,36 @@ async function processOneMessage(
     sentAt: new Date(parseInt(msg.timestamp, 10) * 1000),
     rawPayload: msg,
   };
-  await ingestInboundMessage(normalized);
+  const ingestResult = await ingestInboundMessage(normalized);
+
+  // Dispara a IA de atendimento em background (fire-and-forget) — espelha o que o
+  // webhook da UazAPI ja fazia. Sem isto a linha Meta (que eh a padrao e a que faz
+  // os disparos) so marcava pending_ai_response e dependia do aiPendingWorker:
+  // na pratica a IA nunca respondia quem respondia campanha.
+  // Só texto recem-inserido: duplicata/midia nao aciona (a IA so processa texto).
+  if (
+    ingestResult.status === 'inserted' &&
+    ingestResult.conversationId &&
+    ingestResult.leadId &&
+    normalized.kind === 'text' &&
+    normalized.text
+  ) {
+    const convId = ingestResult.conversationId;
+    const leadId = ingestResult.leadId;
+    const inboundText = normalized.text;
+    const phone = normalized.leadPhone;
+    processInboundWithAi({ conversationId: convId, leadId, phone, inboundText })
+      .then((r) => {
+        if (r.status === 'gemini_error' || r.status === 'send_error') {
+          console.error('[ai] processInbound failed:', r.status, r.errorMessage);
+        } else {
+          console.log('[ai] processInbound:', r.status);
+        }
+      })
+      .catch((err) => {
+        console.error('[ai] processInbound threw:', err);
+      });
+  }
 }
 
 export async function processMetaWebhook(

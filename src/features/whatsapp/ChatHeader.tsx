@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import { Bot, UserPlus, Check } from 'lucide-react';
+import { Bot, BotOff, UserPlus, Check } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +11,7 @@ import {
   useClaimConversation,
   useCloseConversation,
   useConversationAssignees,
+  useSetConversationAi,
 } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
 import { CONVERSATION_QUEUES } from '@shared/types';
@@ -30,6 +31,7 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
   const assign = useAssignConversation();
   const changeQueue = useChangeQueue();
   const close = useCloseConversation();
+  const setAi = useSetConversationAi();
   const { data: assignees } = useConversationAssignees();
 
   const isMine = conv.assignedTo?.id === currentUserId;
@@ -57,6 +59,16 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
       await changeQueue.mutateAsync({ id: conv.id, queue: q });
       toast.success(`Movida para ${QUEUE_LABEL[q]}.`);
     } catch { toast.error('Falha ao mover.'); }
+  }
+
+  // A IA desliga sozinha assim que alguém do time responde. Este botão é o
+  // caminho de volta (respondeu por engano / terminou e quer devolver pra IA).
+  async function toggleAi() {
+    const enabled = conv.aiDisabled;
+    try {
+      await setAi.mutateAsync({ id: conv.id, enabled });
+      toast.success(enabled ? 'IA reativada nesta conversa.' : 'IA desativada nesta conversa.');
+    } catch { toast.error('Falha ao alterar a IA.'); }
   }
 
   async function doClose() {
@@ -143,6 +155,21 @@ export function ChatHeader({ conv, currentUserId }: { conv: PublicConversation; 
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {conv.queue !== 'comercial' && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={toggleAi}
+            disabled={setAi.isPending}
+            title={conv.aiDisabled
+              ? 'A IA não responde mais nesta conversa. Clique pra devolver pra IA.'
+              : 'A IA está respondendo esta conversa. Ela desliga sozinha quando você responder.'}
+          >
+            {conv.aiDisabled
+              ? <><BotOff className="h-4 w-4 mr-1 text-muted-foreground" /> IA off</>
+              : <><Bot className="h-4 w-4 mr-1 text-primary" /> IA on</>}
+          </Button>
+        )}
         {conv.status !== 'encerrada' && (
           <Button size="sm" variant="destructive" onClick={doClose} disabled={close.isPending}>
             Encerrar

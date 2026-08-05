@@ -216,6 +216,19 @@ export function useChangeQueue() {
   });
 }
 
+/** Liga/desliga a IA numa conversa específica (desliga sozinho quando humano responde). */
+export function useSetConversationAi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api<PublicConversation>(`/conversations/${id}/ai`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+  });
+}
+
 export function useDeleteMessage() {
   const qc = useQueryClient();
   return useMutation({

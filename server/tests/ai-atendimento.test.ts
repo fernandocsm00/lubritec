@@ -22,20 +22,34 @@ vi.mock('../services/geminiClient', () => ({
   },
 }));
 
-vi.mock('../services/whatsapp/uazapi/client', () => ({
-  uazapiClient: { sendMessage: vi.fn() },
-  UazapiError: class extends Error {
-    constructor(public status: number, public body: string) { super(`UazAPI ${status}`); }
-  },
+// A IA envia pelo provider da linha DA conversa (resolveProvider), nao pelo
+// cliente UazAPI fixo — senao conversa de linha Meta Cloud quebra no envio.
+// `providerKind.current` simula a linha em que a conversa vive.
+const sendTextMock = vi.hoisted(() => vi.fn());
+const providerKind = vi.hoisted(() => ({ current: 'uazapi' as 'uazapi' | 'meta_cloud' }));
+vi.mock('../services/whatsapp/providerRegistry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/whatsapp/providerRegistry')>()),
+  resolveProvider: vi.fn(async (instanceId: string) => ({
+    kind: providerKind.current,
+    instanceId,
+    sendText: sendTextMock,
+  })),
 }));
 
 import { generateReply, generateReplyDetailed } from '../services/geminiClient';
-import { uazapiClient } from '../services/whatsapp/uazapi/client';
+import { resolveProvider } from '../services/whatsapp/providerRegistry';
+
+/** Resposta de envio bem-sucedido no shape do WhatsAppProvider.sendText. */
+function mockSendOk(providerMsgId: string) {
+  sendTextMock.mockResolvedValueOnce({ providerMsgId, rawPayload: {} });
+}
 
 beforeEach(() => {
   vi.mocked(generateReply).mockReset();
   vi.mocked(generateReplyDetailed).mockReset();
-  vi.mocked(uazapiClient.sendMessage).mockReset();
+  sendTextMock.mockReset();
+  vi.mocked(resolveProvider).mockClear();
+  providerKind.current = 'uazapi';
 });
 
 // Mocks de Gemini agora retornam shape {text, inputTokens, outputTokens, model, latencyMs}.
@@ -180,10 +194,17 @@ describe('processInboundWithAi', () => {
     expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
   });
 
-  it('no-op quando conversa não está na fila IA', async () => {
+  it('no-op + limpa o pending quando a conversa saiu das filas da IA', async () => {
+    // Antes deste teste a fila 'recepcao' era o caso de no-op. Desde 05/08/2026 a
+    // IA atende 'ia' + 'recepcao'; quem sobrou de fora é 'comercial' (humano
+    // assumiu). O pending precisa ser limpo pra não ficar pendurado no worker.
     await enableAi();
     const lead = await createLead({ phone: '5511900000002' });
-    const conv = await createConversation({ phone: '5511900000002', leadId: lead.id, queue: 'recepcao' });
+    const conv = await createConversation({ phone: '5511900000002', leadId: lead.id, queue: 'comercial' });
+    await db.update(conversations)
+      .set({ pendingAiResponse: true })
+      .where(eq(conversations.id, conv.id));
+
     const r = await processInboundWithAi({
       conversationId: conv.id,
       leadId: lead.id,
@@ -192,6 +213,8 @@ describe('processInboundWithAi', () => {
     });
     expect(r.status).toBe('queue_not_ia');
     expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.pendingAiResponse).toBe(false);
   });
 
   it('move pra Recepção quando cliente pede humano', async () => {
@@ -213,10 +236,7 @@ describe('processInboundWithAi', () => {
   it('chama Gemini, manda resposta via UazAPI, persiste msg out', async () => {
     await enableAi();
     mockGeminiText('Olá! Posso te ajudar. Qual o tamanho da sua frota?');
-    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
-      messageId: 'uazapi-ai-001',
-      rawPayload: {},
-    });
+    mockSendOk('uazapi-ai-001');
 
     const lead = await createLead({ phone: '5511900000004', name: 'João' });
     const conv = await createConversation({ phone: '5511900000004', leadId: lead.id, queue: 'ia' });
@@ -240,7 +260,7 @@ describe('processInboundWithAi', () => {
   it('auto-reply (<15s): IA responde mas NÃO passa pro comercial mesmo qualificado', async () => {
     await enableAi();
     mockGeminiText('Perfeito, vou te conectar. [QUALIFICADO]');
-    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({ messageId: 'ai-ar-1', rawPayload: {} });
+    mockSendOk('ai-ar-1');
     const owner = await createUser({ email: 'ar-owner@x.com', role: 'comercial' });
     const lead = await createLead({ phone: '5511900000010', flowStage: 'engaged' });
     const conv = await createConversation({ phone: '5511900000010', leadId: lead.id, queue: 'ia', originKind: 'campaign' });
@@ -258,7 +278,7 @@ describe('processInboundWithAi', () => {
   it('resposta genuína (>=15s): qualificado move pro comercial', async () => {
     await enableAi();
     mockGeminiText('Perfeito, vou te conectar. [QUALIFICADO]');
-    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({ messageId: 'ai-ar-2', rawPayload: {} });
+    mockSendOk('ai-ar-2');
     const owner = await createUser({ email: 'ar-owner2@x.com', role: 'comercial' });
     const lead = await createLead({ phone: '5511900000011', flowStage: 'engaged' });
     const conv = await createConversation({ phone: '5511900000011', leadId: lead.id, queue: 'ia', originKind: 'campaign' });
@@ -293,10 +313,7 @@ describe('processInboundWithAi', () => {
   it('quando Gemini retorna [QUALIFICADO], move conversa pra Comercial + lead pra qualified', async () => {
     await enableAi();
     mockGeminiText('Perfeito, vou conectar você com nosso comercial agora. [QUALIFICADO]');
-    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
-      messageId: 'uazapi-ai-002',
-      rawPayload: {},
-    });
+    mockSendOk('uazapi-ai-002');
 
     const lead = await createLead({ phone: '5511900000005', flowStage: 'engaged' });
     const conv = await createConversation({ phone: '5511900000005', leadId: lead.id, queue: 'ia' });
@@ -319,6 +336,107 @@ describe('processInboundWithAi', () => {
     expect(updatedLead.flowStage).toBe('handed_off');
   });
 
+  it('responde na linha DA conversa — Meta Cloud sai pelo provider da Meta, não pelo UazAPI', async () => {
+    // Regressao: a IA enviava sempre via uazapiClient. Numa conversa de linha
+    // Meta Cloud isso estourava "WhatsApp instance not configured" (a row meta
+    // nao tem instanceToken), entao a IA nunca conseguia responder nessa linha.
+    await enableAi();
+    providerKind.current = 'meta_cloud';
+    mockGeminiText('Claro, temos linha completa de lubrificantes.');
+    mockSendOk('wamid.ai-meta-001');
+
+    const lead = await createLead({ phone: '5511900000007', name: 'Meta Lead' });
+    const conv = await createConversation({ phone: '5511900000007', leadId: lead.id, queue: 'ia' });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id,
+      leadId: lead.id,
+      phone: '5511900000007',
+      inboundText: 'vocês trabalham com qual marca?',
+    });
+    expect(r.status).toBe('replied');
+
+    // Resolveu o provider pela instância da conversa (multi-linha).
+    expect(vi.mocked(resolveProvider)).toHaveBeenCalledWith(conv.instanceId);
+    expect(sendTextMock).toHaveBeenCalledWith({
+      to: '5511900000007',
+      text: 'Claro, temos linha completa de lubrificantes.',
+    });
+    // E a msg persistida registra o provider real, não 'uazapi' chumbado.
+    const [msg] = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
+    expect(msg.provider).toBe('meta_cloud');
+  });
+
+  it('responde conversa na fila RECEPÇÃO e a mantém lá (não move pra IA)', async () => {
+    await enableAi();
+    mockGeminiText('Oi! Aqui é a Lara, da Lubritec. Como posso ajudar?');
+    mockSendOk('ai-recep-1');
+
+    const lead = await createLead({ phone: '5511900000020' });
+    const conv = await createConversation({ phone: '5511900000020', leadId: lead.id, queue: 'recepcao' });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000020', inboundText: 'bom dia',
+    });
+    expect(r.status).toBe('replied');
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.queue).toBe('recepcao'); // continua visível na Recepção
+  });
+
+  it('não responde quando a IA foi desligada naquela conversa (humano assumiu)', async () => {
+    await enableAi();
+    const lead = await createLead({ phone: '5511900000021' });
+    const conv = await createConversation({
+      phone: '5511900000021', leadId: lead.id, queue: 'recepcao', aiDisabled: true,
+    });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000021', inboundText: 'e aí?',
+    });
+    expect(r.status).toBe('conversation_ai_off');
+    expect(vi.mocked(generateReplyDetailed)).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it('ai_disabled trava a IA também na fila IA', async () => {
+    await enableAi();
+    const lead = await createLead({ phone: '5511900000022' });
+    const conv = await createConversation({
+      phone: '5511900000022', leadId: lead.id, queue: 'ia', aiDisabled: true,
+    });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000022', inboundText: 'oi',
+    });
+    expect(r.status).toBe('conversation_ai_off');
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it('não responde na fila COMERCIAL (humano já assumiu)', async () => {
+    await enableAi();
+    const lead = await createLead({ phone: '5511900000023' });
+    const conv = await createConversation({ phone: '5511900000023', leadId: lead.id, queue: 'comercial' });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000023', inboundText: 'oi',
+    });
+    expect(r.status).toBe('queue_not_ia');
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it('pedido de humano na Recepção desliga a IA da conversa (senão ela responderia de novo)', async () => {
+    await enableAi();
+    const lead = await createLead({ phone: '5511900000024' });
+    const conv = await createConversation({ phone: '5511900000024', leadId: lead.id, queue: 'recepcao' });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000024', inboundText: 'quero falar com um atendente',
+    });
+    expect(r.status).toBe('transferred_to_human');
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.aiDisabled).toBe(true);
+  });
+
   it('gemini_error não persiste mensagem nem altera fila', async () => {
     await enableAi();
     vi.mocked(generateReplyDetailed).mockRejectedValueOnce(new Error('rate limit'));
@@ -333,7 +451,7 @@ describe('processInboundWithAi', () => {
       inboundText: 'oi',
     });
     expect(r.status).toBe('gemini_error');
-    expect(vi.mocked(uazapiClient.sendMessage)).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id));
     expect(msgs).toHaveLength(0);
   });

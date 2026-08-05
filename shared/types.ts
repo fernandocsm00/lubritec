@@ -287,6 +287,8 @@ export interface PublicConversation {
   enteredQueueAt: string | null;
   hasAiHandoff: boolean;
   handoffSummary: string | null;
+  /** true = IA não responde mais nesta conversa (humano assumiu). Religável na UI. */
+  aiDisabled: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -7,6 +7,7 @@ import { recordTransition } from './stageTransitions';
 import { emitNotification } from './notifications';
 import { HttpError } from '../middleware/errorHandler';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
+import { isAiQueue } from '../lib/aiQueues';
 
 // ---------------------------------------------------------------------------
 // NormalizedInbound — provider-agnostic inbound message shape.
@@ -70,9 +71,8 @@ async function getDefaultInstanceId(): Promise<string> {
  *
  * Override manual continua possivel via "Mover" no ChatHeader.
  */
-async function defaultInboundQueueFor(leadId: string): Promise<ConversationQueue> {
-  const [s] = await db.select({ aiEnabled: orgSettings.aiEnabled }).from(orgSettings).limit(1);
-  if (!s?.aiEnabled) return 'recepcao';
+async function defaultInboundQueueFor(leadId: string, aiEnabled: boolean): Promise<ConversationQueue> {
+  if (!aiEnabled) return 'recepcao';
   const [hasCampaign] = await db
     .select({ id: campaignRecipients.id })
     .from(campaignRecipients)
@@ -176,6 +176,14 @@ export async function ingestInboundMessage(
     // pending_ai_response como "rede de segurança" (se o processo morrer antes
     // da IA responder, o aiPendingWorker reprocessa).
     const aiEligible = input.kind === 'text' && !!input.text;
+    // A IA agora atende 'ia' E 'recepcao', então o pending (rede de segurança do
+    // aiPendingWorker) não pode mais olhar só a fila: sem o ai_enabled global o
+    // flag ficaria pendurado em toda conversa com a IA desligada.
+    const [orgRow] = await db
+      .select({ aiEnabled: orgSettings.aiEnabled })
+      .from(orgSettings)
+      .limit(1);
+    const aiEnabled = !!orgRow?.aiEnabled;
 
     let existingConv = await tx
       .select()
@@ -193,7 +201,7 @@ export async function ingestInboundMessage(
       // Resolvemos a fila inicial AGORA que ja temos o leadId — eh esperado
       // que isso faca uma query extra so quando ai_enabled=true (early return
       // quando IA esta desligada).
-      const initialQueue = await defaultInboundQueueFor(leadId);
+      const initialQueue = await defaultInboundQueueFor(leadId, aiEnabled);
       // Origin coerente com a fila: se foi pra IA, o cliente esta respondendo
       // a algum disparo passado — marca origin='campaign' tambem.
       const initialOrigin = initialQueue === 'ia' ? 'campaign' : 'organic';
@@ -209,7 +217,7 @@ export async function ingestInboundMessage(
           lastMessageAt: sentAt,
           lastInboundAt: sentAt,
           unreadCount: 1,
-          pendingAiResponse: initialQueue === 'ia' && aiEligible,
+          pendingAiResponse: aiEnabled && aiEligible && isAiQueue(initialQueue),
         })
         .onConflictDoNothing({ target: [conversations.instanceId, conversations.phone] })
         .returning({ id: conversations.id });
@@ -259,7 +267,9 @@ export async function ingestInboundMessage(
           // é texto, marca pending. processInboundWithAi limpa ao concluir; se o
           // processo cair no meio (delay humanizado, Gemini), o aiPendingWorker
           // reprocessa em até ~3min.
-          ...(c.queue === 'ia' && aiEligible ? { pendingAiResponse: true } : {}),
+          ...(aiEnabled && aiEligible && isAiQueue(c.queue) && !c.aiDisabled
+            ? { pendingAiResponse: true }
+            : {}),
         })
         .where(eq(conversations.id, c.id));
     }

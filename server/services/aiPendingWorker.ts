@@ -1,7 +1,8 @@
 import { db } from '../db/client';
 import { conversations, messages } from '../db/schema';
-import { eq, desc, and, lt } from 'drizzle-orm';
+import { eq, desc, and, lt, inArray } from 'drizzle-orm';
 import { isAiBusinessHours } from '../lib/businessHours';
+import { AI_QUEUES } from '../lib/aiQueues';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { processInboundWithAi } from './aiAtendimento';
 
@@ -78,7 +79,10 @@ export async function processPending(): Promise<{ processed: number; skipped: nu
     .from(conversations)
     .where(and(
       eq(conversations.pendingAiResponse, true),
-      eq(conversations.queue, 'ia'),
+      // 'ia' + 'recepcao' (ver AI_QUEUES); 'comercial' fica de fora.
+      inArray(conversations.queue, [...AI_QUEUES]),
+      // Humano assumiu esta conversa — worker não pode reanimar a IA.
+      eq(conversations.aiDisabled, false),
       lt(conversations.lastInboundAt, pickupThreshold),
     ))
     .limit(MAX_PER_TICK);

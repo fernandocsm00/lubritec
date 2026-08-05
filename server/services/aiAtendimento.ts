@@ -4,13 +4,13 @@ import { and, eq, desc } from 'drizzle-orm';
 import { generateReplyDetailed, type GeminiMessage } from './geminiClient';
 import { recordAiCall, countRecentErrorsForConversation } from './aiMetrics';
 export { recordAiCall } from './aiMetrics';
-import { uazapiClient } from './whatsapp/uazapi/client';
-import { loadSendConfig } from './whatsappInstanceService';
+import { resolveProvider } from './whatsapp/providerRegistry';
 import { loadOrgSettingsRow } from './orgSettingsService';
 import { recordTransition } from './stageTransitions';
 import { emitNotification } from './notifications';
 import { notifyVendoresWhatsapp } from './whatsappNotify';
 import { isAiBusinessHours } from '../lib/businessHours';
+import { isAiQueue } from '../lib/aiQueues';
 import type { OrgSettings } from '../db/schema';
 
 // Bump esta string a cada mudanca material no system prompt (buildSystemPrompt).
@@ -217,6 +217,7 @@ export interface ProcessResult {
     | 'transferred_to_human'
     | 'ai_disabled'
     | 'queue_not_ia'
+    | 'conversation_ai_off'
     | 'gemini_error'
     | 'send_error'
     | 'after_hours_queued'
@@ -243,7 +244,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     return { status: 'ai_disabled' };
   }
 
-  // Confirma que a conversa ainda esta na fila IA (humano pode ter movido).
+  // Confirma que a conversa segue elegível (humano pode ter movido/assumido).
   const [conv] = await db
     .select({
       id: conversations.id,
@@ -251,20 +252,31 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       status: conversations.status,
       pendingAiResponse: conversations.pendingAiResponse,
       instanceId: conversations.instanceId,
+      aiDisabled: conversations.aiDisabled,
     })
     .from(conversations)
     .where(eq(conversations.id, input.conversationId))
     .limit(1);
-  if (!conv || conv.queue !== 'ia') {
-    // Humano moveu a conversa entre a ingestão e o processamento — limpa o
-    // flag de rede de segurança pra não ficar pendurado.
+  const clearPending = async () => {
     if (conv?.pendingAiResponse) {
       await db
         .update(conversations)
         .set({ pendingAiResponse: false, updatedAt: new Date() })
         .where(eq(conversations.id, conv.id));
     }
+  };
+  // Fila 'comercial' = humano já assumiu; IA não fala mais. 'ia' e 'recepcao'
+  // são atendidas (a IA responde a Recepção mantendo a conversa lá, ver
+  // AI_QUEUES) — humano moveu entre a ingestão e o processamento cai aqui.
+  if (!conv || !isAiQueue(conv.queue)) {
+    await clearPending();
     return { status: 'queue_not_ia' };
+  }
+  // Freio por conversa: alguém do time respondeu por aqui. Vale mesmo na fila
+  // IA — a fila sozinha não protege um atendimento humano em andamento.
+  if (conv.aiDisabled) {
+    await clearPending();
+    return { status: 'conversation_ai_off' };
   }
 
   // "Auto-reply": resposta que chega em < N s após o nosso último outbound
@@ -334,19 +346,19 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     }
     if (afterMsg && !alreadySentAfterHours) {
       try {
-        const sendResp = await uazapiClient.sendMessage({
+        const provider = await resolveProvider(conv.instanceId);
+        const sendResp = await provider.sendText({
           to: input.phone,
-          kind: 'text',
           text: afterMsg,
-        }, await loadSendConfig(conv.instanceId));
+        });
         await db.insert(messages).values({
           conversationId: input.conversationId,
           direction: 'out',
           kind: 'text',
           body: afterMsg,
           sentByUserId: null,
-          providerMsgId: sendResp.messageId,
-          provider: 'uazapi',
+          providerMsgId: sendResp.providerMsgId,
+          provider: provider.kind,
           rawPayload: { ai: true, afterHours: true, raw: sendResp.rawPayload } as object,
           sentAt: new Date(),
         });
@@ -368,7 +380,15 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   if (detectHumanIntent(input.inboundText)) {
     await db
       .update(conversations)
-      .set({ queue: 'recepcao', status: 'aguardando_atendimento', pendingAiResponse: false, updatedAt: new Date() })
+      .set({
+        queue: 'recepcao',
+        status: 'aguardando_atendimento',
+        pendingAiResponse: false,
+        // Recepção também é fila da IA agora — sem este freio a IA voltaria a
+        // responder justamente quem pediu pra falar com gente.
+        aiDisabled: true,
+        updatedAt: new Date(),
+      })
       .where(eq(conversations.id, input.conversationId));
     // Registra no log mesmo sem chamar Gemini — pra métrica "human intent rate".
     await recordAiCall({
@@ -455,6 +475,9 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
           queue: 'recepcao',
           status: 'aguardando_atendimento',
           pendingAiResponse: false,
+          // IA travada (rate limit / key / safety) — entrega pro humano e para
+          // de tentar. Recepção é fila da IA, então o freio tem que ser explícito.
+          aiDisabled: true,
           updatedAt: new Date(),
         })
         .where(eq(conversations.id, input.conversationId));
@@ -496,14 +519,17 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
   }
 
-  // Envia via UazAPI.
-  let uazapiResp;
+  // Envia pelo provider da linha DA conversa (UazAPI ou Meta Cloud) — nunca
+  // assume UazAPI: conversa de linha Meta quebrava aqui com "instance not
+  // configured" (row meta_cloud nao tem instanceToken) e a IA nunca respondia.
+  let provider;
+  let sendResp;
   try {
-    uazapiResp = await uazapiClient.sendMessage({
+    provider = await resolveProvider(conv.instanceId);
+    sendResp = await provider.sendText({
       to: input.phone,
-      kind: 'text',
       text: cleanReply,
-    }, await loadSendConfig(conv.instanceId));
+    });
   } catch (err) {
     return {
       status: 'send_error',
@@ -520,9 +546,9 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       kind: 'text',
       body: cleanReply,
       sentByUserId: null, // null = enviado pela IA
-      providerMsgId: uazapiResp.messageId,
-      provider: 'uazapi',
-      rawPayload: { ai: true, qualification, raw: uazapiResp.rawPayload } as object,
+      providerMsgId: sendResp.providerMsgId,
+      provider: provider.kind,
+      rawPayload: { ai: true, qualification, raw: sendResp.rawPayload } as object,
       sentAt,
     });
 

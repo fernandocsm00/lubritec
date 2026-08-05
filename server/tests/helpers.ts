@@ -111,6 +111,7 @@ export async function createConversation(opts: {
   lastMessageAt?: Date;
   lastInboundAt?: Date | null;
   unreadCount?: number;
+  aiDisabled?: boolean;
   createdAt?: Date;
 }) {
   const instanceId = opts.instanceId ?? await getOrCreateDefaultInstance();
@@ -128,6 +129,7 @@ export async function createConversation(opts: {
       lastMessageAt: opts.lastMessageAt ?? new Date(),
       lastInboundAt: opts.lastInboundAt ?? null,
       unreadCount: opts.unreadCount ?? 0,
+      aiDisabled: opts.aiDisabled ?? false,
       ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     })
     .returning();

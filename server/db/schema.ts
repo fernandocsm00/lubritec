@@ -124,6 +124,8 @@ export const conversations = pgTable('conversations', {
   handoffSummary: text('handoff_summary'),
   enteredQueueAt: timestamp('entered_queue_at', { withTimezone: true }),
   pendingAiResponse: boolean('pending_ai_response').notNull().default(false),
+  // Freio por conversa: humano respondeu → IA sai desta conversa (migration 041).
+  aiDisabled: boolean('ai_disabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

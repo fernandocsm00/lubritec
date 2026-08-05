@@ -16,6 +16,7 @@ import {
   claimConversation,
   assignConversation,
   changeQueue,
+  setConversationAi,
   closeConversation,
   markRead,
   sendMessage,
@@ -126,6 +127,16 @@ export async function queueHandler(req: Request, res: Response, next: NextFuncti
     const { id } = idParams.parse(req.params);
     const { queue } = queueBody.parse(req.body);
     res.json(await changeQueue(id, queue, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
+const aiBody = z.object({ enabled: z.boolean() });
+
+export async function setAiHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const { enabled } = aiBody.parse(req.body);
+    res.json(await setConversationAi(id, enabled, req.user!.userId));
   } catch (e) { next(e); }
 }
 

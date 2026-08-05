@@ -176,6 +176,43 @@ describe('POST /api/conversations/:id/messages', () => {
 
     const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
     expect(row.queue).toBe('recepcao');
+    // Fila não muda, MAS a IA sai da conversa: na Recepção a IA também responde,
+    // então sem este freio ela falaria por cima do atendimento humano.
+    expect(row.aiDisabled).toBe(true);
+    expect(row.pendingAiResponse).toBe(false);
+  });
+
+  it('resposta humana desliga a IA da conversa e o toggle religa', async () => {
+    vi.mocked(uazapiClient.sendMessage).mockResolvedValueOnce({
+      messageId: 'uazapi-out-rec-02',
+      rawPayload: {},
+    });
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000050038' });
+    const conv = await createConversation({
+      phone: '11000050038',
+      leadId: lead.id,
+      queue: 'recepcao',
+    });
+
+    await request(app)
+      .post(`/api/conversations/${conv.id}/messages`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'text', body: 'pode deixar que eu assumo' });
+
+    let [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.aiDisabled).toBe(true);
+
+    // Caminho de volta: atendente devolve a conversa pra IA.
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/ai`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ enabled: true });
+    expect(res.status).toBe(200);
+    expect(res.body.aiDisabled).toBe(false);
+
+    [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.aiDisabled).toBe(false);
   });
 
   it('envia mídia: mediaUrl obrigatório, body opcional', async () => {

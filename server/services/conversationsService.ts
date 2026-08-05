@@ -201,6 +201,7 @@ export async function listConversations(input: ListInput): Promise<{
       enteredQueueAt: r.conv.enteredQueueAt?.toISOString() ?? null,
       hasAiHandoff: r.conv.handoffSummary != null && r.conv.handoffSummary.trim().length > 0,
       handoffSummary: r.conv.handoffSummary ?? null,
+      aiDisabled: r.conv.aiDisabled,
       createdAt: r.conv.createdAt.toISOString(),
       updatedAt: r.conv.updatedAt.toISOString(),
     };
@@ -457,6 +458,48 @@ export async function changeQueue(
   return loadAndReturn(id, currentUserId);
 }
 
+/**
+ * Liga/desliga a IA nesta conversa (o freio fino, independente da fila).
+ *
+ * Desligar acontece sozinho quando alguém do time responde pela Inbox; este
+ * endpoint existe pro caminho de volta — atendente respondeu por engano, ou
+ * terminou e quer devolver a conversa pra IA.
+ *
+ * Religar com o último inbound sem resposta enfileira pro aiPendingWorker (mesma
+ * lógica do "Mover pra IA"): senão a IA só voltaria a falar na PRÓXIMA mensagem
+ * do cliente.
+ */
+export async function setConversationAi(
+  id: string,
+  enabled: boolean,
+  currentUserId: string,
+): Promise<PublicConversation> {
+  const patch: Partial<typeof conversations.$inferInsert> = {
+    aiDisabled: !enabled,
+    updatedAt: new Date(),
+  };
+
+  if (enabled) {
+    const [last] = await db
+      .select({ direction: messages.direction })
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(desc(messages.sentAt))
+      .limit(1);
+    if (last?.direction === 'in') patch.pendingAiResponse = true;
+  } else {
+    patch.pendingAiResponse = false;
+  }
+
+  const [updated] = await db
+    .update(conversations)
+    .set(patch)
+    .where(eq(conversations.id, id))
+    .returning({ id: conversations.id });
+  if (!updated) throw new HttpError(404, 'Conversation not found');
+  return loadAndReturn(id, currentUserId);
+}
+
 export async function closeConversation(
   id: string,
   currentUserId: string,
@@ -609,6 +652,12 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
       assignedTo: conv.assignedTo ?? input.userId,
       status: conv.assignedTo ? conv.status : 'em_atendimento',
       updatedAt: new Date(),
+      // Humano do time respondeu → IA sai desta conversa (qualquer fila). Vale
+      // pra Recepção, onde a conversa NÃO muda de fila e portanto a fila sozinha
+      // não impediria a IA de responder por cima do atendimento. Religável pelo
+      // cabeçalho do chat (setConversationAi).
+      aiDisabled: true,
+      pendingAiResponse: false,
     };
 
     // Handoff automático IA → COMERCIAL: quando alguém do Inside Sales responde
@@ -1097,6 +1146,9 @@ async function sendFirstHsmTemplate(args: {
         lastMessageAt: sentAt,
         assignedTo: conv?.assignedTo ?? args.userId,
         status: conv?.assignedTo ? conv.status : 'em_atendimento',
+        // Envio de HSM pela Inbox também é humano assumindo a conversa.
+        aiDisabled: true,
+        pendingAiResponse: false,
         updatedAt: new Date(),
       })
       .where(eq(conversations.id, args.conversationId));

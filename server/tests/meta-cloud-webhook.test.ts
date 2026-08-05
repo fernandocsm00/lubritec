@@ -32,12 +32,23 @@ vi.mock('../services/whatsapp/metaCloud/client', () => ({
   },
 }));
 
+// A IA roda em fire-and-forget dentro do webhook — mockamos pra observar a
+// CHAMADA sem depender do Gemini. recordAiCall e o resto do modulo seguem reais.
+const processInboundWithAiMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ status: 'ai_disabled' as const }),
+);
+vi.mock('../services/aiAtendimento', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/aiAtendimento')>()),
+  processInboundWithAi: processInboundWithAiMock,
+}));
+
 const app = createApp();
 
 const APP_SECRET = 'test-app-secret';
 const VERIFY_TOKEN = 'test-verify-token-very-long-string';
 
 beforeEach(async () => {
+  processInboundWithAiMock.mockClear();
   process.env.WHATSAPP_CREDENTIALS_KEY = crypto.randomBytes(32).toString('hex');
   _resetKeyCache();
   await db.delete(messages); await db.delete(conversations);
@@ -168,6 +179,54 @@ describe('POST /api/whatsapp/webhook/meta/:instanceId (events)', () => {
     expect(msg.mediaUrl).toMatch(/^\/uploads\/inbound\//);
     expect(msg.mediaUrl).not.toContain('lookaside');
     expect(msg.mediaMime).toBe('image/jpeg');
+  });
+});
+
+describe('gatilho da IA no inbound Meta Cloud', () => {
+  async function postFixture(instanceId: string, fixture: unknown) {
+    const body = JSON.stringify(fixture);
+    return request(app)
+      .post(`/api/whatsapp/webhook/meta/${instanceId}`)
+      .set('X-Hub-Signature-256', signBody(body, APP_SECRET))
+      .set('Content-Type', 'application/json')
+      .send(body);
+  }
+
+  it('dispara processInboundWithAi pra mensagem de texto', async () => {
+    // Regressao: o webhook da Meta so ingeria a mensagem e nunca acionava a IA
+    // (so o webhook da UazAPI acionava). Como a linha Meta eh a padrao e a que
+    // faz os disparos, na pratica a IA nunca respondia quem respondia campanha.
+    const row = await seedMetaInstance();
+    const res = await postFixture(row.id, textFixture);
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 250));
+
+    expect(processInboundWithAiMock).toHaveBeenCalledTimes(1);
+    const [conv] = await db.select().from(conversations);
+    const [lead] = await db.select().from(leads);
+    expect(processInboundWithAiMock).toHaveBeenCalledWith({
+      conversationId: conv.id,
+      leadId: lead.id,
+      phone: '5511988887777',
+      inboundText: 'Olá Lubritec',
+    });
+  });
+
+  it('não dispara pra mídia (IA só processa texto)', async () => {
+    const row = await seedMetaInstance();
+    const res = await postFixture(row.id, imageFixture);
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(processInboundWithAiMock).not.toHaveBeenCalled();
+  });
+
+  it('não dispara de novo em webhook duplicado (mesmo wamid)', async () => {
+    const row = await seedMetaInstance();
+    await postFixture(row.id, textFixture);
+    await new Promise((r) => setTimeout(r, 250));
+    await postFixture(row.id, textFixture);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(processInboundWithAiMock).toHaveBeenCalledTimes(1);
   });
 });
 
