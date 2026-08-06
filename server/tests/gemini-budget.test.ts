@@ -47,6 +47,32 @@ describe('extractBudgetFromImage', () => {
     expect(r).toBeNull();
   });
 
+  it('desliga o thinking do 2.5 Flash e deixa teto de saída pro JSON', async () => {
+    // BUG DE PRODUÇÃO (06/08): o modelo vem com thinking LIGADO por padrão e os
+    // tokens de raciocínio saem do mesmo maxOutputTokens. Com o teto antigo de
+    // 200, o modelo gastava tudo pensando e devolvia texto VAZIO com
+    // finishReason MAX_TOKENS — 97 imagens enviadas, 0 detecções, nenhum erro
+    // no log. O JSON de resposta tem ~40 tokens; o teto existe só como limite
+    // de segurança, não como orçamento apertado.
+    mockGeminiJson({ ehOrcamento: true, total: 100, rotulo: 'Total' });
+
+    await extractBudgetFromImage(Buffer.from('img'), 'image/png');
+
+    const { config } = generateContentMock.mock.calls[0][0];
+    expect(config.thinkingConfig?.thinkingBudget).toBe(0);
+    expect(config.maxOutputTokens).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('devolve null quando a resposta vem vazia', async () => {
+    // Foi exatamente esse o sintoma do teto estourado. Tem que continuar
+    // devolvendo null sem lançar, mesmo depois do fix.
+    generateContentMock.mockResolvedValueOnce({ text: '' });
+
+    const r = await extractBudgetFromImage(Buffer.from('img'), 'image/jpeg');
+
+    expect(r).toBeNull();
+  });
+
   it('devolve null quando o JSON vem malformado', async () => {
     generateContentMock.mockResolvedValueOnce({ text: 'desculpe, não consegui ler' });
 

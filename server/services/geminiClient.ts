@@ -163,11 +163,29 @@ export async function extractBudgetFromImage(
           { inlineData: { mimeType, data: image.toString('base64') } },
         ],
       }],
-      config: { temperature: 0, maxOutputTokens: 200 },
+      config: {
+        temperature: 0,
+        // O 2.5 Flash vem com thinking LIGADO por padrao e os tokens de
+        // raciocinio saem do mesmo maxOutputTokens. Com teto apertado o modelo
+        // gasta tudo pensando e devolve texto VAZIO (finishReason MAX_TOKENS) —
+        // foi o que manteve a deteccao 100% muda em producao. Aqui a tarefa e
+        // leitura direta de um campo, entao thinking nao agrega: desligamos e
+        // deixamos o teto folgado (a resposta tem ~40 tokens).
+        thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json',
+      },
     });
     raw = response.text ?? '';
   } catch (err) {
     console.warn('[budget] Gemini falhou:', err instanceof Error ? err.message : err);
+    return null;
+  }
+
+  // Nunca deve acontecer com o teto atual, mas se acontecer tem que aparecer no
+  // log — foi o silencio aqui que escondeu o bug do teto por um dia inteiro.
+  if (!raw.trim()) {
+    console.warn('[budget] Gemini devolveu resposta vazia — verifique maxOutputTokens/thinking.');
     return null;
   }
 
