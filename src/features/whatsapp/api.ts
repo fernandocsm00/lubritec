@@ -81,6 +81,28 @@ export function fetchConversationByLead(leadId: string) {
 
 export interface MessagesResult { items: PublicMessage[]; hasMore: boolean }
 
+/**
+ * Página anterior a `before` (sentAt da mensagem mais antiga já carregada).
+ *
+ * Imperativa de propósito: o histórico é acumulado no Thread e NUNCA repolled.
+ * Mensagem antiga não muda, e refazer essas páginas junto com o polling de 5s
+ * multiplicaria a carga por conversa longa aberta — além de abrir buraco na
+ * thread quando a janela viva desliza (ver mergeMessages).
+ */
+export function fetchOlderMessages(
+  conversationId: string,
+  before: string,
+  beforeId: string,
+) {
+  // O cursor é o par (sentAt, id): lote gravado no mesmo segundo faria um
+  // cursor só de timestamp pular as mensagens irmãs da borda da página.
+  const qs = `before=${encodeURIComponent(before)}&beforeId=${encodeURIComponent(beforeId)}`;
+  return api<MessagesResult>(`/conversations/${conversationId}/messages?${qs}`);
+}
+
+/**
+ * Página "viva": as 50 mensagens mais recentes, com polling.
+ */
 export function useMessages(conversationId: string | null) {
   return useQuery({
     queryKey: ['messages', conversationId],
