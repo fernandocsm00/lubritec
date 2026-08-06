@@ -293,9 +293,22 @@ export async function getConversationById(
 
 const MESSAGE_PAGE_SIZE = 50;
 
+/**
+ * Pagina as mensagens da conversa, da mais recente pra mais antiga.
+ *
+ * O cursor é o par (sentAt, id), não só o timestamp: o webhook grava lotes
+ * inteiros no MESMO segundo e, quando a borda da página cai no meio de um lote,
+ * um cursor só de timestamp pula as irmãs que ficaram de fora — elas somem da
+ * conversa sem deixar rastro. O `id` no ORDER BY também é o que torna a ordem
+ * estável entre requisições; sem ele o polling reordena as bolhas sozinho.
+ *
+ * `beforeId` é opcional por retrocompatibilidade: sem ele o cursor degrada pro
+ * comportamento antigo (só timestamp).
+ */
 export async function listMessages(
   conversationId: string,
   before?: Date,
+  beforeId?: string,
 ): Promise<{ items: PublicMessage[]; hasMore: boolean }> {
   // Confirma que a conversa existe
   const conv = await db
@@ -306,7 +319,13 @@ export async function listMessages(
   if (!conv.length) throw new HttpError(404, 'Conversation not found');
 
   const conds: SQL[] = [eq(messages.conversationId, conversationId)];
-  if (before) conds.push(lt(messages.sentAt, before));
+  if (before) {
+    conds.push(
+      beforeId
+        ? sql`(${messages.sentAt}, ${messages.id}) < (${before.toISOString()}::timestamptz, ${beforeId}::uuid)`
+        : lt(messages.sentAt, before),
+    );
+  }
 
   const rows = await db
     .select({
@@ -321,7 +340,7 @@ export async function listMessages(
     .from(messages)
     .leftJoin(users, eq(messages.sentByUserId, users.id))
     .where(and(...conds))
-    .orderBy(desc(messages.sentAt))
+    .orderBy(desc(messages.sentAt), desc(messages.id))
     .limit(MESSAGE_PAGE_SIZE + 1);
 
   const hasMore = rows.length > MESSAGE_PAGE_SIZE;

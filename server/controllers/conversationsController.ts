@@ -92,13 +92,15 @@ export async function byLeadHandler(req: Request, res: Response, next: NextFunct
 
 const messagesQuery = z.object({
   before: z.string().datetime().optional(),
+  // Segunda metade do cursor — desempata mensagens gravadas no mesmo instante.
+  beforeId: z.string().uuid().optional(),
 });
 
 export async function listMessagesHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = idParams.parse(req.params);
-    const { before } = messagesQuery.parse(req.query);
-    const result = await listMessages(id, before ? new Date(before) : undefined);
+    const { before, beforeId } = messagesQuery.parse(req.query);
+    const result = await listMessages(id, before ? new Date(before) : undefined, beforeId);
     res.json(result);
   } catch (e) { next(e); }
 }
