@@ -106,7 +106,11 @@ export function useDealByLead(leadId: string | null) {
     queryKey: ['deals', 'by-lead', leadId],
     queryFn: () => api<PublicDeal | null>(`/deals/by-lead/${leadId}`),
     enabled: !!leadId,
-    staleTime: 30_000,
+    // A leitura do print de orçamento roda em background depois do envio e
+    // escreve valor + etapa direto no card. Sem polling o vendedor mandaria o
+    // orçamento e o painel continuaria mostrando o estado velho.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 
