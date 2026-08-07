@@ -68,4 +68,13 @@ describe('businessMinutesBetween', () => {
     expect(businessMinutesBetween(brt('2026-08-05T09:00'), brt('2026-08-05T17:00'), vazio))
       .toBe(0);
   });
+
+  it('span absurdo é truncado pelo teto do loop, sem estourar', () => {
+    // O teto de 400 iterações existe pra que um bug de avanço de cursor não vire
+    // loop infinito dentro do watchdog. Pendência real nunca chega perto disso;
+    // o que importa é que o retorno seja finito e a função não lance.
+    const r = businessMinutesBetween(brt('2020-01-01T09:00'), brt('2026-08-05T09:00'), CFG);
+    expect(Number.isFinite(r)).toBe(true);
+    expect(r).toBeGreaterThan(0);
+  });
 });

@@ -144,14 +144,17 @@ function offsetMinutes(d: Date, timeZone: string): number {
 function localToUtc(
   year: number, month: number, day: number, hour: number, timeZone: string,
 ): Date {
-  // Primeira estimativa com o offset do meio-dia daquele dia (evita a borda de
-  // meia-noite), depois corrige com o offset do proprio instante estimado.
   // `hour` pode vir como 24 (meia-noite do dia seguinte, usado pelo loop
   // abaixo pra avancar o cursor) — Date.UTC rola isso corretamente pro
   // proximo dia, entao nao precisa de tratamento especial aqui.
+  const alvoUtc = Date.UTC(year, month - 1, day, hour, 0, 0);
+  // Primeira estimativa com o offset do meio-dia daquele dia — meio-dia evita a
+  // borda de meia-noite, onde transicoes de horario de verao acontecem.
   const noonGuess = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const off = offsetMinutes(noonGuess, timeZone);
-  return new Date(Date.UTC(year, month - 1, day, hour, 0, 0) - off * 60_000);
+  const estimado = new Date(alvoUtc - offsetMinutes(noonGuess, timeZone) * 60_000);
+  // Segundo passe: o offset que vale e o do proprio instante estimado. Sem ele,
+  // um dia de transicao de DST erra a abertura/fechamento pela delta inteira.
+  return new Date(alvoUtc - offsetMinutes(estimado, timeZone) * 60_000);
 }
 
 /**
@@ -183,17 +186,17 @@ export function businessMinutesBetween(
     const p = partsIn(cursor, cfg.timeZone);
 
     if (cfg.days.includes(p.isoWeekday)) {
-      const abre = localToUtc(p.year, p.month, p.day, cfg.startHour, cfg.timeZone);
-      const fecha = localToUtc(p.year, p.month, p.day, cfg.endHour, cfg.timeZone);
-      const ini = Math.max(abre.getTime(), from.getTime());
-      const fim = Math.min(fecha.getTime(), to.getTime());
-      if (fim > ini) total += (fim - ini) / 60_000;
+      const opensAt = localToUtc(p.year, p.month, p.day, cfg.startHour, cfg.timeZone);
+      const closesAt = localToUtc(p.year, p.month, p.day, cfg.endHour, cfg.timeZone);
+      const windowStart = Math.max(opensAt.getTime(), from.getTime());
+      const windowEnd = Math.min(closesAt.getTime(), to.getTime());
+      if (windowEnd > windowStart) total += (windowEnd - windowStart) / 60_000;
     }
 
     // Proximo dia local, a partir da meia-noite seguinte.
-    const proximo = localToUtc(p.year, p.month, p.day, 24, cfg.timeZone);
-    if (proximo.getTime() >= to.getTime()) break;
-    cursor = proximo;
+    const nextDay = localToUtc(p.year, p.month, p.day, 24, cfg.timeZone);
+    if (nextDay.getTime() >= to.getTime()) break;
+    cursor = nextDay;
   }
 
   return Math.round(total);
