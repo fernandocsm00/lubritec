@@ -950,7 +950,7 @@ export interface DashboardSummary {
 
 export type DashboardAttentionKind =
   | 'proposal_old'
-  | 'conv_expired'
+  | 'pending_reply'
   | 'deal_stale'
   | 'queue_pending';
 

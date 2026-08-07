@@ -38,18 +38,27 @@ describe('dashboardService.attention', () => {
     expect(item?.count).toBe(1);
   });
 
-  it('counts conv_expired (>24h since last inbound AND no outbound after, status != encerrada)', async () => {
-    const lead1 = await createLead({});
-    const lead2 = await createLead({});
-    const lead3 = await createLead({});
-    // Expired: inbound 2d ago, no outbound since (lastMessageAt = inbound)
-    await createConversation({ leadId: lead1.id, status: 'em_atendimento', lastInboundAt: ago(2), lastMessageAt: ago(2) });
-    // Not expired: inbound recent
-    await createConversation({ leadId: lead2.id, status: 'em_atendimento', lastInboundAt: ago(0.5), lastMessageAt: ago(0.5) });
-    // Not expired: inbound 2d ago BUT we replied (lastMessageAt > lastInboundAt)
-    await createConversation({ leadId: lead3.id, status: 'em_atendimento', lastInboundAt: ago(2), lastMessageAt: ago(1) });
-    const r = await attention({ view: 'org' });
-    const item = r.items.find((i) => i.kind === 'conv_expired');
+  it('conta conversa aguardando resposta nossa, não conversa antiga já respondida', async () => {
+    // A regra virou "a bola está com a gente". Conversa cujo último inbound é
+    // velho MAS que já respondemos não é problema de ninguém.
+    const lead = await createLead({ phone: '5511970000001' });
+    await createConversation({
+      phone: '5511970000001', leadId: lead.id, queue: 'comercial',
+      status: 'em_atendimento',
+      lastInboundAt: new Date('2026-08-01T12:00:00Z'),
+      lastMessageAt: new Date('2026-08-01T13:00:00Z'),   // respondida
+    });
+    const lead2 = await createLead({ phone: '5511970000002' });
+    await createConversation({
+      phone: '5511970000002', leadId: lead2.id, queue: 'comercial',
+      status: 'em_atendimento',
+      lastInboundAt: new Date('2026-08-01T12:00:00Z'),
+      lastMessageAt: new Date('2026-08-01T12:00:00Z'),   // esperando
+    });
+
+    const res = await attention({ view: 'org' });
+    const item = res.items.find((i) => i.kind === 'pending_reply');
+
     expect(item?.count).toBe(1);
   });
 
