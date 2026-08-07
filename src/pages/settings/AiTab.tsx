@@ -13,7 +13,7 @@ type FormState = Pick<PublicOrgSettings,
   | 'aiTargetAudience' | 'aiTone' | 'aiObjective' | 'aiDontTalk' | 'aiAlwaysAsk'
   | 'aiQualifyWhen' | 'aiBusinessHours' | 'aiAfterHoursMsg'
   | 'aiBusinessHoursStart' | 'aiBusinessHoursEnd' | 'aiBusinessHoursDays' | 'ai24x7'
-  | 'aiAutoReplyWindowSeconds'>;
+  | 'aiAutoReplyWindowSeconds' | 'pendingReplyAlertMin' | 'pendingReplyEscalateMin'>;
 
 // Labels human-friendly pros campos que aparecem em erro de validacao.
 // Cobre todos os campos editaveis em AiTab + os de horario comercial.
@@ -35,6 +35,8 @@ const FIELD_LABELS: Record<string, string> = {
   aiBusinessHoursDays: 'Dias da semana (ISO)',
   ai24x7: 'IA 24/7',
   aiAutoReplyWindowSeconds: 'Janela de auto-reply (segundos)',
+  pendingReplyAlertMin: 'Alertar quando o cliente esperar (minutos)',
+  pendingReplyEscalateMin: 'Escalar para o gestor após (minutos)',
 };
 
 const EMPTY: FormState = {
@@ -56,6 +58,8 @@ const EMPTY: FormState = {
   aiBusinessHoursDays: '1,2,3,4,5',
   ai24x7: false,
   aiAutoReplyWindowSeconds: 15,
+  pendingReplyAlertMin: 60,
+  pendingReplyEscalateMin: 180,
 };
 
 export default function AiTab() {
@@ -89,6 +93,8 @@ export default function AiTab() {
           aiBusinessHoursDays: s.aiBusinessHoursDays,
           ai24x7: s.ai24x7,
           aiAutoReplyWindowSeconds: s.aiAutoReplyWindowSeconds,
+          pendingReplyAlertMin: s.pendingReplyAlertMin,
+          pendingReplyEscalateMin: s.pendingReplyEscalateMin,
         });
         setLoaded(true);
       })
@@ -266,6 +272,35 @@ export default function AiTab() {
             Resposta que chega em menos desse tempo após o disparo é tratada como auto-responder:
             a IA responde, mas <strong>não</strong> passa a conversa pro Comercial — só passa quando
             vier uma resposta genuína (acima do limite). 0 desliga o filtro.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="pending-reply-alert-min">Alertar quando o cliente esperar (minutos)</Label>
+            <Input
+              id="pending-reply-alert-min"
+              type="number"
+              min={1}
+              max={1440}
+              className="max-w-[140px]"
+              value={form.pendingReplyAlertMin}
+              onChange={(e) => patch('pendingReplyAlertMin', Number(e.target.value) || 0)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="pending-reply-escalate-min">Escalar para o gestor após (minutos)</Label>
+            <Input
+              id="pending-reply-escalate-min"
+              type="number"
+              min={1}
+              max={1440}
+              className="max-w-[140px]"
+              value={form.pendingReplyEscalateMin}
+              onChange={(e) => patch('pendingReplyEscalateMin', Number(e.target.value) || 0)}
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground sm:col-span-2">
+            Conta apenas horário comercial, configurado acima.
           </p>
         </div>
         <div>

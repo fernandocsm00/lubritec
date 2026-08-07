@@ -28,6 +28,8 @@ const putBody = z.object({
   aiAutoReplyWindowSeconds: z.number().int().min(0).max(300).optional(),
   aiBusinessHoursDays: z.string().regex(/^[1-7](,[1-7])*$/).optional(),
   ai24x7: z.boolean().optional(),
+  pendingReplyAlertMin: z.number().int().positive().max(1440).optional(),
+  pendingReplyEscalateMin: z.number().int().positive().max(1440).optional(),
 });
 
 const testPromptBody = z.object({

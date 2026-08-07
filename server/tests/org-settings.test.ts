@@ -75,4 +75,32 @@ describe('org-settings HTTP', () => {
       .set('Authorization', `Bearer ${token}`).send({ monthlySalesGoal: -5 });
     expect(r.status).toBe(400);
   });
+
+  it('aceita e persiste os limiares de pendência de resposta', async () => {
+    const app = createApp();
+    const u = await createUser({ role: 'admin' });
+    const token = signAccessToken({ userId: u.id, role: u.role });
+
+    const res = await request(app)
+      .put('/api/org-settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pendingReplyAlertMin: 45, pendingReplyEscalateMin: 120 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.pendingReplyAlertMin).toBe(45);
+    expect(res.body.pendingReplyEscalateMin).toBe(120);
+  });
+
+  it('rejeita limiar não positivo', async () => {
+    const app = createApp();
+    const u = await createUser({ role: 'admin' });
+    const token = signAccessToken({ userId: u.id, role: u.role });
+
+    const res = await request(app)
+      .put('/api/org-settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pendingReplyAlertMin: 0 });
+
+    expect(res.status).toBe(400);
+  });
 });

@@ -29,6 +29,8 @@ function toPublic(row: OrgSettings): PublicOrgSettings {
     dispatchEndHour: row.dispatchEndHour,
     dispatchSkipWeekends: row.dispatchSkipWeekends,
     dispatchTimezone: row.dispatchTimezone,
+    pendingReplyAlertMin: row.pendingReplyAlertMin,
+    pendingReplyEscalateMin: row.pendingReplyEscalateMin,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -96,6 +98,18 @@ export async function updateOrgSettings(
       throw new HttpError(400, 'aiAutoReplyWindowSeconds deve estar entre 0 e 300');
     }
     patch.aiAutoReplyWindowSeconds = input.aiAutoReplyWindowSeconds;
+  }
+  if (input.pendingReplyAlertMin !== undefined) {
+    if (input.pendingReplyAlertMin <= 0 || input.pendingReplyAlertMin > 1440) {
+      throw new HttpError(400, 'pendingReplyAlertMin deve estar entre 1 e 1440');
+    }
+    patch.pendingReplyAlertMin = input.pendingReplyAlertMin;
+  }
+  if (input.pendingReplyEscalateMin !== undefined) {
+    if (input.pendingReplyEscalateMin <= 0 || input.pendingReplyEscalateMin > 1440) {
+      throw new HttpError(400, 'pendingReplyEscalateMin deve estar entre 1 e 1440');
+    }
+    patch.pendingReplyEscalateMin = input.pendingReplyEscalateMin;
   }
 
   const [row] = await db
