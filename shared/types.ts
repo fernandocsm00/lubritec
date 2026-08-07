@@ -333,7 +333,7 @@ export interface ConversationCounts {
   comercial: number;
   /** Conversas com mensagem não-lida (pendentes), não encerradas. */
   unread: number;
-  /** Conversas em que a última mensagem é do cliente e ninguém automático responde. */
+  /** Conversas em que a última mensagem é do cliente e ainda não houve resposta nossa. */
   awaitingUs: number;
 }
 
