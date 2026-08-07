@@ -196,32 +196,32 @@ function IssueRow({ issue }: { issue: Issue }) {
 
 const ATTENTION_COPY: Record<DashboardAttentionItem['kind'], (n: number) => string> = {
   proposal_old:  (n) => `${n} ${n === 1 ? 'proposta' : 'propostas'} há +14 dias sem retorno`,
-  conv_expired:  (n) => `${n} ${n === 1 ? 'conversa expirou' : 'conversas expiraram'} (>24h sem resposta)`,
+  pending_reply: (n) => `${n} ${n === 1 ? 'conversa está' : 'conversas estão'} aguardando nossa resposta`,
   deal_stale:    (n) => `${n} ${n === 1 ? 'deal parado' : 'deals parados'} há +5 dias`,
   queue_pending: (n) => `${n} ${n === 1 ? 'conversa aguardando' : 'conversas aguardando'} no comercial`,
 };
 
 const ATTENTION_CTA: Record<DashboardAttentionItem['kind'], string> = {
   proposal_old: 'Abrir lista',
-  conv_expired: 'Abrir inbox',
+  pending_reply:'Abrir inbox',
   deal_stale:   'Abrir kanban',
   queue_pending:'Atender',
 };
 
 const ICON_BY_KIND: Record<DashboardAttentionItem['kind'], React.ReactNode> = {
   proposal_old:  <Clock className="h-4 w-4" />,
-  conv_expired:  <AlertTriangle className="h-4 w-4" />,
+  pending_reply: <AlertTriangle className="h-4 w-4" />,
   deal_stale:    <Clock className="h-4 w-4" />,
   queue_pending: <Inbox className="h-4 w-4" />,
 };
 
 /**
- * Backend manda filter genericos (ex: { expired24h: true, status: 'aguardando_atendimento' })
+ * Backend manda filter genericos (ex: { awaitingUs: true, status: 'aguardando_atendimento' })
  * mas o WhatsappPage le statusChips=<keys> (convenção de URL diferente). Faz a
  * traducao aqui pra que o link aplique o filtro de fato ao chegar na Inbox.
  *
  * Tabela de traducao (so /whatsapp; outras rotas passam filter cru):
- *  - expired24h=true                 -> statusChips=expirada
+ *  - awaitingUs=true                 -> statusChips=aguardando_nos
  *  - noResponse=true                 -> statusChips=sem_retorno
  *  - status=aguardando_atendimento   -> statusChips=aguardando
  *  - status=em_atendimento           -> statusChips=em_atendimento
@@ -242,7 +242,7 @@ function buildAttentionHref(item: DashboardAttentionItem): string {
   const params = new URLSearchParams();
   const statusChips: string[] = [];
   for (const [k, v] of Object.entries(item.filter)) {
-    if (k === 'expired24h' && v) statusChips.push('expirada');
+    if (k === 'awaitingUs' && v) statusChips.push('aguardando_nos');
     else if (k === 'noResponse' && v) statusChips.push('sem_retorno');
     else if (k === 'status') {
       const s = String(v);

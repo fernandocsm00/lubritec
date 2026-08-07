@@ -167,7 +167,7 @@ function RevenueCard({ kpis, goal }: { kpis: DashboardKpis | undefined; goal: Da
 
 function NowCard({ whatsapp, attention }: { whatsapp: DashboardWhatsappStats | undefined; attention: DashboardAttentionResponse | undefined }) {
   const inQueue = whatsapp?.inQueue ?? 0;
-  const expired24h = whatsapp?.expired24h ?? 0;
+  const awaitingUs = whatsapp?.awaitingUs ?? 0;
   const noResponseToday = whatsapp?.noResponseToday ?? 0;
   const queuePending = attention?.items.find((i) => i.kind === 'queue_pending')?.count ?? 0;
 
@@ -201,10 +201,10 @@ function NowCard({ whatsapp, attention }: { whatsapp: DashboardWhatsappStats | u
         />
         <NowRow
           icon={<Users className="h-4 w-4" />}
-          label="Expiradas 24h"
-          value={expired24h}
-          tone={expired24h === 0 ? 'muted' : 'destructive'}
-          href="/whatsapp?statusChips=expirada&assignment=all&origin=organic,campaign"
+          label="Aguardando nós"
+          value={awaitingUs}
+          tone={awaitingUs === 0 ? 'muted' : 'destructive'}
+          href="/whatsapp?statusChips=aguardando_nos&assignment=all&origin=organic,campaign"
         />
       </div>
     </div>

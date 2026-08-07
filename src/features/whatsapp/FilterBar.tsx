@@ -3,10 +3,10 @@ import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import { UF_VALUES, type ConversationStatus, type OriginKind, type Uf } from '@shared/types';
 
-const STATUS_OPTIONS: { key: 'aguardando' | 'em_atendimento' | 'expirada' | 'sem_retorno' | 'encerrada'; label: string }[] = [
+const STATUS_OPTIONS: { key: 'aguardando' | 'em_atendimento' | 'aguardando_nos' | 'sem_retorno' | 'encerrada'; label: string }[] = [
   { key: 'aguardando', label: 'Aguardando' },
   { key: 'em_atendimento', label: 'Em atendimento' },
-  { key: 'expirada', label: 'Expiradas 24h' },
+  { key: 'aguardando_nos', label: 'Aguardando nós' },
   { key: 'sem_retorno', label: 'Sem retorno' },
   { key: 'encerrada', label: 'Encerradas' },
 ];
@@ -33,6 +33,7 @@ interface Props {
   onAssignmentChange: (a: 'mine' | 'unassigned' | 'all') => void;
   origins: OriginKind[];
   onOriginsChange: (o: OriginKind[]) => void;
+  awaitingUsCount?: number;
 }
 
 export function FilterBar(props: Props) {
@@ -68,7 +69,9 @@ export function FilterBar(props: Props) {
             active={props.statusKeys.includes(s.key)}
             onClick={() => props.onStatusToggle(s.key)}
           >
-            {s.label}
+            {s.key === 'aguardando_nos' && props.awaitingUsCount
+              ? `${s.label} (${props.awaitingUsCount})`
+              : s.label}
           </Chip>
         ))}
       </div>
@@ -129,16 +132,16 @@ function Chip({
 // Helper para converter a tecla do chip de status nos filtros do backend.
 export function statusChipsToFilters(keys: string[]): {
   status?: ConversationStatus[];
-  expired24h?: boolean;
+  awaitingUs?: boolean;
   noResponse?: boolean;
 } {
-  const result: { status?: ConversationStatus[]; expired24h?: boolean; noResponse?: boolean } = {};
+  const result: { status?: ConversationStatus[]; awaitingUs?: boolean; noResponse?: boolean } = {};
   const statusList: ConversationStatus[] = [];
   if (keys.includes('aguardando')) statusList.push('aguardando_atendimento');
   if (keys.includes('em_atendimento')) statusList.push('em_atendimento');
   if (keys.includes('encerrada')) statusList.push('encerrada');
   if (statusList.length) result.status = statusList;
-  if (keys.includes('expirada')) result.expired24h = true;
+  if (keys.includes('aguardando_nos')) result.awaitingUs = true;
   if (keys.includes('sem_retorno')) result.noResponse = true;
   return result;
 }

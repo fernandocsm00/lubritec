@@ -4,21 +4,21 @@ import { AlertTriangle, Clock, Inbox } from 'lucide-react';
 
 const COPY: Record<DashboardAttentionItem['kind'], (n: number) => string> = {
   proposal_old:  (n) => `${n} ${n === 1 ? 'proposta' : 'propostas'} há +14 dias sem retorno`,
-  conv_expired:  (n) => `${n} ${n === 1 ? 'conversa expirou' : 'conversas expiraram'} (>24h sem resposta)`,
+  pending_reply: (n) => `${n} ${n === 1 ? 'conversa está' : 'conversas estão'} aguardando nossa resposta`,
   deal_stale:    (n) => `${n} ${n === 1 ? 'deal parado' : 'deals parados'} há +5 dias`,
   queue_pending: (n) => `${n} ${n === 1 ? 'conversa aguardando' : 'conversas aguardando'} no comercial`,
 };
 
 const CTA: Record<DashboardAttentionItem['kind'], string> = {
   proposal_old: 'Abrir lista',
-  conv_expired: 'Abrir inbox',
+  pending_reply:'Abrir inbox',
   deal_stale:   'Abrir kanban',
   queue_pending:'Abrir inbox',
 };
 
 const ICON: Record<DashboardAttentionItem['kind'], React.ComponentType<{ className?: string }>> = {
   proposal_old:  Clock,
-  conv_expired:  AlertTriangle,
+  pending_reply: AlertTriangle,
   deal_stale:    Clock,
   queue_pending: Inbox,
 };

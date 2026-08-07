@@ -8,7 +8,7 @@ import { Thread } from '@/features/whatsapp/Thread';
 import { ChatHeader } from '@/features/whatsapp/ChatHeader';
 import { LeadSidebar } from '@/features/whatsapp/LeadSidebar';
 import { NewConversationDialog } from '@/features/whatsapp/NewConversationDialog';
-import { useConversations, fetchConversationByLead } from '@/features/whatsapp/api';
+import { useConversations, useConversationCounts, fetchConversationByLead } from '@/features/whatsapp/api';
 import { useAuthStore } from '@/features/auth/store';
 import type { ConversationQueue, ConversationFilters, OriginKind } from '@/features/whatsapp/types';
 import type { Uf } from '@shared/types';
@@ -40,6 +40,7 @@ export default function WhatsappPage() {
   }), [queue, statusKeys.join(','), origins.join(','), assignment, uf, instanceId, q]);
 
   const { data: convsData } = useConversations(filters);
+  const { data: counts } = useConversationCounts(instanceId);
   const selectedConv = convsData?.items.find((c) => c.id === selectedConvId) ?? null;
 
   // Deep-link: ?lead=<leadId> ou ?conv=<convId> pré-seleciona conversa.
@@ -147,6 +148,7 @@ export default function WhatsappPage() {
           onAssignmentChange={(a) => patch({ assignment: a === 'all' ? null : a })}
           origins={origins}
           onOriginsChange={(o) => patch({ origin: o.join(',') })}
+          awaitingUsCount={counts?.awaitingUs}
         />
         <ConversationList
           filters={filters}

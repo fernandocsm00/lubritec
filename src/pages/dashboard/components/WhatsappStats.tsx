@@ -45,7 +45,7 @@ export function WhatsappStats({ data }: { data: DashboardWhatsappStats }) {
       <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
         <Stat label="Em fila"            value={String(data.inQueue)} />
         <Stat label="Tempo méd. resp."   value={fmtSec(data.avgFirstResponseSec)} />
-        <Stat label="Expirados >24h"     value={String(data.expired24h)} />
+        <Stat label="Aguardando nós"     value={String(data.awaitingUs)} />
         <Stat label="Sem resposta hoje"  value={String(data.noResponseToday)} />
       </div>
     </div>

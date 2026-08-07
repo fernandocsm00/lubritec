@@ -21,7 +21,7 @@ function buildQuery(filters: ConversationFilters): string {
   const u = new URLSearchParams();
   if (filters.queue) u.set('queue', filters.queue);
   if (filters.status?.length) u.set('status', filters.status.join(','));
-  if (filters.expired24h) u.set('expired24h', 'true');
+  if (filters.awaitingUs) u.set('awaitingUs', 'true');
   if (filters.noResponse) u.set('noResponse', 'true');
   // Default true: Inbox esconde disparos sem resposta. Setado explicitamente
   // pra deixar comportamento claro no query string.

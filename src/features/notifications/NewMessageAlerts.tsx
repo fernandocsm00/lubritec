@@ -30,7 +30,8 @@ function playPing() {
 /**
  * Alerta global de nova mensagem no WhatsApp (app aberto): som + toast, e
  * notificação nativa do navegador quando a aba não está em foco. Reage às
- * notificações kind='new_message' que o backend emite. Montado no AppShell.
+ * notificações kind='new_message' e kind='pending_reply' que o backend emite.
+ * Montado no AppShell.
  */
 export function NewMessageAlerts() {
   const navigate = useNavigate();
@@ -46,7 +47,11 @@ export function NewMessageAlerts() {
   }, []);
 
   useEffect(() => {
-    const msgs = (data?.items ?? []).filter((n) => n.kind === 'new_message');
+    // 'pending_reply' entra aqui pra reaproveitar som + toast + pop-up nativo
+    // do navegador, que já existem e já pedem permissão.
+    const msgs = (data?.items ?? []).filter(
+      (n) => n.kind === 'new_message' || n.kind === 'pending_reply',
+    );
 
     // Primeira carga: marca tudo como visto (não alerta por notificações antigas).
     if (!initedRef.current) {
