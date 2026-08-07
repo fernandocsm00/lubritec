@@ -110,24 +110,38 @@ atual (ver §4).
 
 ### 2. Relógio comercial
 
-`org_settings` (singleton já existente) ganha:
+**O horário comercial já existe e é reaproveitado.** `org_settings` já tem
+`ai_business_hours_start` / `_end` / `_days` (CSV de ISO weekdays) e
+`dispatch_timezone`, e `server/lib/businessHours.ts` já os lê em
+`isAiBusinessHours()`. Criar um terceiro conjunto de campos de horário repetiria
+exatamente o erro que esta feature existe para corrigir — duas definições da
+mesma coisa divergindo em silêncio.
+
+Uma ressalva deliberada: **`ai_24x7` é ignorado** no relógio de pendência. Aquele
+campo diz "a IA responde a qualquer hora", não "os vendedores trabalham a
+qualquer hora". Ligá-lo não pode fazer o relógio humano correr de madrugada.
+
+`org_settings` ganha só os dois limiares (migration **043**, a mesma que cria a
+tabela do §4):
 
 | coluna | tipo | default |
 |---|---|---|
-| `business_days` | `int[]` | `{1,2,3,4,5}` (seg–sex, ISO) |
-| `business_start` | `time` | `08:00` |
-| `business_end` | `time` | `18:00` |
 | `pending_reply_alert_min` | `int` | `60` |
 | `pending_reply_escalate_min` | `int` | `180` |
 
-Timezone fixo em `America/Sao_Paulo` — a operação é de um estado só, e um campo
-configurável aqui seria mais superfície para errar do que valor.
-
-O cálculo vive em `server/lib/businessTime.ts` como **função pura**:
+O cálculo vive em `server/lib/businessHours.ts`, ao lado do helper existente,
+como **função pura**:
 
 ```ts
-businessMinutesBetween(from: Date, to: Date, cfg: BusinessHours): number
+businessMinutesBetween(from: Date, to: Date, cfg: BusinessHoursConfig): number
 ```
+
+`BusinessHoursConfig` é `{ startHour, endHour, days, timeZone }`, derivada das
+configurações por `businessConfigFromSettings()`. Essa função é tipada pela
+**forma** dos quatro campos que lê, não por `OrgSettings`: o projeto tem
+`getOrgSettings()` devolvendo `PublicOrgSettings` e `loadOrgSettingsRow()`
+devolvendo a row do Drizzle, e ambas precisam servir. A função de cálculo em si
+não conhece nenhuma das duas — é o que a mantém testável sem banco.
 
 É o coração da feature e onde os erros são silenciosos, então é o alvo de teste
 mais denso: mensagem dentro do expediente, mensagem depois do fechamento,
