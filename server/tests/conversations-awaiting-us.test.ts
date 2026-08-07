@@ -12,7 +12,12 @@ async function loginAs(email = 'c@x.com', password = 'pw12345') {
 }
 
 let seq = 0;
-async function conv(opts: { lastInboundAt: Date; lastMessageAt: Date; queue?: 'comercial' | 'ia' }) {
+async function conv(opts: {
+  lastInboundAt: Date;
+  lastMessageAt: Date;
+  queue?: 'comercial' | 'ia' | 'recepcao';
+  aiDisabled?: boolean;
+}) {
   seq += 1;
   const phone = `5511950${String(100000 + seq).slice(-6)}`;
   const lead = await createLead({ phone });
@@ -23,6 +28,7 @@ async function conv(opts: { lastInboundAt: Date; lastMessageAt: Date; queue?: 'c
     status: 'em_atendimento',
     lastInboundAt: opts.lastInboundAt,
     lastMessageAt: opts.lastMessageAt,
+    aiDisabled: opts.aiDisabled,
   });
 }
 
@@ -115,5 +121,39 @@ describe('GET /api/conversations?awaitingUs=true', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(counts.body.awaitingUs).toBe(lista.body.total);
+  });
+
+  it('fila ia com IA ligada: awaitingUsMinutes é null (a IA responde, não nós)', async () => {
+    const token = await loginAs('c6@x.com');
+    const naFilaIa = await conv({
+      lastInboundAt: new Date('2026-08-05T12:00:00Z'),
+      lastMessageAt: new Date('2026-08-05T12:00:00Z'),
+      queue: 'ia',
+      aiDisabled: false,
+    });
+
+    const res = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${token}`);
+
+    const item = res.body.items.find((c: { id: string }) => c.id === naFilaIa.id);
+    expect(item.awaitingUsMinutes).toBeNull();
+  });
+
+  it('fila recepcao com IA desligada na conversa: awaitingUsMinutes é um número', async () => {
+    const token = await loginAs('c7@x.com');
+    const recepcaoSemIa = await conv({
+      lastInboundAt: new Date('2026-08-05T12:00:00Z'),
+      lastMessageAt: new Date('2026-08-05T12:00:00Z'),
+      queue: 'recepcao',
+      aiDisabled: true,
+    });
+
+    const res = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${token}`);
+
+    const item = res.body.items.find((c: { id: string }) => c.id === recepcaoSemIa.id);
+    expect(typeof item.awaitingUsMinutes).toBe('number');
   });
 });

@@ -183,7 +183,7 @@ export async function listConversations(input: ListInput): Promise<{
 
   const settings = await getOrgSettings();
   const businessCfg = businessConfigFromSettings(settings);
-  const agora = new Date();
+  const now = new Date();
 
   const items: PublicConversation[] = rows.map((r) => {
     const lead = r.lead!;
@@ -216,7 +216,7 @@ export async function listConversations(input: ListInput): Promise<{
       lastMessageAt: r.conv.lastMessageAt.toISOString(),
       lastInboundAt: r.conv.lastInboundAt?.toISOString() ?? null,
       unreadCount: r.conv.unreadCount,
-      awaitingUsMinutes: awaitingUsMinutesFor(r.conv, businessCfg, agora),
+      awaitingUsMinutes: awaitingUsMinutesFor(r.conv, businessCfg, now),
       enteredQueueAt: r.conv.enteredQueueAt?.toISOString() ?? null,
       hasAiHandoff: r.conv.handoffSummary != null && r.conv.handoffSummary.trim().length > 0,
       handoffSummary: r.conv.handoffSummary ?? null,
@@ -236,27 +236,29 @@ export async function getConversationCounts(instanceId?: string): Promise<Conver
     ? sql`AND ${conversations.instanceId} = ${instanceId}`
     : sql``;
 
-  const rows = await db
-    .select({
-      queue: conversations.queue,
-      total: sql<number>`count(*)::int`,
-    })
-    .from(conversations)
-    .where(sql`${conversations.status} != 'encerrada'
-      AND (${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')
-      ${lineFilter}`)
-    .groupBy(conversations.queue);
-
-  // Pendentes: conversas com mensagem não-lida (não encerradas). Independe da fila.
-  const [{ unread }] = await db
-    .select({ unread: sql<number>`count(*)::int` })
-    .from(conversations)
-    .where(sql`${conversations.unreadCount} > 0 AND ${conversations.status} != 'encerrada' ${lineFilter}`);
-
-  const [{ awaiting }] = await db
-    .select({ awaiting: sql<number>`count(*)::int` })
-    .from(conversations)
-    .where(sql`${awaitingUsSql()} ${lineFilter}`);
+  // As três contagens são independentes entre si — rodam em paralelo pra não
+  // triplicar a latência deste endpoint, que é pollado por todo usuário logado.
+  const [rows, [{ unread }], [{ awaiting }]] = await Promise.all([
+    db
+      .select({
+        queue: conversations.queue,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(conversations)
+      .where(sql`${conversations.status} != 'encerrada'
+        AND (${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')
+        ${lineFilter}`)
+      .groupBy(conversations.queue),
+    // Pendentes: conversas com mensagem não-lida (não encerradas). Independe da fila.
+    db
+      .select({ unread: sql<number>`count(*)::int` })
+      .from(conversations)
+      .where(sql`${conversations.unreadCount} > 0 AND ${conversations.status} != 'encerrada' ${lineFilter}`),
+    db
+      .select({ awaiting: sql<number>`count(*)::int` })
+      .from(conversations)
+      .where(sql`${awaitingUsSql()} ${lineFilter}`),
+  ]);
 
   const counts: ConversationCounts = {
     ia: 0, recepcao: 0, comercial: 0, unread: unread ?? 0, awaitingUs: awaiting ?? 0,
