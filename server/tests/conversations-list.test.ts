@@ -94,23 +94,34 @@ describe('GET /api/conversations', () => {
       ['em_atendimento', 'aguardando_atendimento'].includes(c.status))).toBe(true);
   });
 
-  it('filtra por expired24h', async () => {
+  it('filtra por awaitingUs (última mensagem é do cliente, sem resposta nossa)', async () => {
     const token = await seedAuth();
+    // Espera resposta: última msg é do cliente (lastMessageAt == lastInboundAt),
+    // e a conversa está na fila comercial (regra de awaitingUsSql).
     const lead = await createLead({ phone: '11000010020' });
+    const espera = new Date(Date.now() - 25 * 60 * 60 * 1000);
     await createConversation({
       phone: '11000010020',
       leadId: lead.id,
-      lastInboundAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      queue: 'comercial',
+      status: 'em_atendimento',
+      lastInboundAt: espera,
+      lastMessageAt: espera,
     });
+    // Já respondida: lastMessageAt posterior ao lastInboundAt — não entra.
     const lead2 = await createLead({ phone: '11000010021' });
+    const inbound2 = new Date(Date.now() - 1 * 60 * 60 * 1000);
     await createConversation({
       phone: '11000010021',
       leadId: lead2.id,
-      lastInboundAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+      queue: 'comercial',
+      status: 'em_atendimento',
+      lastInboundAt: inbound2,
+      lastMessageAt: new Date(inbound2.getTime() + 5 * 60 * 1000),
     });
 
     const res = await request(app)
-      .get('/api/conversations?expired24h=true')
+      .get('/api/conversations?awaitingUs=true')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(1);
@@ -336,7 +347,7 @@ describe('GET /api/conversations/counts', () => {
 
     const res = await request(app).get('/api/conversations/counts').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ia: 0, recepcao: 1, comercial: 1, unread: 0 });
+    expect(res.body).toEqual({ ia: 0, recepcao: 1, comercial: 1, unread: 0, awaitingUs: 0 });
   });
 
   it('unread conta conversas com não-lidas (não encerradas)', async () => {

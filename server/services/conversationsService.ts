@@ -4,6 +4,9 @@ import { eq, and, or, ilike, asc, desc, sql, isNull, lt, inArray, type SQL } fro
 import { HttpError } from '../middleware/errorHandler';
 import { toCanonicalBrPhone } from '../lib/phoneBR';
 import { getTemplateById, resolveHsmVariables, hsmBodyText } from './hsmTemplateService';
+import { awaitingUsSql } from '../lib/pendingReply';
+import { businessConfigFromSettings, businessMinutesBetween, type BusinessHoursConfig } from '../lib/businessHours';
+import { getOrgSettings } from './orgSettingsService';
 import type {
   PublicConversation,
   ConversationCounts,
@@ -60,9 +63,21 @@ function previewFromMessage(row: {
   return body.length > 80 ? `${body.slice(0, 80)}…` : body;
 }
 
-function isExpired24h(lastInboundAt: Date | null, status: string): boolean {
-  if (status === 'encerrada' || !lastInboundAt) return false;
-  return Date.now() - lastInboundAt.getTime() > 24 * 60 * 60 * 1000;
+/**
+ * Minutos comerciais que o cliente esta esperando por nos, ou null se a bola
+ * nao esta conosco. Espelha awaitingUsSql em memoria — as duas precisam
+ * concordar, entao qualquer mudanca na regra passa pelos dois.
+ */
+function awaitingUsMinutesFor(
+  conv: { status: string; lastInboundAt: Date | null; lastMessageAt: Date; queue: string; aiDisabled: boolean },
+  cfg: BusinessHoursConfig,
+  now: Date,
+): number | null {
+  if (conv.status === 'encerrada') return null;
+  if (!conv.lastInboundAt) return null;
+  if (conv.lastMessageAt > conv.lastInboundAt) return null;
+  if (conv.queue !== 'comercial' && !conv.aiDisabled) return null;
+  return businessMinutesBetween(conv.lastInboundAt, now, cfg);
 }
 
 interface ListInput extends ConversationFilters {
@@ -80,11 +95,7 @@ export async function listConversations(input: ListInput): Promise<{
 
   if (input.queue) conds.push(eq(conversations.queue, input.queue));
   if (input.status?.length) conds.push(inArray(conversations.status, input.status));
-  if (input.expired24h) {
-    conds.push(sql`${conversations.status} != 'encerrada'`);
-    conds.push(sql`${conversations.lastInboundAt} < now() - interval '24 hours'`);
-    conds.push(sql`${conversations.lastInboundAt} IS NOT NULL`);
-  }
+  if (input.awaitingUs) conds.push(awaitingUsSql());
   if (input.noResponse) {
     conds.push(eq(conversations.originKind, 'campaign'));
     conds.push(isNull(conversations.lastInboundAt));
@@ -155,16 +166,24 @@ export async function listConversations(input: ListInput): Promise<{
     .leftJoin(campaigns, eq(conversations.originCampaignId, campaigns.id))
     .leftJoin(whatsappHsmTemplates, eq(campaigns.hsmTemplateId, whatsappHsmTemplates.id))
     .where(where)
-    // Na fila Comercial: FIFO por tempo de espera (entered_queue_at ASC).
-    // Conversas sem enteredQueueAt (historico antigo) caem no fim via NULLS LAST.
-    // Demais filas: ordem cronologica reversa por ultima mensagem.
+    // Com o filtro awaitingUs ativo: fila de trabalho por tempo de espera
+    // (lastInboundAt ASC — quem espera ha mais tempo vem primeiro). Na fila
+    // Comercial (sem o filtro): FIFO por entered_queue_at ASC, historico sem
+    // essa coluna cai no fim via NULLS LAST. Demais casos: cronologica
+    // reversa por ultima mensagem.
     .orderBy(
-      input.queue === 'comercial'
-        ? sql`${conversations.enteredQueueAt} ASC NULLS LAST`
-        : desc(conversations.lastMessageAt),
+      input.awaitingUs
+        ? sql`${conversations.lastInboundAt} ASC`
+        : input.queue === 'comercial'
+          ? sql`${conversations.enteredQueueAt} ASC NULLS LAST`
+          : desc(conversations.lastMessageAt),
     )
     .limit(PAGE_SIZE)
     .offset((page - 1) * PAGE_SIZE);
+
+  const settings = await getOrgSettings();
+  const businessCfg = businessConfigFromSettings(settings);
+  const agora = new Date();
 
   const items: PublicConversation[] = rows.map((r) => {
     const lead = r.lead!;
@@ -197,7 +216,7 @@ export async function listConversations(input: ListInput): Promise<{
       lastMessageAt: r.conv.lastMessageAt.toISOString(),
       lastInboundAt: r.conv.lastInboundAt?.toISOString() ?? null,
       unreadCount: r.conv.unreadCount,
-      isExpired24h: isExpired24h(r.conv.lastInboundAt, r.conv.status),
+      awaitingUsMinutes: awaitingUsMinutesFor(r.conv, businessCfg, agora),
       enteredQueueAt: r.conv.enteredQueueAt?.toISOString() ?? null,
       hasAiHandoff: r.conv.handoffSummary != null && r.conv.handoffSummary.trim().length > 0,
       handoffSummary: r.conv.handoffSummary ?? null,
@@ -234,7 +253,14 @@ export async function getConversationCounts(instanceId?: string): Promise<Conver
     .from(conversations)
     .where(sql`${conversations.unreadCount} > 0 AND ${conversations.status} != 'encerrada' ${lineFilter}`);
 
-  const counts: ConversationCounts = { ia: 0, recepcao: 0, comercial: 0, unread: unread ?? 0 };
+  const [{ awaiting }] = await db
+    .select({ awaiting: sql<number>`count(*)::int` })
+    .from(conversations)
+    .where(sql`${awaitingUsSql()} ${lineFilter}`);
+
+  const counts: ConversationCounts = {
+    ia: 0, recepcao: 0, comercial: 0, unread: unread ?? 0, awaitingUs: awaiting ?? 0,
+  };
   for (const r of rows) {
     if (r.queue === 'ia' || r.queue === 'recepcao' || r.queue === 'comercial') {
       counts[r.queue] = r.total;

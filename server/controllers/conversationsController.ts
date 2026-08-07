@@ -36,7 +36,7 @@ const csvOf = <T extends string>(values: readonly T[]) =>
 const listQuery = z.object({
   queue: z.enum(CONVERSATION_QUEUES).optional(),
   status: csvOf(CONVERSATION_STATUSES).optional(),
-  expired24h: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  awaitingUs: z.coerce.boolean().optional(),
   noResponse: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   onlyWithInbound: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   origin: csvOf(ORIGIN_KINDS).optional(),
