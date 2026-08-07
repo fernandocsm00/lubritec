@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { DashboardAttentionResponse, DashboardAttentionItem } from '@shared/types';
 import { AlertTriangle, Clock, Inbox } from 'lucide-react';
+import { buildAttentionHref } from './attentionHref';
 
 const COPY: Record<DashboardAttentionItem['kind'], (n: number) => string> = {
   proposal_old:  (n) => `${n} ${n === 1 ? 'proposta' : 'propostas'} há +14 dias sem retorno`,
@@ -29,13 +30,6 @@ const SEV_BG: Record<DashboardAttentionItem['severity'], string> = {
   info:     'bg-amber-50 text-amber-600',
 };
 
-function buildHref(item: DashboardAttentionItem): string {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(item.filter)) params.set(k, String(v));
-  const qs = params.toString();
-  return qs ? `${item.route}?${qs}` : item.route;
-}
-
 export function AttentionList({ data }: { data: DashboardAttentionResponse }) {
   if (data.items.length === 0) {
     return (
@@ -57,7 +51,7 @@ export function AttentionList({ data }: { data: DashboardAttentionResponse }) {
               </span>
               <span className="flex-1 text-sm text-lc-ink">{COPY[item.kind](item.count)}</span>
               <Link
-                to={buildHref(item)}
+                to={buildAttentionHref(item)}
                 className="text-sm text-lc-navy hover:underline"
               >
                 {CTA[item.kind]}
