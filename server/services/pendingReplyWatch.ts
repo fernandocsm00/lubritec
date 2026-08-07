@@ -18,9 +18,11 @@ import { emitNotification } from './notifications';
  * faria cada conversa avisar uma unica vez na vida.
  */
 export async function processPendingReplies(): Promise<{ l1: number; l2: number }> {
-  // loadOrgSettingsRow (nao getOrgSettings/PublicOrgSettings) porque
-  // pendingReplyAlertMin/pendingReplyEscalateMin ainda nao estao mapeados no
-  // toPublic() do orgSettingsService — a row crua do drizzle ja tem as colunas.
+  // loadOrgSettingsRow (nao getOrgSettings/PublicOrgSettings): getOrgSettings ja
+  // mapeia pendingReplyAlertMin/pendingReplyEscalateMin no toPublic(), mas esse
+  // helper faz uma query extra e devolve um DTO — aqui a gente ja precisa da row
+  // crua do drizzle (outros campos de business hours etc.), entao reusa ela em
+  // vez de buscar duas vezes.
   const settings = await loadOrgSettingsRow();
   if (!settings) {
     console.warn('[pending-reply] org settings singleton nao encontrado, pulando tick');

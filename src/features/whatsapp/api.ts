@@ -52,13 +52,21 @@ export function useConversations(filters: ConversationFilters) {
   });
 }
 
-export function useConversationCounts(instanceId?: string) {
+/**
+ * `queue` é opcional e escopa SÓ o awaitingUs (chip "Aguardando nós" precisa
+ * bater com a aba ativa da Inbox — ver Sidebar/QueueTabs, que não passam
+ * queue de propósito porque usam os totais por fila, que continuam globais).
+ */
+export function useConversationCounts(instanceId?: string, queue?: ConversationQueue) {
   return useQuery({
-    queryKey: ['conversations', 'counts', instanceId ?? null],
-    queryFn: () =>
-      api<ConversationCounts>(
-        `/conversations/counts${instanceId ? `?instanceId=${instanceId}` : ''}`,
-      ),
+    queryKey: ['conversations', 'counts', instanceId ?? null, queue ?? null],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (instanceId) params.set('instanceId', instanceId);
+      if (queue) params.set('queue', queue);
+      const qs = params.toString();
+      return api<ConversationCounts>(`/conversations/counts${qs ? `?${qs}` : ''}`);
+    },
     refetchInterval: LIST_POLL_MS,
     refetchIntervalInBackground: false,
   });

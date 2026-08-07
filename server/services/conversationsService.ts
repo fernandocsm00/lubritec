@@ -229,11 +229,23 @@ export async function listConversations(input: ListInput): Promise<{
   return { items, total, page, pageSize: PAGE_SIZE };
 }
 
-export async function getConversationCounts(instanceId?: string): Promise<ConversationCounts> {
+export async function getConversationCounts(
+  instanceId?: string,
+  queue?: ConversationQueue,
+): Promise<ConversationCounts> {
   // Filtro opcional por linha: quando uma linha está selecionada na Inbox, os
   // contadores das filas refletem só ela (consistente com a lista filtrada).
   const lineFilter = instanceId
     ? sql`AND ${conversations.instanceId} = ${instanceId}`
+    : sql``;
+
+  // Filtro opcional de fila — escopa SÓ o awaitingUs (o chip "Aguardando nós"
+  // precisa bater com a aba ativa da Inbox). Os totais por fila e o unread
+  // continuam globais de propósito: são usados pelas próprias abas/QueueTabs
+  // pra mostrar quantas conversas tem em cada fila, então não podem ser
+  // filtrados pela fila ativa.
+  const queueFilter = queue
+    ? sql`AND ${conversations.queue} = ${queue}`
     : sql``;
 
   // As três contagens são independentes entre si — rodam em paralelo pra não
@@ -257,7 +269,7 @@ export async function getConversationCounts(instanceId?: string): Promise<Conver
     db
       .select({ awaiting: sql<number>`count(*)::int` })
       .from(conversations)
-      .where(sql`${awaitingUsSql()} ${lineFilter}`),
+      .where(sql`${awaitingUsSql()} ${lineFilter} ${queueFilter}`),
   ]);
 
   const counts: ConversationCounts = {

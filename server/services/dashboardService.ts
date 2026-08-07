@@ -358,7 +358,7 @@ export async function attention(args: { view: DashboardView; userId?: string }):
   const meFilter = args.view === 'me' ? { owner: 'me' } : {};
   const candidates: DashboardAttentionItem[] = [
     { severity: 'critical' as const, kind: 'proposal_old',  count: proposalOld,  route: '/inside-sales', filter: { ...meFilter, stage: 'proposta_enviada', stale: true } },
-    { severity: 'critical' as const, kind: 'pending_reply', count: awaitingUs,   route: '/whatsapp',     filter: { ...meFilter, awaitingUs: true } },
+    { severity: 'critical' as const, kind: 'pending_reply', count: awaitingUs,   route: '/whatsapp',     filter: { ...meFilter, awaitingUs: true, queue: 'comercial' } },
     { severity: 'warning'  as const, kind: 'deal_stale',    count: dealStale,    route: '/inside-sales', filter: { ...meFilter, stale: true } },
     { severity: 'info'     as const, kind: 'queue_pending', count: queuePending, route: '/whatsapp',     filter: { ...meFilter, queue: 'comercial', status: 'aguardando_atendimento' } },
   ];

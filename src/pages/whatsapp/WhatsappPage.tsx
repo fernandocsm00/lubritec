@@ -40,7 +40,7 @@ export default function WhatsappPage() {
   }), [queue, statusKeys.join(','), origins.join(','), assignment, uf, instanceId, q]);
 
   const { data: convsData } = useConversations(filters);
-  const { data: counts } = useConversationCounts(instanceId);
+  const { data: counts } = useConversationCounts(instanceId, queue);
   const selectedConv = convsData?.items.find((c) => c.id === selectedConvId) ?? null;
 
   // Deep-link: ?lead=<leadId> ou ?conv=<convId> pré-seleciona conversa.

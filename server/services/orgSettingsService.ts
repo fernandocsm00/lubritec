@@ -57,6 +57,23 @@ export async function updateOrgSettings(
     throw new HttpError(400, 'Monthly sales goal must be >= 0');
   }
 
+  // Contrato "avisa o dono antes de escalar pro admin" depende de
+  // escalateMin > alertMin. Um PUT pode mandar só um dos dois campos, então
+  // validamos o valor RESULTANTE (novo, se enviado; senão o já salvo) — não
+  // dá pra validar só o body porque ele pode conter só metade do par.
+  if (input.pendingReplyAlertMin !== undefined || input.pendingReplyEscalateMin !== undefined) {
+    const [current] = await db.select().from(orgSettings).where(eq(orgSettings.singleton, true)).limit(1);
+    if (!current) throw new HttpError(500, 'Org settings singleton not found (check migrations)');
+    const resultingAlert = input.pendingReplyAlertMin ?? current.pendingReplyAlertMin;
+    const resultingEscalate = input.pendingReplyEscalateMin ?? current.pendingReplyEscalateMin;
+    if (resultingEscalate <= resultingAlert) {
+      throw new HttpError(
+        400,
+        'pendingReplyEscalateMin deve ser maior que pendingReplyAlertMin (dono precisa ser avisado antes do admin)',
+      );
+    }
+  }
+
   const patch: Partial<typeof orgSettings.$inferInsert> = { updatedAt: new Date() };
   if (input.monthlySalesGoal !== undefined) {
     patch.monthlySalesGoal = input.monthlySalesGoal == null ? null : String(input.monthlySalesGoal);

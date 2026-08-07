@@ -156,4 +156,33 @@ describe('GET /api/conversations?awaitingUs=true', () => {
     const item = res.body.items.find((c: { id: string }) => c.id === recepcaoSemIa.id);
     expect(typeof item.awaitingUsMinutes).toBe('number');
   });
+
+  it('counts?queue=comercial escopa o awaitingUs pra fila ativa, sem mexer nos totais/unread', async () => {
+    const token = await loginAs('c8@x.com');
+    await conv({
+      lastInboundAt: new Date('2026-08-05T12:00:00Z'),
+      lastMessageAt: new Date('2026-08-05T12:00:00Z'),
+      queue: 'comercial',
+    });
+    await conv({
+      lastInboundAt: new Date('2026-08-05T12:00:00Z'),
+      lastMessageAt: new Date('2026-08-05T12:00:00Z'),
+      queue: 'recepcao',
+      aiDisabled: true,
+    });
+
+    const unscoped = await request(app)
+      .get('/api/conversations/counts')
+      .set('Authorization', `Bearer ${token}`);
+    expect(unscoped.body.awaitingUs).toBe(2);
+
+    const scoped = await request(app)
+      .get('/api/conversations/counts?queue=comercial')
+      .set('Authorization', `Bearer ${token}`);
+    expect(scoped.body.awaitingUs).toBe(1);
+    // Totais por fila e unread continuam globais (não escopados pela query).
+    expect(scoped.body.comercial).toBe(unscoped.body.comercial);
+    expect(scoped.body.recepcao).toBe(unscoped.body.recepcao);
+    expect(scoped.body.unread).toBe(unscoped.body.unread);
+  });
 });

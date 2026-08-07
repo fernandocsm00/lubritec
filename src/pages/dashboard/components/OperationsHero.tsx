@@ -204,7 +204,7 @@ function NowCard({ whatsapp, attention }: { whatsapp: DashboardWhatsappStats | u
           label="Aguardando nós"
           value={awaitingUs}
           tone={awaitingUs === 0 ? 'muted' : 'destructive'}
-          href="/whatsapp?statusChips=aguardando_nos&assignment=all&origin=organic,campaign"
+          href="/whatsapp?queue=comercial&statusChips=aguardando_nos&assignment=all&origin=organic,campaign"
         />
       </div>
     </div>

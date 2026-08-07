@@ -61,12 +61,15 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
-const countsQuery = z.object({ instanceId: z.string().uuid().optional() });
+const countsQuery = z.object({
+  instanceId: z.string().uuid().optional(),
+  queue: z.enum(CONVERSATION_QUEUES).optional(),
+});
 
 export async function countsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { instanceId } = countsQuery.parse(req.query);
-    res.json(await getConversationCounts(instanceId));
+    const { instanceId, queue } = countsQuery.parse(req.query);
+    res.json(await getConversationCounts(instanceId, queue));
   } catch (e) { next(e); }
 }
 
