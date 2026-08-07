@@ -283,7 +283,11 @@ export interface PublicConversation {
   lastMessageAt: string;
   lastInboundAt: string | null;
   unreadCount: number;
-  isExpired24h: boolean;
+  /**
+   * Minutos de horário comercial que o cliente está esperando resposta nossa.
+   * null quando a bola não está conosco (respondemos, ou é conversa da IA).
+   */
+  awaitingUsMinutes: number | null;
   enteredQueueAt: string | null;
   hasAiHandoff: boolean;
   handoffSummary: string | null;
@@ -329,12 +333,14 @@ export interface ConversationCounts {
   comercial: number;
   /** Conversas com mensagem não-lida (pendentes), não encerradas. */
   unread: number;
+  /** Conversas em que a última mensagem é do cliente e ninguém automático responde. */
+  awaitingUs: number;
 }
 
 export interface ConversationFilters {
   queue?: ConversationQueue;
   status?: ConversationStatus[];
-  expired24h?: boolean;
+  awaitingUs?: boolean;
   noResponse?: boolean;
   /**
    * Quando true, esconde conversas que sao so disparos de campanha sem
@@ -779,6 +785,8 @@ export interface PublicOrgSettings {
   dispatchEndHour: number;
   dispatchSkipWeekends: boolean;
   dispatchTimezone: string;
+  pendingReplyAlertMin: number;
+  pendingReplyEscalateMin: number;
   updatedAt: string;
 }
 
@@ -806,6 +814,8 @@ export interface UpdateOrgSettingsInput {
   dispatchEndHour?: number;
   dispatchSkipWeekends?: boolean;
   dispatchTimezone?: string;
+  pendingReplyAlertMin?: number;
+  pendingReplyEscalateMin?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -959,7 +969,7 @@ export interface DashboardAttentionResponse {
 export interface DashboardWhatsappStats {
   inQueue: number;
   avgFirstResponseSec: number;
-  expired24h: number;
+  awaitingUs: number;
   noResponseToday: number;
   instanceConnected: boolean;
 }
@@ -976,6 +986,7 @@ export const NOTIFICATION_KINDS = [
   'whatsapp_disconnected',  // instância UazAPI caiu
   'campaign_cooldown_high',
   'sla_escalation',         // lead aguardando atendimento na fila Comercial além do SLA
+  'pending_reply',          // cliente esperando resposta nossa além do prazo
   'ai_fallback',            // IA falhou repetidamente — conversa movida pra recepção
   'new_message',            // nova mensagem inbound no WhatsApp (conversa passou a ter não-lida)
   'system',                 // generic

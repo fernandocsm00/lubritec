@@ -293,6 +293,11 @@ export const orgSettings = pgTable(
     dispatchEndHour: integer('dispatch_end_hour').notNull().default(18),
     dispatchSkipWeekends: boolean('dispatch_skip_weekends').notNull().default(true),
     dispatchTimezone: text('dispatch_timezone').notNull().default('America/Sao_Paulo'),
+    // ── Pendência de resposta (migration 043) ──
+    // Minutos COMERCIAIS sem resposta nossa. O horário vem de
+    // ai_business_hours_* + dispatch_timezone (não há colunas novas de horário).
+    pendingReplyAlertMin: integer('pending_reply_alert_min').notNull().default(60),
+    pendingReplyEscalateMin: integer('pending_reply_escalate_min').notNull().default(180),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({ singletonUniq: uniqueIndex('idx_org_settings_singleton').on(t.singleton) }),
@@ -473,6 +478,21 @@ export const conversationSlaEvents = pgTable('conversation_sla_events', {
 
 export type ConversationSlaEvent = typeof conversationSlaEvents.$inferSelect;
 export type NewConversationSlaEvent = typeof conversationSlaEvents.$inferInsert;
+
+// ── Pendência de resposta (migration 043) ────────────────────────
+// Alerta já disparado para um CICLO de pendência. `pendingSince` é o
+// last_inbound_at que abriu o ciclo — mensagem nova do cliente abre outro e
+// volta a poder alertar.
+export const conversationReplyAlerts = pgTable('conversation_reply_alerts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  conversationId: uuid('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  pendingSince: timestamp('pending_since', { withTimezone: true }).notNull(),
+  level: integer('level').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ConversationReplyAlert = typeof conversationReplyAlerts.$inferSelect;
+export type NewConversationReplyAlert = typeof conversationReplyAlerts.$inferInsert;
 
 export const projectFeedback = pgTable(
   'project_feedback',
