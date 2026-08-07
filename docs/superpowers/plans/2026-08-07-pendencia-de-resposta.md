@@ -820,8 +820,13 @@ Em `server/controllers/conversationsController.ts`, no schema de query da
 listagem, **substituir** `expired24h` por:
 
 ```ts
-  awaitingUs: z.coerce.boolean().optional(),
+  awaitingUs: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
 ```
+
+Use exatamente esse padrão, o mesmo dos booleanos irmãos `noResponse` e
+`onlyWithInbound`. **Não** use `z.coerce.boolean()`: ele roda `Boolean(valor)` na
+string crua, então `'false'` e `'0'` viram `true` — o filtro leria o oposto do
+que o chamador pediu.
 
 e repassar `awaitingUs` para `listConversations` no lugar de `expired24h`.
 
@@ -1421,6 +1426,7 @@ git commit -m "feat(settings): limiares de pendência de resposta"
 - Modify: `src/pages/whatsapp/WhatsappPage.tsx`
 - Modify: `src/features/whatsapp/ConversationList.tsx`
 - Modify: `src/features/notifications/NewMessageAlerts.tsx`
+- Modify: `src/features/notifications/NotificationBell.tsx:18,31` — mapas de ícone e rótulo por kind
 - Modify: `src/pages/dashboard/components/StatusRibbon.tsx:245` — tradução do filtro
 - Modify: `src/pages/dashboard/components/OperationsHero.tsx:170,205`
 - Modify: `src/pages/dashboard/components/WhatsappStats.tsx:48`
@@ -1530,6 +1536,15 @@ Em `src/features/notifications/NewMessageAlerts.tsx`, na linha que filtra:
       (n) => n.kind === 'new_message' || n.kind === 'pending_reply',
     );
 ```
+
+- [ ] **Step 4a: Registrar o kind novo no sino**
+
+`src/features/notifications/NotificationBell.tsx` tem mapas por kind — um de ícone
+(linha ~18) e um de rótulo (linha ~31). Ambos são exaustivos sobre
+`NotificationKind`, então o typecheck falha até `'pending_reply'` entrar nos dois.
+
+Escolher um ícone coerente com os demais (`Clock` do lucide-react serve — é
+espera) e usar o rótulo "Aguardando resposta".
 
 - [ ] **Step 4b: Corrigir os três consumidores do Dashboard**
 
