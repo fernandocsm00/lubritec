@@ -67,6 +67,10 @@ export async function processPendingReplies(): Promise<{ l1: number; l2: number 
       esperaMin,
     };
 
+    // Grava ANTES de notificar, de proposito: se o processo morrer entre as duas
+    // coisas, perde-se um alerta daquele ciclo. A ordem inversa trocaria isso por
+    // re-notificar a cada tick enquanto a gravacao falhasse — barulho pior que
+    // silencio. Ver a decisao no spec.
     if (esperaMin >= escalateMin && !niveis.has(2)) {
       if (await registrar(c.id, c.lastInboundAt, 2)) {
         await notificar(2, meta);
@@ -84,9 +88,16 @@ export async function processPendingReplies(): Promise<{ l1: number; l2: number 
   return { l1, l2 };
 }
 
-/** Grava o alerta do ciclo. false = ja existia (outro tick ganhou a corrida). */
+/**
+ * Grava o alerta do ciclo.
+ *
+ * Retorna false em dois casos bem diferentes:
+ *   - insert sem linhas: outro tick ganhou a corrida. Esperado e benigno.
+ *   - excecao: problema real (conexao, schema, conversa apagada no meio). Nunca
+ *     e a corrida — onConflictDoNothing nao lanca nesse caso.
+ */
 async function registrar(
-  conversationId: string, pendingSince: Date, level: number,
+  conversationId: string, pendingSince: Date, level: 1 | 2,
 ): Promise<boolean> {
   try {
     const inserted = await db
@@ -102,7 +113,7 @@ async function registrar(
       .returning({ id: conversationReplyAlerts.id });
     return inserted.length > 0;
   } catch (err) {
-    console.warn(`[pending-reply] falhou ao registrar nivel ${level}:`, err);
+    console.error(`[pending-reply] falhou ao registrar nivel ${level}:`, err);
     return false;
   }
 }

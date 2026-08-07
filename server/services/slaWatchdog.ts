@@ -56,6 +56,8 @@ async function tick(): Promise<void> {
     // separado de proposito — uma falha aqui nao pode derrubar o escalonamento
     // de fila, e vice-versa.
     try {
+      // Import dinamico de proposito: com import estatico, uma falha ao carregar
+      // este modulo derrubaria o slaWatchdog inteiro junto.
       const { processPendingReplies } = await import('./pendingReplyWatch');
       const p = await processPendingReplies();
       if (p.l1 + p.l2 > 0) {
