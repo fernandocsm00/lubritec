@@ -149,7 +149,15 @@ Se só houver transaction disponível, a alternativa é fixar o search_path na p
 ?options=-c%20search_path%3Dlubritec%2Cpublic
 ```
 
-Descobrir isso é objetivo declarado do passo 6, na Fase 0 — antes de qualquer dado se mover.
+**CONFIRMADO em 2026-08-10, não é mais hipótese.** O container do EasyPanel é IPv4-only e o
+projeto novo (`db.<NEW_REF>.supabase.co`) resolve só em IPv6 — a conexão direta falha com
+`Network is unreachable`. O **Session pooler funciona** e foi por ele que o restore rodou.
+
+Consequência para o corte: o `DATABASE_URL` de produção **tem** que ser a string do Session
+pooler (`postgresql://postgres.<ref>:<senha>@aws-N-sa-east-1.pooler.supabase.com:5432/postgres`).
+A conexão direta não é uma opção neste ambiente.
+
+Versões confirmadas: origem PostgreSQL 15.8, destino PostgreSQL 17.6.
 
 ---
 
