@@ -22,16 +22,17 @@ describe('dashboardService.whatsappStats', () => {
     expect(r.inQueue).toBe(3);
   });
 
-  it('expired24h matches attention.conv_expired logic (no outbound after inbound)', async () => {
+  it('awaitingUs matches attention.pending_reply logic (no outbound after inbound)', async () => {
     const l = await createLead({});
     await createConversation({
       leadId: l.id,
+      queue: 'comercial', // awaitingUsSql exige fila comercial (ou aiDisabled)
       status: 'em_atendimento',
       lastInboundAt: new Date(Date.now() - 2 * 86_400_000),
       lastMessageAt: new Date(Date.now() - 2 * 86_400_000),
     });
     const r = await whatsappStats();
-    expect(r.expired24h).toBe(1);
+    expect(r.awaitingUs).toBe(1);
   });
 
   it('avgFirstResponseSec averages first-out minus first-in over last 7d', async () => {

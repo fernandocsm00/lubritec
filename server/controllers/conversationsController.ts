@@ -36,7 +36,7 @@ const csvOf = <T extends string>(values: readonly T[]) =>
 const listQuery = z.object({
   queue: z.enum(CONVERSATION_QUEUES).optional(),
   status: csvOf(CONVERSATION_STATUSES).optional(),
-  expired24h: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  awaitingUs: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   noResponse: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   onlyWithInbound: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   origin: csvOf(ORIGIN_KINDS).optional(),
@@ -61,12 +61,15 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
-const countsQuery = z.object({ instanceId: z.string().uuid().optional() });
+const countsQuery = z.object({
+  instanceId: z.string().uuid().optional(),
+  queue: z.enum(CONVERSATION_QUEUES).optional(),
+});
 
 export async function countsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { instanceId } = countsQuery.parse(req.query);
-    res.json(await getConversationCounts(instanceId));
+    const { instanceId, queue } = countsQuery.parse(req.query);
+    res.json(await getConversationCounts(instanceId, queue));
   } catch (e) { next(e); }
 }
 

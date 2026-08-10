@@ -51,6 +51,21 @@ async function tick(): Promise<void> {
     if (r.fired > 0) {
       console.log(`[sla-watchdog] tick: fired=${r.fired} (l1=${r.l1} l2=${r.l2} l3=${r.l3})`);
     }
+
+    // Vigilancia independente: conversa JA assumida sem resposta nossa. Try
+    // separado de proposito — uma falha aqui nao pode derrubar o escalonamento
+    // de fila, e vice-versa.
+    try {
+      // Import dinamico de proposito: com import estatico, uma falha ao carregar
+      // este modulo derrubaria o slaWatchdog inteiro junto.
+      const { processPendingReplies } = await import('./pendingReplyWatch');
+      const p = await processPendingReplies();
+      if (p.l1 + p.l2 > 0) {
+        console.log(`[pending-reply] tick: l1=${p.l1} l2=${p.l2}`);
+      }
+    } catch (err) {
+      console.error('[pending-reply] tick failed:', err instanceof Error ? err.message : err);
+    }
   } catch (err) {
     console.error('[sla-watchdog] tick failed:', err instanceof Error ? err.message : err);
   } finally {

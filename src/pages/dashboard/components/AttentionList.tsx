@@ -1,24 +1,25 @@
 import { Link } from 'react-router-dom';
 import type { DashboardAttentionResponse, DashboardAttentionItem } from '@shared/types';
 import { AlertTriangle, Clock, Inbox } from 'lucide-react';
+import { buildAttentionHref } from './attentionHref';
 
 const COPY: Record<DashboardAttentionItem['kind'], (n: number) => string> = {
   proposal_old:  (n) => `${n} ${n === 1 ? 'proposta' : 'propostas'} há +14 dias sem retorno`,
-  conv_expired:  (n) => `${n} ${n === 1 ? 'conversa expirou' : 'conversas expiraram'} (>24h sem resposta)`,
+  pending_reply: (n) => `${n} ${n === 1 ? 'conversa está' : 'conversas estão'} aguardando nossa resposta`,
   deal_stale:    (n) => `${n} ${n === 1 ? 'deal parado' : 'deals parados'} há +5 dias`,
   queue_pending: (n) => `${n} ${n === 1 ? 'conversa aguardando' : 'conversas aguardando'} no comercial`,
 };
 
 const CTA: Record<DashboardAttentionItem['kind'], string> = {
   proposal_old: 'Abrir lista',
-  conv_expired: 'Abrir inbox',
+  pending_reply:'Abrir inbox',
   deal_stale:   'Abrir kanban',
   queue_pending:'Abrir inbox',
 };
 
 const ICON: Record<DashboardAttentionItem['kind'], React.ComponentType<{ className?: string }>> = {
   proposal_old:  Clock,
-  conv_expired:  AlertTriangle,
+  pending_reply: AlertTriangle,
   deal_stale:    Clock,
   queue_pending: Inbox,
 };
@@ -28,13 +29,6 @@ const SEV_BG: Record<DashboardAttentionItem['severity'], string> = {
   warning:  'bg-amber-100 text-amber-700',
   info:     'bg-amber-50 text-amber-600',
 };
-
-function buildHref(item: DashboardAttentionItem): string {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(item.filter)) params.set(k, String(v));
-  const qs = params.toString();
-  return qs ? `${item.route}?${qs}` : item.route;
-}
 
 export function AttentionList({ data }: { data: DashboardAttentionResponse }) {
   if (data.items.length === 0) {
@@ -57,7 +51,7 @@ export function AttentionList({ data }: { data: DashboardAttentionResponse }) {
               </span>
               <span className="flex-1 text-sm text-lc-ink">{COPY[item.kind](item.count)}</span>
               <Link
-                to={buildHref(item)}
+                to={buildAttentionHref(item)}
                 className="text-sm text-lc-navy hover:underline"
               >
                 {CTA[item.kind]}

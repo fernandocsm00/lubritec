@@ -7,6 +7,8 @@ import {
   waitingMinutes,
   waitingToneClasses,
   formatWaitingLabel,
+  awaitingUsToneClasses,
+  formatAwaitingUsLabel,
 } from './helpers';
 import type { PublicConversation } from './types';
 
@@ -97,6 +99,11 @@ export function ConversationRow({ conv, active, currentUserId, onClick, lineLabe
             </div>
           )}
         </div>
+        {conv.awaitingUsMinutes != null && (
+          <div className={`mt-0.5 text-[10px] flex items-center gap-0.5 ${awaitingUsToneClasses(conv.awaitingUsMinutes)}`}>
+            <Clock className="h-2.5 w-2.5" /> {formatAwaitingUsLabel(conv.awaitingUsMinutes)}
+          </div>
+        )}
         {conv.originKind === 'campaign' && conv.originCampaignName && (
           <div className="mt-1">
             <HoverCard openDelay={120} closeDelay={80}>

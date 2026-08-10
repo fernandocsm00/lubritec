@@ -17,6 +17,7 @@ import type {
   DashboardWhatsappStats,
 } from '@shared/types';
 import { formatCurrency } from '@/lib/utils';
+import { buildAttentionHref } from './attentionHref';
 
 interface Props {
   attention: DashboardAttentionResponse | undefined;
@@ -192,81 +193,30 @@ function IssueRow({ issue }: { issue: Issue }) {
 // ------------------------------------------------------------------
 // Mesma copy/route que AttentionList — mantemos separado por enquanto
 // pra nao introduzir dependencia circular; idealmente extrai pra helpers.
+// A traducao filter->href (buildAttentionHref), essa sim, é compartilhada —
+// ver ./attentionHref.ts.
 // ------------------------------------------------------------------
 
 const ATTENTION_COPY: Record<DashboardAttentionItem['kind'], (n: number) => string> = {
   proposal_old:  (n) => `${n} ${n === 1 ? 'proposta' : 'propostas'} há +14 dias sem retorno`,
-  conv_expired:  (n) => `${n} ${n === 1 ? 'conversa expirou' : 'conversas expiraram'} (>24h sem resposta)`,
+  pending_reply: (n) => `${n} ${n === 1 ? 'conversa está' : 'conversas estão'} aguardando nossa resposta`,
   deal_stale:    (n) => `${n} ${n === 1 ? 'deal parado' : 'deals parados'} há +5 dias`,
   queue_pending: (n) => `${n} ${n === 1 ? 'conversa aguardando' : 'conversas aguardando'} no comercial`,
 };
 
 const ATTENTION_CTA: Record<DashboardAttentionItem['kind'], string> = {
   proposal_old: 'Abrir lista',
-  conv_expired: 'Abrir inbox',
+  pending_reply:'Abrir inbox',
   deal_stale:   'Abrir kanban',
   queue_pending:'Atender',
 };
 
 const ICON_BY_KIND: Record<DashboardAttentionItem['kind'], React.ReactNode> = {
   proposal_old:  <Clock className="h-4 w-4" />,
-  conv_expired:  <AlertTriangle className="h-4 w-4" />,
+  pending_reply: <AlertTriangle className="h-4 w-4" />,
   deal_stale:    <Clock className="h-4 w-4" />,
   queue_pending: <Inbox className="h-4 w-4" />,
 };
-
-/**
- * Backend manda filter genericos (ex: { expired24h: true, status: 'aguardando_atendimento' })
- * mas o WhatsappPage le statusChips=<keys> (convenção de URL diferente). Faz a
- * traducao aqui pra que o link aplique o filtro de fato ao chegar na Inbox.
- *
- * Tabela de traducao (so /whatsapp; outras rotas passam filter cru):
- *  - expired24h=true                 -> statusChips=expirada
- *  - noResponse=true                 -> statusChips=sem_retorno
- *  - status=aguardando_atendimento   -> statusChips=aguardando
- *  - status=em_atendimento           -> statusChips=em_atendimento
- *  - status=encerrada                -> statusChips=encerrada
- *  - queue=*                         -> queue (mantem)
- *  - owner=me                        -> assignment=mine
- */
-function buildAttentionHref(item: DashboardAttentionItem): string {
-  if (item.route !== '/whatsapp') {
-    // Outras rotas (/inside-sales etc): passa filter cru sem traducao.
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(item.filter)) params.set(k, String(v));
-    const qs = params.toString();
-    return qs ? `${item.route}?${qs}` : item.route;
-  }
-
-  // Rota /whatsapp: traduz filter -> URL params que WhatsappPage le.
-  const params = new URLSearchParams();
-  const statusChips: string[] = [];
-  for (const [k, v] of Object.entries(item.filter)) {
-    if (k === 'expired24h' && v) statusChips.push('expirada');
-    else if (k === 'noResponse' && v) statusChips.push('sem_retorno');
-    else if (k === 'status') {
-      const s = String(v);
-      if (s === 'aguardando_atendimento') statusChips.push('aguardando');
-      else if (s === 'em_atendimento') statusChips.push('em_atendimento');
-      else if (s === 'encerrada') statusChips.push('encerrada');
-    } else if (k === 'queue') {
-      params.set('queue', String(v));
-    } else if (k === 'owner' && v === 'me') {
-      params.set('assignment', 'mine');
-    }
-    // Demais chaves desconhecidas sao ignoradas (defensivo).
-  }
-  if (statusChips.length > 0) {
-    params.set('statusChips', statusChips.join(','));
-  }
-  // Origin amplo pra nao filtrar fora conversas vindas de campanha.
-  if (!params.has('origin')) params.set('origin', 'organic,campaign');
-  // Assignment default 'all' se nao foi setado explicitamente.
-  if (!params.has('assignment')) params.set('assignment', 'all');
-
-  const qs = params.toString();
-  return qs ? `${item.route}?${qs}` : item.route;
-}
 
 function buildHeadline(opts: {
   level: 'red' | 'yellow' | 'green';

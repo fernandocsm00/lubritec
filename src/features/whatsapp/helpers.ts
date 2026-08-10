@@ -79,6 +79,25 @@ export function formatWaitingLabel(minutes: number | null): string {
   return m === 0 ? `${h}h` : `${h}h${m}min`;
 }
 
+/**
+ * Codificacao de cor por tempo (minutos de horario comercial) esperando
+ * resposta nossa (`awaitingUsMinutes`). <60min cinza (ok), 60-180min amarelo
+ * (atencao), >=180min vermelho (critico) — mesmos limiares do alerta de
+ * notificacao `pending_reply`.
+ */
+export function awaitingUsToneClasses(minutes: number): string {
+  if (minutes >= 180) return 'text-destructive font-medium';
+  if (minutes >= 60) return 'text-lc-amber';
+  return 'text-muted-foreground';
+}
+
+export function formatAwaitingUsLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min esperando`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}h${String(m).padStart(2, '0')} esperando`;
+}
+
 export function avatarInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 0 || parts[0] === '') return '?';

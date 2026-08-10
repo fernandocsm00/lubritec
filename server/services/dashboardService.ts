@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { deals, dealActivities, leads, conversations, messages, users, whatsappInstance, campaignRecipients } from '../db/schema';
 import { getOrgSettings } from './orgSettingsService';
 import { resolvePeriod, type PeriodKey } from '../lib/period';
+import { awaitingUsSql } from '../lib/pendingReply';
 import type {
   DashboardSummary,
   DashboardView,
@@ -326,15 +327,13 @@ async function countDealStale(ownerUserId: string | null): Promise<number> {
   return r.cnt;
 }
 
-async function countConvExpired(ownerUserId: string | null): Promise<number> {
-  // "Expired without our reply": last inbound was >24h ago AND nothing went out since
-  // (lastMessageAt <= lastInboundAt means the most recent message is the inbound one).
-  const base = and(
-    sql`${conversations.status} != 'encerrada'`,
-    sql`${conversations.lastInboundAt} IS NOT NULL`,
-    sql`${conversations.lastInboundAt} < now() - interval '24 hours'`,
-    sql`${conversations.lastMessageAt} <= ${conversations.lastInboundAt}`,
-  );
+/**
+ * Conversas em que a bola esta com a gente. Usa o MESMO predicado do filtro da
+ * Inbox — antes o card e o chip tinham definicoes diferentes e mostravam
+ * numeros que nao batiam (23 no chip, 1 real).
+ */
+async function countAwaitingUs(ownerUserId: string | null): Promise<number> {
+  const base = awaitingUsSql();
   const where = ownerUserId ? and(base, eq(conversations.assignedTo, ownerUserId)) : base;
   const [r] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations).where(where);
   return r.cnt;
@@ -349,17 +348,17 @@ async function countQueuePending(ownerUserId: string | null): Promise<number> {
 
 export async function attention(args: { view: DashboardView; userId?: string }): Promise<DashboardAttentionResponse> {
   const owner = args.view === 'me' ? args.userId! : null;
-  const [proposalOld, dealStale, convExpired, queuePending] = await Promise.all([
+  const [proposalOld, dealStale, awaitingUs, queuePending] = await Promise.all([
     countProposalOld(owner),
     countDealStale(owner),
-    countConvExpired(owner),
+    countAwaitingUs(owner),
     countQueuePending(owner),
   ]);
 
   const meFilter = args.view === 'me' ? { owner: 'me' } : {};
   const candidates: DashboardAttentionItem[] = [
     { severity: 'critical' as const, kind: 'proposal_old',  count: proposalOld,  route: '/inside-sales', filter: { ...meFilter, stage: 'proposta_enviada', stale: true } },
-    { severity: 'critical' as const, kind: 'conv_expired',  count: convExpired,  route: '/whatsapp',     filter: { ...meFilter, expired24h: true } },
+    { severity: 'critical' as const, kind: 'pending_reply', count: awaitingUs,   route: '/whatsapp',     filter: { ...meFilter, awaitingUs: true, queue: 'comercial' } },
     { severity: 'warning'  as const, kind: 'deal_stale',    count: dealStale,    route: '/inside-sales', filter: { ...meFilter, stale: true } },
     { severity: 'info'     as const, kind: 'queue_pending', count: queuePending, route: '/whatsapp',     filter: { ...meFilter, queue: 'comercial', status: 'aguardando_atendimento' } },
   ];
@@ -593,15 +592,7 @@ export async function whatsappStats(): Promise<DashboardWhatsappStats> {
       sql`(${conversations.lastInboundAt} IS NOT NULL OR ${conversations.originKind} != 'campaign')`,
     ));
 
-  const [expiredRow] = await db
-    .select({ cnt: sql<number>`count(*)::int` })
-    .from(conversations)
-    .where(and(
-      sql`${conversations.status} != 'encerrada'`,
-      sql`${conversations.lastInboundAt} IS NOT NULL`,
-      sql`${conversations.lastInboundAt} < now() - interval '24 hours'`,
-      sql`${conversations.lastMessageAt} <= ${conversations.lastInboundAt}`,
-    ));
+  const awaitingUs = await countAwaitingUs(null);
 
   // Average first-response time over conversations created in last 7d
   const avgRes = await db.execute<{ avg_sec: string | null }>(sql`
@@ -627,7 +618,7 @@ export async function whatsappStats(): Promise<DashboardWhatsappStats> {
   return {
     inQueue: inQueueRow.cnt,
     avgFirstResponseSec,
-    expired24h: expiredRow.cnt,
+    awaitingUs,     // era: expired24h
     noResponseToday,
     instanceConnected,
   };
