@@ -111,3 +111,51 @@ export async function copyObject(
 
   return { path, bytes: body.length };
 }
+
+export interface MigrateReport {
+  total: number;
+  copied: number;
+  failed: number;
+  bytes: number;
+  failures: Array<{ path: string; error: string }>;
+  paths: string[];
+}
+
+/**
+ * Copia todos os objetos do bucket de origem para o de destino.
+ * Sem `apply`, apenas lista — nada é lido nem escrito no destino.
+ * Uma falha isolada não aborta a migração: é registrada e o resto segue.
+ */
+export async function migrateBucket(
+  src: StorageEndpoint,
+  dst: StorageEndpoint,
+  opts: { apply: boolean },
+): Promise<MigrateReport> {
+  const paths = await listObjects(src);
+  const report: MigrateReport = {
+    total: paths.length,
+    copied: 0,
+    failed: 0,
+    bytes: 0,
+    failures: [],
+    paths,
+  };
+
+  if (!opts.apply) return report;
+
+  for (const path of paths) {
+    try {
+      const { bytes } = await copyObject(src, dst, path);
+      report.copied++;
+      report.bytes += bytes;
+    } catch (err) {
+      report.failed++;
+      report.failures.push({
+        path,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return report;
+}

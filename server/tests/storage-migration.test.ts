@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { listObjects, copyObject, type StorageEndpoint } from '../lib/storageMigration';
+import {
+  listObjects,
+  copyObject,
+  migrateBucket,
+  type StorageEndpoint,
+} from '../lib/storageMigration';
 
 const SRC: StorageEndpoint = {
   url: 'https://old.supabase.co',
@@ -129,5 +134,84 @@ describe('copyObject', () => {
 
     await expect(copyObject(SRC, DST, 'sumiu.jpg')).rejects.toThrow(/404/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('migrateBucket', () => {
+  it('em dry-run lista mas não copia nada', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { name: 'a.jpg', id: 'obj-1', metadata: { size: 10, mimetype: 'image/jpeg' } },
+        { name: 'b.jpg', id: 'obj-2', metadata: { size: 20, mimetype: 'image/jpeg' } },
+      ]),
+    );
+
+    const report = await migrateBucket(SRC, DST, { apply: false });
+
+    expect(report).toEqual({
+      total: 2,
+      copied: 0,
+      failed: 0,
+      bytes: 0,
+      failures: [],
+      paths: ['a.jpg', 'b.jpg'],
+    });
+    // só a listagem — nenhum download, nenhum upload
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('com apply copia todos e soma bytes', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([{ name: 'a.jpg', id: 'obj-1', metadata: { size: 4, mimetype: 'image/jpeg' } }]),
+    );
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'image/jpeg' }),
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+    } as unknown as Response);
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 } as unknown as Response);
+
+    const report = await migrateBucket(SRC, DST, { apply: true });
+
+    expect(report.total).toBe(1);
+    expect(report.copied).toBe(1);
+    expect(report.failed).toBe(0);
+    expect(report.bytes).toBe(4);
+    expect(report.failures).toEqual([]);
+  });
+
+  it('registra a falha de um objeto e segue com os demais', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { name: 'ruim.jpg', id: 'obj-1', metadata: { size: 1, mimetype: 'image/jpeg' } },
+        { name: 'bom.jpg', id: 'obj-2', metadata: { size: 4, mimetype: 'image/jpeg' } },
+      ]),
+    );
+    // ruim.jpg: download falha
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: async () => 'boom',
+    } as unknown as Response);
+    // bom.jpg: download + upload ok
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'image/jpeg' }),
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+    } as unknown as Response);
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 } as unknown as Response);
+
+    const report = await migrateBucket(SRC, DST, { apply: true });
+
+    expect(report.copied).toBe(1);
+    expect(report.failed).toBe(1);
+    expect(report.failures).toHaveLength(1);
+    expect(report.failures[0].path).toBe('ruim.jpg');
+    expect(report.failures[0].error).toMatch(/500/);
   });
 });
