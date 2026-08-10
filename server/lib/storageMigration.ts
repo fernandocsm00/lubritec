@@ -65,3 +65,49 @@ export async function listObjects(ep: StorageEndpoint, prefix = ''): Promise<str
 
   return paths;
 }
+
+export interface CopyResult {
+  path: string;
+  bytes: number;
+}
+
+/**
+ * Copia um objeto da origem para o destino. Download autenticado (funciona em
+ * bucket privado); upload com x-upsert, então repetir a cópia é seguro.
+ */
+export async function copyObject(
+  src: StorageEndpoint,
+  dst: StorageEndpoint,
+  path: string,
+): Promise<CopyResult> {
+  const downloadRes = await fetch(`${src.url}/storage/v1/object/${src.bucket}/${path}`, {
+    headers: { Authorization: `Bearer ${src.key}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (!downloadRes.ok) {
+    const detail = await downloadRes.text().catch(() => '');
+    throw new Error(`Falha ao baixar ${path} (${downloadRes.status}): ${detail}`);
+  }
+
+  const contentType = downloadRes.headers.get('content-type') || 'application/octet-stream';
+  const body = new Uint8Array(await downloadRes.arrayBuffer());
+
+  const uploadRes = await fetch(`${dst.url}/storage/v1/object/${dst.bucket}/${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${dst.key}`,
+      'Content-Type': contentType,
+      'x-upsert': 'true',
+    },
+    body,
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (!uploadRes.ok) {
+    const detail = await uploadRes.text().catch(() => '');
+    throw new Error(`Falha ao subir ${path} (${uploadRes.status}): ${detail}`);
+  }
+
+  return { path, bytes: body.length };
+}
