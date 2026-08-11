@@ -1,6 +1,6 @@
 ﻿import { db } from '../db/client';
 import { campaigns, campaignRecipients, conversations, messages, leads, orgSettings } from '../db/schema';
-import { and, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { Campaign, CampaignRecipient, Lead } from '../db/schema';
 import { isWithinDispatchWindow, pickVariant, sweepContinuousReenroll } from './continuousCampaign';
 import { recordTransition } from './stageTransitions';
@@ -23,6 +23,10 @@ const RETRY_BASE_MS = 2 * 60_000; // backoff: 2min, 4min
 const STATUS_CHECK_EVERY = 10;
 // 'sending' órfão: claim feito por um processo que morreu antes de concluir.
 const STALE_SENDING_MS = 10 * 60_000;
+// Janela em que um atendimento humano ainda conta como "vivo". Disparo de
+// campanha NÃO religa a IA numa conversa em que alguém do time falou dentro
+// dessa janela — o vendedor provavelmente ainda está com o lead na mão.
+const HUMAN_ATTENDANCE_TTL_MS = 7 * 24 * 60 * 60_000;
 
 /** Timestamp do último tick concluído — exposto pro healthcheck. */
 export function getDispatcherLastTickAt(): Date | null {
@@ -431,6 +435,78 @@ async function defaultCampaignQueue(): Promise<ConversationQueue> {
   return s?.aiEnabled ? 'ia' : 'recepcao';
 }
 
+/**
+ * Religa a IA numa conversa que já existia antes deste disparo.
+ *
+ * O freio por conversa (`ai_disabled`, migration 041) e a migração pra fila
+ * 'comercial' são setados quando alguém do time responde pela Inbox — e são
+ * PERMANENTES. Sem isto, um lead atendido por humano em qualquer momento do
+ * passado nunca mais é respondido pela IA, mesmo recebendo um disparo novo
+ * meses depois: a resposta dele chega e morre no gate de aiAtendimento
+ * ('conversation_ai_off'). Visto em produção — lead atendido em 20/07 respondeu
+ * um disparo de 11/08 em 11 min e a IA nunca foi nem chamada.
+ *
+ * Disparo novo é ciclo novo, então religa — EXCETO quando o atendimento humano
+ * ainda está vivo (HUMAN_ATTENDANCE_TTL_MS), pra IA nunca falar por cima de um
+ * vendedor que está com a conversa na mão.
+ *
+ * Deliberadamente NÃO mexe em: origin_campaign_id (re-disparo preserva a
+ * campanha de origem), assigned_to, status, nem pending_ai_response — não há
+ * inbound sem resposta neste ponto; quem marca o pending é o webhook quando o
+ * lead responde.
+ */
+async function rearmAiForExistingConversation(
+  conv: typeof conversations.$inferSelect,
+): Promise<typeof conversations.$inferSelect> {
+  const [s] = await db.select({ aiEnabled: orgSettings.aiEnabled }).from(orgSettings).limit(1);
+  if (!s?.aiEnabled) return conv;
+
+  // 'recepcao' também é fila da IA (ver AI_QUEUES) — só 'comercial' precisa voltar.
+  if (!conv.aiDisabled && conv.queue !== 'comercial') return conv;
+
+  // Mensagem de campanha carrega o created_by_user_id da campanha, então
+  // "parece" humana. Excluir é o que impede um disparo anterior de se passar por
+  // atendimento vivo e travar o religamento pra sempre.
+  const campaignMsgs = await db
+    .select({ messageId: campaignRecipients.messageId })
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.conversationId, conv.id));
+  const campaignMsgIds = campaignMsgs
+    .map((m) => m.messageId)
+    .filter((id): id is string => id !== null);
+
+  const [lastHuman] = await db
+    .select({ sentAt: messages.sentAt })
+    .from(messages)
+    .where(and(
+      eq(messages.conversationId, conv.id),
+      eq(messages.direction, 'out'),
+      isNotNull(messages.sentByUserId),
+      ...(campaignMsgIds.length > 0 ? [notInArray(messages.id, campaignMsgIds)] : []),
+    ))
+    .orderBy(desc(messages.sentAt))
+    .limit(1);
+
+  if (lastHuman && lastHuman.sentAt.getTime() > Date.now() - HUMAN_ATTENDANCE_TTL_MS) {
+    return conv;
+  }
+
+  const patch: Partial<typeof conversations.$inferInsert> = {
+    aiDisabled: false,
+    updatedAt: new Date(),
+  };
+  if (conv.queue === 'comercial') {
+    patch.queue = 'ia';
+    patch.enteredQueueAt = new Date();
+  }
+  const [updated] = await db
+    .update(conversations)
+    .set(patch)
+    .where(eq(conversations.id, conv.id))
+    .returning();
+  return updated ?? conv;
+}
+
 async function getOrCreateConversationForCampaign(
   phone: string,
   leadId: string,
@@ -445,7 +521,7 @@ async function getOrCreateConversationForCampaign(
     .from(conversations)
     .where(and(eq(conversations.instanceId, instanceId), eq(conversations.phone, phone)))
     .limit(1);
-  if (existing) return existing;
+  if (existing) return rearmAiForExistingConversation(existing);
 
   const queue = await defaultCampaignQueue();
   const [created] = await db.insert(conversations).values({
