@@ -944,7 +944,19 @@ o objeto não foi copiado — voltar à Task 7.
 
 ## Task 9: Cópia do volume `/app/uploads`
 
-259 arquivos sem backup. É o passo de maior risco do plano inteiro.
+É o passo de maior risco do plano inteiro.
+
+**Medido em 2026-08-13: 332 arquivos, 454,6 MB** (212 em `conversations` = 424 MB, 117 em
+`inbound` = 30 MB, 3 em `campaigns`). Cresce continuamente — eram 259 arquivos em 2026-08-10.
+O volume é majoritariamente vídeo e áudio de WhatsApp, não imagem.
+
+Existe um backup dos arquivos **referenciados pelo banco** em `C:\Saas_lubritec\backup-uploads`,
+baixado pelo domínio público (o app serve `/uploads` sem auth — ver
+[app.ts:146](../../../server/app.ts:146)). Ele é rede de segurança, **não** substitui o `tar`:
+não inclui arquivos órfãos no volume e é um retrato de 2026-08-13.
+
+> 454 MB via `tar` sobre SSH não é instantâneo. Cronometre no ensaio: esse número entra
+> direto na janela de downtime do corte.
 
 - [ ] **Step 1: Contar os arquivos na origem**
 
