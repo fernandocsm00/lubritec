@@ -1042,13 +1042,38 @@ Produção segue no ar e intacta durante toda esta tarefa.
 
 - [ ] **Step 1: Executar as Tasks 6 a 10 contra o ambiente novo**
 
-- [ ] **Step 2: Garantir que o WhatsApp de produção NÃO está conectado**
+- [ ] **Step 2: Neutralizar os workers automáticos no banco novo**
 
-Verificação: em `Settings > WhatsApp` do ambiente novo, nenhuma instância aponta para o número de
-produção.
+> **Correção de 2026-08-13.** Este passo dizia "não conectar o WhatsApp de produção", o que estava
+> errado sobre o mecanismo. Não existe etapa manual de conexão a pular: as credenciais de
+> instância vêm **dentro do dump**, então o app novo nasce conectado. Pior, o
+> [index.ts:40](../../../server/index.ts:40) sobe quatro workers **sem nenhuma guarda de
+> ambiente**, e o `campaignsDispatcher` dá o primeiro tick **5 segundos após o boot**. Sem
+> neutralizar antes, ensaio e produção disparam WhatsApp para os mesmos clientes.
 
-> Duas instâncias disputando o mesmo número derrubam o ambiente vivo. Usar instância de teste ou
-> deixar o WhatsApp desligado no ensaio.
+O banco novo é descartável (será dropado e restaurado no corte), então neutralizar ali não custa
+nada e não toca produção. Antes de subir o serviço novo, rodar **no destino**:
+
+```sql
+-- corta o aiPendingWorker
+UPDATE lubritec.conversations SET pending_ai_response = false WHERE pending_ai_response IS TRUE;
+-- corta o campaignsDispatcher (scheduled vira running sozinha quando a hora chega)
+UPDATE lubritec.campaigns SET status = 'paused' WHERE status IN ('running', 'scheduled');
+```
+
+Verificação — ambas as consultas abaixo devem devolver `0`:
+
+```sql
+SELECT count(*) FROM lubritec.conversations WHERE pending_ai_response IS TRUE;
+SELECT count(*) FROM lubritec.campaigns WHERE status IN ('running', 'scheduled');
+```
+
+> Envio **manual** para número interno continua válido como teste — o que se corta aqui é o envio
+> automático e desacompanhado. E como o dump do corte traz o estado real de volta, essas pausas
+> não vazam para produção.
+
+> No corte (Task 12) este passo **não** se aplica: lá o serviço antigo está parado e o novo deve
+> mesmo assumir os workers.
 
 - [ ] **Step 3: Validação funcional**
 
