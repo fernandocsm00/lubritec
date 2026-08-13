@@ -103,6 +103,18 @@ Hoje: conexão direta `db.<ref>.supabase.co:5432`, sem pooler, sem parâmetros e
 | D6 | `sa-east-1` no destino | mantém latência |
 | D7 | `lubritec_test` **não** migra | testes usam Postgres embedado ([globalSetup.ts](../../../server/tests/globalSetup.ts)) |
 | D8 | Schema antigo preservado ~14 dias pós-corte | é o rollback |
+| D9 | Projeto novo fica em **us-east-2 (Ohio)**, não `sa-east-1` | decisão do Fernando em 2026-08-13, ciente dos custos abaixo |
+
+**Sobre D9 — revoga o D6.** O projeto novo foi criado em `us-east-2`. Levantada a questão, optou-se
+por mantê-lo. Os dois custos aceitos conscientemente:
+
+1. **Latência**: ~120-140 ms por ida e volta entre o VPS e o banco, contra 10-20 ms se ambos
+   estivessem em São Paulo. Afeta cada query; o dashboard, que faz várias agregações por
+   carregamento, é o mais sensível.
+2. **Residência de dados**: base de clientes brasileiros (nome, telefone, CNPJ) hospedada nos EUA.
+   Transferência internacional sob a LGPD tem requisitos próprios; a Lubritec deve estar ciente.
+
+Corrigir depois do corte exige nova janela de indisponibilidade.
 
 ---
 
