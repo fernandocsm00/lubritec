@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import sharp from 'sharp';
 import {
   CAMPAIGN_STATUSES,
+  CAMPAIGN_VALIDITY_FILTERS,
   LEAD_STATUSES,
   LEAD_SOURCES,
   IMBP_VALUES,
@@ -52,6 +53,7 @@ const audienceFilterSchema = z.object({
 const listQuery = z.object({
   q: z.string().optional(),
   status: z.enum(CAMPAIGN_STATUSES).optional(),
+  validity: z.enum(CAMPAIGN_VALIDITY_FILTERS).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });
 
@@ -73,6 +75,9 @@ const createBody = z.object({
   mediaMime: z.string().max(60).nullable().optional(),
   audienceFilter: audienceFilterSchema,
   scheduledAt: z.string().datetime().nullable().optional(),
+  // Vigência comercial. Em branco, o serviço aplica o default de 7 dias.
+  validityStart: z.string().datetime().nullable().optional(),
+  validityEnd: z.string().datetime().nullable().optional(),
   ratePerMinute: z.number().int().min(1).max(120).optional(),
   qualificationQuestion: z.string().trim().max(500).nullable().optional(),
 });
@@ -285,6 +290,8 @@ export async function createHandler(req: Request, res: Response, next: NextFunct
       mediaMime: data.mediaMime ?? null,
       audienceFilter: data.audienceFilter,
       scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+      validityStart: data.validityStart ? new Date(data.validityStart) : null,
+      validityEnd: data.validityEnd ? new Date(data.validityEnd) : null,
       ratePerMinute: data.ratePerMinute,
       createdByUserId: req.user!.userId,
       qualificationQuestion: data.qualificationQuestion ?? null,
@@ -406,6 +413,12 @@ function csvDateTime(value: Date | string | null): string {
   return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
+/** Situação da vigência no momento da exportação. */
+function validityLabel(end: Date | null): string {
+  if (!end) return 'sem vigência';
+  return end.getTime() >= Date.now() ? 'vigente' : 'expirada';
+}
+
 function sendCsv(res: Response, filename: string, csv: string): void {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -414,6 +427,7 @@ function sendCsv(res: Response, filename: string, csv: string): void {
 
 const CAMPAIGNS_CSV_HEADERS = [
   'nome', 'status', 'tipo', 'criada_em', 'agendada_para',
+  'vigencia_inicio', 'vigencia_fim', 'vigencia_situacao',
   'total_destinatarios', 'enviadas', 'falhas', 'pulados',
   'pulados_cooldown', 'pulados_outros', 'respondidas',
   'em_negociacao', 'ganho', 'perdido', 'valor_ganho',
@@ -433,6 +447,9 @@ export async function exportCampaignsCsvHandler(req: Request, res: Response, nex
         c.isContinuous ? 'contínua' : 'disparo único',
         csvDateTime(c.createdAt),
         csvDateTime(c.scheduledAt),
+        csvDateTime(c.validityStart),
+        csvDateTime(c.validityEnd),
+        validityLabel(c.validityEnd),
         f?.totalRecipients ?? 0,
         f?.sent ?? 0,
         f?.failed ?? 0,

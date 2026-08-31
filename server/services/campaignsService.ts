@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { campaigns, campaignRecipients, leads, conversations, messages, deals, users, whatsappInstance } from '../db/schema';
-import { eq, and, or, ilike, desc, sql, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, sql, inArray, isNull, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicCampaign,
@@ -79,6 +79,9 @@ function toPublicCampaign(
     scheduledAt: row.scheduledAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
+    isContinuous: row.isContinuous,
+    validityStart: row.validityStart?.toISOString() ?? null,
+    validityEnd: row.validityEnd?.toISOString() ?? null,
     sentCount: counts.sent,
     failedCount: counts.failed,
     skippedCount: counts.skipped,
@@ -96,11 +99,25 @@ function toPublicCampaign(
 export async function listCampaigns(input: {
   q?: string;
   status?: CampaignStatus;
+  validity?: 'vigente' | 'expirada' | 'sem_vigencia';
   page?: number;
 }): Promise<{ items: PublicCampaign[]; total: number; page: number; pageSize: number }> {
   const page = Math.max(1, input.page ?? 1);
   const conds: SQL[] = [];
   if (input.status) conds.push(eq(campaigns.status, input.status));
+  // Vigência: comparada contra o instante da consulta. Campanhas sem
+
+  // vigência (anteriores ao recurso, e as contínuas) formam grupo próprio —
+
+  // "não informada" não é o mesmo que "acabou".
+
+  if (input.validity === 'vigente') conds.push(sql`${campaigns.validityEnd} >= now()`);
+
+  else if (input.validity === 'expirada') conds.push(sql`${campaigns.validityEnd} < now()`);
+
+  else if (input.validity === 'sem_vigencia') conds.push(isNull(campaigns.validityEnd));
+
+
   if (input.q) {
     const pat = `%${input.q.replace(/[%_\\]/g, '\\$&')}%`;
     conds.push(ilike(campaigns.name, pat));
@@ -130,6 +147,38 @@ export async function listCampaigns(input: {
     page,
     pageSize: LIST_PAGE_SIZE,
   };
+}
+
+const VALIDITY_DEFAULT_DAYS = 7;
+
+/**
+ * Resolve a vigência COMERCIAL da campanha — quando a condição vale, que é
+ * coisa distinta do ciclo do disparo (scheduled/started/completed). Uma
+ * campanha termina de disparar em horas; a oferta corre por dias, e é nesse
+ * período que os leads respondem.
+ *
+ * As datas são resolvidas AQUI e gravadas. Calcular na leitura faria as
+ * campanhas antigas mudarem de vigência junto com a política — o passado
+ * seria reescrito a cada ajuste da regra.
+ *
+ * Default do início é o disparo (scheduledAt), não a criação: é quando a
+ * oferta passa a valer para o cliente. Sem agendamento, cai em agora.
+ */
+export function resolveValidity(input: {
+  validityStart?: Date | null;
+  validityEnd?: Date | null;
+  scheduledAt?: Date | null;
+  now?: Date;
+}): { validityStart: Date; validityEnd: Date } {
+  const now = input.now ?? new Date();
+  const start = input.validityStart ?? input.scheduledAt ?? now;
+  const end = input.validityEnd
+    ?? new Date(start.getTime() + VALIDITY_DEFAULT_DAYS * 24 * 60 * 60 * 1000);
+
+  if (end.getTime() < start.getTime()) {
+    throw new HttpError(422, 'Fim da vigência não pode ser anterior ao início.');
+  }
+  return { validityStart: start, validityEnd: end };
 }
 
 // getById
@@ -172,7 +221,17 @@ export async function createCampaign(input: {
   hsmTemplateId?: string | null;
   hsmVariables?: CampaignHsmVariable[];
   qualificationQuestion?: string | null;
+
+  validityStart?: Date | null;
+
+  validityEnd?: Date | null;
 }): Promise<PublicCampaign> {
+
+  // Vigência resolvida antes de qualquer escrita: fim < início aborta a
+
+  // criação inteira em vez de gravar uma campanha já expirada.
+
+  const validity = resolveValidity(input);
   // ── XOR validation: exactly one of templateId or hsmTemplateId must be set ──
   const hasTemplate = !!input.templateId;
   const hasHsm = !!input.hsmTemplateId;
@@ -239,6 +298,8 @@ export async function createCampaign(input: {
       audienceTotal: eligibleRows.length,
       skippedCount: 0,
       scheduledAt: input.scheduledAt ?? null,
+      validityStart: validity.validityStart,
+      validityEnd: validity.validityEnd,
       ratePerMinute: input.ratePerMinute ?? 20,
       createdByUserId: input.createdByUserId,
       instanceId,
@@ -941,6 +1002,8 @@ export interface CampaignExportRow {
   isContinuous: boolean;
   createdAt: Date;
   scheduledAt: Date | null;
+  validityStart: Date | null;
+  validityEnd: Date | null;
 }
 
 /**
@@ -968,6 +1031,8 @@ export async function listAllCampaignsForExport(input: {
       isContinuous: campaigns.isContinuous,
       createdAt: campaigns.createdAt,
       scheduledAt: campaigns.scheduledAt,
+      validityStart: campaigns.validityStart,
+      validityEnd: campaigns.validityEnd,
     })
     .from(campaigns)
     .where(where)

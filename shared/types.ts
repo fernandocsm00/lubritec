@@ -631,6 +631,10 @@ export interface CampaignDryRunResponse {
   }>;
 }
 
+/** Recorte por vigência comercial na listagem de campanhas. */
+export const CAMPAIGN_VALIDITY_FILTERS = ['vigente', 'expirada', 'sem_vigencia'] as const;
+export type CampaignValidityFilter = (typeof CAMPAIGN_VALIDITY_FILTERS)[number];
+
 export interface PublicCampaign {
   id: string;
   name: string;
@@ -652,6 +656,12 @@ export interface PublicCampaign {
   scheduledAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  /** Início da vigência comercial. Null nas campanhas anteriores ao recurso. */
+  /** Contínua re-enfileira indefinidamente e não tem vigência. */
+  isContinuous: boolean;
+  validityStart: string | null;
+  /** Fim da vigência comercial. Passado dele, a campanha está expirada. */
+  validityEnd: string | null;
   sentCount: number;
   failedCount: number;
   skippedCount: number;

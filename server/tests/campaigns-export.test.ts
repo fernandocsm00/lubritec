@@ -110,7 +110,7 @@ describe('GET /api/campaigns/export.csv', () => {
 
     const lines = csvLines(res.text);
     expect(lines[0]).toBe(
-      'nome;status;tipo;criada_em;agendada_para;total_destinatarios;enviadas;falhas;pulados;pulados_cooldown;pulados_outros;respondidas;em_negociacao;ganho;perdido;valor_ganho',
+      'nome;status;tipo;criada_em;agendada_para;vigencia_inicio;vigencia_fim;vigencia_situacao;total_destinatarios;enviadas;falhas;pulados;pulados_cooldown;pulados_outros;respondidas;em_negociacao;ganho;perdido;valor_ganho',
     );
     expect(res.text).toContain('Alfa');
     expect(res.text).toContain('Beta');

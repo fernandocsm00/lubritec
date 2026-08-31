@@ -56,6 +56,9 @@ export default function CampaignNewPage() {
 
   // Step 5 — Review
   const [scheduledAt, setScheduledAt] = useState<string | null>(null);
+  // Em branco, o backend resolve: início = disparo, fim = início + 7 dias.
+  const [validityStart, setValidityStart] = useState<string | null>(null);
+  const [validityEnd, setValidityEnd] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const create = useCreateCampaign();
@@ -105,6 +108,8 @@ export default function CampaignNewPage() {
         mediaMime,
         audienceFilter: filters,
         scheduledAt,
+        validityStart,
+        validityEnd,
       });
       await dispatch.mutateAsync(created.id);
       toast.success(scheduledAt ? 'Campanha agendada.' : 'Campanha disparada — acompanhe abaixo.');
@@ -190,6 +195,8 @@ export default function CampaignNewPage() {
         {step === 5 && (
           <ReviewStep
             scheduledAt={scheduledAt} onScheduledAtChange={setScheduledAt}
+            validityStart={validityStart} onValidityStartChange={setValidityStart}
+            validityEnd={validityEnd} onValidityEndChange={setValidityEnd}
             audienceTotal={audienceTotal}
             name={name}
             messageBody={messageBody}
