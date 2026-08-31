@@ -94,3 +94,46 @@ describe('escolha do modelo', () => {
     delete process.env.GEMINI_MODEL;
   });
 });
+
+describe('cota estourada (429)', () => {
+  // O free tier do Gemini dá 20 requisições por dia por modelo. Retentar um 429
+  // consome 3 dessas 20 por clique, e todas falham: o Google pede espera de ~4s
+  // e o backoff daqui é de 500ms/1s. É desperdício garantido de uma cota mínima.
+  const quota429 = JSON.stringify({
+    error: {
+      code: 429,
+      message: 'You exceeded your current quota, please check your plan and billing details.',
+      status: 'RESOURCE_EXHAUSTED',
+    },
+  });
+
+  it('não retenta: uma tentativa só', async () => {
+    generateContentMock.mockRejectedValue(new Error(quota429));
+
+    await expect(generateReplyDetailed(input)).rejects.toThrow();
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserva a mensagem do Google para o operador ver a causa', async () => {
+    generateContentMock.mockRejectedValue(new Error(quota429));
+
+    await expect(generateReplyDetailed(input)).rejects.toThrow(/quota/i);
+  });
+
+  it('reconhece RESOURCE_EXHAUSTED mesmo sem o código numérico', async () => {
+    generateContentMock.mockRejectedValue(new Error('{"error":{"status":"RESOURCE_EXHAUSTED"}}'));
+
+    await expect(generateReplyDetailed(input)).rejects.toThrow();
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('continua retentando 503 do servidor, que é transitório de verdade', async () => {
+    generateContentMock.mockRejectedValueOnce(new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}'));
+    okReply('recuperou');
+
+    const r = await generateReplyDetailed(input);
+
+    expect(r.text).toBe('recuperou');
+    expect(generateContentMock).toHaveBeenCalledTimes(2);
+  });
+});
