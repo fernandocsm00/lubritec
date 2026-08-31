@@ -71,3 +71,26 @@ describe('generateReplyDetailed', () => {
     expect(generateContentMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('escolha do modelo', () => {
+  it('usa gemini-3.6-flash por padrão', async () => {
+    delete process.env.GEMINI_MODEL;
+    okReply();
+
+    await generateReplyDetailed(input);
+
+    expect(generateContentMock.mock.calls[0][0].model).toBe('gemini-3.6-flash');
+  });
+
+  it('respeita GEMINI_MODEL quando definida', async () => {
+    // Existe para que a próxima aposentadoria de modelo seja uma troca de
+    // variável no painel, e não commit + build + deploy com a IA fora do ar.
+    process.env.GEMINI_MODEL = 'gemini-3.7-flash';
+    okReply();
+
+    await generateReplyDetailed(input);
+
+    expect(generateContentMock.mock.calls[0][0].model).toBe('gemini-3.7-flash');
+    delete process.env.GEMINI_MODEL;
+  });
+});

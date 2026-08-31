@@ -47,7 +47,19 @@ function getClient(): GoogleGenAI {
   return _client;
 }
 
-const MODEL = 'gemini-2.5-flash';
+// Lido a cada chamada, não fixado no import: uma troca de modelo pelo painel
+// vale no próximo request, sem depender de reiniciar o processo.
+//
+// O gemini-2.5-flash foi aposentado para chaves novas em 08/2026 — a API
+// devolvia 404 ("no longer available to new users") e derrubou de uma vez a
+// IA de atendimento e a detecção de orçamento, que compartilham esta função.
+// Curiosidade útil pro próximo diagnóstico: o modelo continuava aparecendo no
+// ListModels da chave; listar não é o mesmo que poder gerar.
+const DEFAULT_MODEL = 'gemini-3.6-flash';
+
+function modelName(): string {
+  return process.env.GEMINI_MODEL || DEFAULT_MODEL;
+}
 
 // Sem timeout, uma chamada lenta ao Gemini fica pendurada até o proxy do
 // EasyPanel desistir — e o proxy devolve HTML, não o JSON de erro do app, então
@@ -77,7 +89,7 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
       const startedAt = Date.now();
       try {
         const response = await client.models.generateContent({
-          model: MODEL,
+          model: modelName(),
           contents,
           config: {
             systemInstruction: input.systemInstruction,
@@ -98,7 +110,7 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
           text: text.trim(),
           inputTokens: Number(usage.promptTokenCount ?? 0),
           outputTokens: Number(usage.candidatesTokenCount ?? 0),
-          model: MODEL,
+          model: modelName(),
           latencyMs: Date.now() - startedAt,
         };
       } catch (err) {
@@ -167,7 +179,7 @@ export async function extractBudgetFromImage(
   try {
     const client = getClient();
     const response = await client.models.generateContent({
-      model: MODEL,
+      model: modelName(),
       contents: [{
         role: 'user',
         parts: [
