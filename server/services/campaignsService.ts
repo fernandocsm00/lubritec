@@ -827,6 +827,107 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
   };
 }
 
+
+/** Funil zerado — usado para campanhas sem nenhum destinatário. */
+function emptyFunnel(): CampaignFunnel {
+  return {
+    totalRecipients: 0, sent: 0, failed: 0, skipped: 0,
+    skippedByCooldown: 0, skippedOther: 0,
+    replied: 0, inDeal: 0, won: 0, lost: 0,
+    lostByReason: { condicoes_comerciais: 0, preco: 0, sem_retorno: 0, fora_do_perfil: 0 },
+    totalWonValue: 0,
+  };
+}
+
+/**
+ * Versão em lote de getCampaignFunnel: as mesmas agregações, 3 queries no total
+ * em vez de 4 por campanha. Existe porque a exportação CSV precisa do funil de
+ * todas as campanhas de uma vez — em laço seriam 4×N idas ao banco, e com o
+ * Postgres fora da região do app isso vira dezenas de segundos.
+ *
+ * A semântica é deliberadamente idêntica à da versão individual, inclusive o
+ * join de deals por lead_id sem filtrar status do destinatário (um lead em duas
+ * campanhas conta nas duas). campaigns-export.test.ts trava essa equivalência —
+ * se alguém mudar uma das duas, o teste quebra.
+ *
+ * Campanhas sem destinatários voltam zeradas, não ausentes do mapa.
+ */
+export async function getCampaignFunnelsBatch(ids: string[]): Promise<Map<string, CampaignFunnel>> {
+  const out = new Map<string, CampaignFunnel>();
+  if (ids.length === 0) return out;
+  for (const id of ids) out.set(id, emptyFunnel());
+
+  const countsRows = await db.select({
+    campaignId: campaignRecipients.campaignId,
+    total: sql<number>`count(*)::int`,
+    sent: sql<number>`count(*) FILTER (WHERE status = 'sent')::int`,
+    failed: sql<number>`count(*) FILTER (WHERE status = 'failed')::int`,
+    skipped: sql<number>`count(*) FILTER (WHERE status = 'skipped')::int`,
+    skippedByCooldown: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND failure_reason = 'cooldown_24h')::int`,
+    skippedOther: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND (failure_reason IS NULL OR failure_reason <> 'cooldown_24h'))::int`,
+  })
+    .from(campaignRecipients)
+    .where(inArray(campaignRecipients.campaignId, ids))
+    .groupBy(campaignRecipients.campaignId);
+
+  for (const r of countsRows) {
+    const f = out.get(r.campaignId);
+    if (!f) continue;
+    f.totalRecipients = r.total;
+    f.sent = r.sent;
+    f.failed = r.failed;
+    f.skipped = r.skipped;
+    f.skippedByCooldown = r.skippedByCooldown;
+    f.skippedOther = r.skippedOther;
+  }
+
+  const repliedRows = await db.execute(sql`
+    SELECT cr.campaign_id::text AS campaign_id, COUNT(DISTINCT cr.lead_id)::int AS replied
+    FROM campaign_recipients cr
+    WHERE cr.campaign_id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})
+      AND cr.status = 'sent'
+      AND EXISTS (
+        SELECT 1 FROM conversations c
+        JOIN messages m ON m.conversation_id = c.id
+        WHERE c.lead_id = cr.lead_id
+          AND m.direction = 'in'
+          AND m.sent_at > cr.sent_at
+      )
+    GROUP BY cr.campaign_id
+  `);
+  for (const row of repliedRows.rows as Array<{ campaign_id: string; replied: number }>) {
+    const f = out.get(row.campaign_id);
+    if (f) f.replied = row.replied;
+  }
+
+  const dealsRows = await db.select({
+    campaignId: campaignRecipients.campaignId,
+    stage: deals.stage,
+    lossReason: deals.lossReason,
+    proposalValue: deals.proposalValue,
+  })
+    .from(deals)
+    .innerJoin(campaignRecipients, eq(deals.leadId, campaignRecipients.leadId))
+    .where(inArray(campaignRecipients.campaignId, ids));
+
+  for (const d of dealsRows) {
+    const f = out.get(d.campaignId);
+    if (!f) continue;
+    if (d.stage === 'lead_no_comercial' || d.stage === 'proposta_enviada' || d.stage === 'em_negociacao') f.inDeal++;
+    if (d.stage === 'ganho') {
+      f.won++;
+      if (d.proposalValue != null) f.totalWonValue += Number(d.proposalValue);
+    }
+    if (d.stage === 'perdido') {
+      f.lost++;
+      if (d.lossReason && LOSS_REASONS.includes(d.lossReason as LossReason)) {
+        f.lostByReason[d.lossReason as LossReason]++;
+      }
+    }
+  }
+
+  return out;
+}
 export async function listUnqualifiedLeads(campaignId: string): Promise<Array<{
   leadId: string;
   leadName: string;
