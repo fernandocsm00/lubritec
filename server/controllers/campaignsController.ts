@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import path from 'node:path';
+import { toCsv } from '../lib/csv';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import sharp from 'sharp';
@@ -23,6 +24,9 @@ import {
   deleteCampaign,
   listRecipients,
   getCampaignFunnel,
+  getCampaignFunnelsBatch,
+  listAllCampaignsForExport,
+  listAllRecipientsForExport,
   getCampaignsAggregateStats,
   getCampaignsTimeseries,
   getTopCampaigns,
@@ -382,5 +386,90 @@ export async function uploadMediaHandler(req: Request, res: Response, next: Next
       mediaUrl: `/uploads/campaigns/${filename}`,
       mediaMime: 'image/jpeg',
     });
+  } catch (e) { next(e); }
+}
+
+// ---------------------------------------------------------------------------
+// Exportação CSV
+//
+// Duas exportações, espelhando os dois níveis de dado da tela de detalhe: o
+// resumo por campanha (métricas do funil) e a lista de destinatários. Ambas
+// ignoram paginação de propósito — o usuário quer a planilha inteira, não a
+// página que está vendo — e respeitam os mesmos filtros da tela.
+// ---------------------------------------------------------------------------
+
+/** Formata data para o CSV em pt-BR (a planilha é lida por humanos, não por máquina). */
+function csvDateTime(value: Date | string | null): string {
+  if (!value) return '';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
+function sendCsv(res: Response, filename: string, csv: string): void {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+}
+
+const CAMPAIGNS_CSV_HEADERS = [
+  'nome', 'status', 'tipo', 'criada_em', 'agendada_para',
+  'total_destinatarios', 'enviadas', 'falhas', 'pulados',
+  'pulados_cooldown', 'pulados_outros', 'respondidas',
+  'em_negociacao', 'ganho', 'perdido', 'valor_ganho',
+];
+
+export async function exportCampaignsCsvHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { q, status } = listQuery.parse(req.query);
+    const rows = await listAllCampaignsForExport({ q, status });
+    const funnels = await getCampaignFunnelsBatch(rows.map((r) => r.id));
+
+    const body = rows.map((c) => {
+      const f = funnels.get(c.id);
+      return [
+        c.name,
+        c.status,
+        c.isContinuous ? 'contínua' : 'disparo único',
+        csvDateTime(c.createdAt),
+        csvDateTime(c.scheduledAt),
+        f?.totalRecipients ?? 0,
+        f?.sent ?? 0,
+        f?.failed ?? 0,
+        f?.skipped ?? 0,
+        f?.skippedByCooldown ?? 0,
+        f?.skippedOther ?? 0,
+        f?.replied ?? 0,
+        f?.inDeal ?? 0,
+        f?.won ?? 0,
+        f?.lost ?? 0,
+        // Vírgula decimal: é assim que o Excel pt-BR entende número.
+        (f?.totalWonValue ?? 0).toFixed(2).replace('.', ','),
+      ];
+    });
+
+    sendCsv(res, 'campanhas.csv', toCsv(CAMPAIGNS_CSV_HEADERS, body));
+  } catch (e) { next(e); }
+}
+
+export async function exportRecipientsCsvHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const { status } = recipientsQuery.parse(req.query);
+    // Valida a existência antes de exportar: campanha inexistente deve dar 404,
+    // não um CSV vazio que o usuário confundiria com "nenhum destinatário".
+    const campaign = await getCampaignById(id);
+    const rows = await listAllRecipientsForExport({ campaignId: id, status });
+
+    const body = rows.map((r) => [
+      r.leadName,
+      r.phone,
+      r.status,
+      csvDateTime(r.sentAt),
+      r.failureReason ?? '',
+    ]);
+
+    const slug = campaign.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campanha';
+    sendCsv(res, `destinatarios-${slug}.csv`, toCsv(['lead', 'telefone', 'status', 'enviada_em', 'erro'], body));
   } catch (e) { next(e); }
 }

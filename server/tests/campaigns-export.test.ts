@@ -63,3 +63,126 @@ describe('getCampaignFunnelsBatch', () => {
     expect(batch.size).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Endpoints de exportação
+// ---------------------------------------------------------------------------
+
+import request from 'supertest';
+import { createApp } from '../app';
+
+const app = createApp();
+
+async function loginAs(email: string, role: 'admin' | 'comercial' | 'recepcao') {
+  const u = await createUser({ email, password: 'pw12345', role });
+  const res = await request(app).post('/api/auth/login').send({ email, password: 'pw12345' });
+  return { token: res.body.accessToken as string, userId: u.id };
+}
+
+/** Divide o CSV em linhas, descartando o BOM. */
+function csvLines(text: string): string[] {
+  return text.replace(/^﻿/, '').split('\r\n');
+}
+
+describe('GET /api/campaigns/export.csv', () => {
+  it('401 sem token', async () => {
+    const res = await request(app).get('/api/campaigns/export.csv');
+    expect(res.status).toBe(401);
+  });
+
+  it('403 pra recepção', async () => {
+    const { token } = await loginAs('exp-r@x.com', 'recepcao');
+    const res = await request(app).get('/api/campaigns/export.csv').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('responde CSV com cabeçalho e uma linha por campanha', async () => {
+    const { token, userId } = await loginAs('exp-a@x.com', 'admin');
+    await createCampaign({ name: 'Alfa', createdByUserId: userId });
+    await createCampaign({ name: 'Beta', createdByUserId: userId });
+
+    const res = await request(app).get('/api/campaigns/export.csv').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.headers['content-disposition']).toContain('attachment');
+    expect(res.headers['content-disposition']).toContain('.csv');
+
+    const lines = csvLines(res.text);
+    expect(lines[0]).toBe(
+      'nome;status;tipo;criada_em;agendada_para;total_destinatarios;enviadas;falhas;pulados;pulados_cooldown;pulados_outros;respondidas;em_negociacao;ganho;perdido;valor_ganho',
+    );
+    expect(res.text).toContain('Alfa');
+    expect(res.text).toContain('Beta');
+  });
+
+  it('respeita o filtro de status', async () => {
+    const { token, userId } = await loginAs('exp-b@x.com', 'admin');
+    await createCampaign({ name: 'RodandoX', status: 'running', createdByUserId: userId });
+    await createCampaign({ name: 'RascunhoX', status: 'draft', createdByUserId: userId });
+
+    const res = await request(app)
+      .get('/api/campaigns/export.csv?status=running')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('RodandoX');
+    expect(res.text).not.toContain('RascunhoX');
+  });
+});
+
+describe('GET /api/campaigns/:id/recipients.csv', () => {
+  it('403 pra recepção', async () => {
+    const { token } = await loginAs('exp-c@x.com', 'recepcao');
+    const { userId } = await loginAs('exp-c2@x.com', 'admin');
+    const c = await createCampaign({ createdByUserId: userId });
+    const res = await request(app)
+      .get(`/api/campaigns/${c.id}/recipients.csv`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('404 para campanha inexistente', async () => {
+    const { token } = await loginAs('exp-d@x.com', 'admin');
+    const res = await request(app)
+      .get('/api/campaigns/11111111-1111-4111-8111-111111111111/recipients.csv')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('exporta TODOS os destinatários, além do limite de paginação', async () => {
+    const { token, userId } = await loginAs('exp-e@x.com', 'admin');
+    const c = await createCampaign({ createdByUserId: userId });
+    const N = 55; // RECIPIENTS_PAGE_SIZE é 50 — o export não pode parar na página 1
+    for (let i = 0; i < N; i++) {
+      const lead = await createLead({ phone: `55119991${String(i).padStart(5, '0')}` });
+      await createCampaignRecipient({ campaignId: c.id, leadId: lead.id, status: 'sent', sentAt: new Date() });
+    }
+
+    const res = await request(app)
+      .get(`/api/campaigns/${c.id}/recipients.csv`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const lines = csvLines(res.text);
+    expect(lines[0]).toBe('lead;telefone;status;enviada_em;erro');
+    expect(lines.length).toBe(N + 1);
+  });
+
+  it('respeita o filtro de status', async () => {
+    const { token, userId } = await loginAs('exp-f@x.com', 'admin');
+    const c = await createCampaign({ createdByUserId: userId });
+    const l1 = await createLead({ phone: '5511998800001', name: 'EnviadoZ' });
+    const l2 = await createLead({ phone: '5511998800002', name: 'FalhouZ' });
+    await createCampaignRecipient({ campaignId: c.id, leadId: l1.id, status: 'sent', sentAt: new Date() });
+    await createCampaignRecipient({ campaignId: c.id, leadId: l2.id, status: 'failed' });
+
+    const res = await request(app)
+      .get(`/api/campaigns/${c.id}/recipients.csv?status=sent`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('EnviadoZ');
+    expect(res.text).not.toContain('FalhouZ');
+  });
+});

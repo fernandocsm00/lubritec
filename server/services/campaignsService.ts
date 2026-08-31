@@ -928,6 +928,80 @@ export async function getCampaignFunnelsBatch(ids: string[]): Promise<Map<string
 
   return out;
 }
+
+/**
+ * Linha de campanha para o CSV de resumo. Tipo próprio em vez de PublicCampaign
+ * porque a exportação precisa de is_continuous (que PublicCampaign não expõe) e
+ * não precisa de quase nada do resto.
+ */
+export interface CampaignExportRow {
+  id: string;
+  name: string;
+  status: CampaignStatus;
+  isContinuous: boolean;
+  createdAt: Date;
+  scheduledAt: Date | null;
+}
+
+/**
+ * Todas as campanhas que casam com os filtros, sem paginação — o CSV exporta o
+ * conjunto inteiro, não a página aberta. Mesma ordenação da listagem para o
+ * arquivo bater com a tela.
+ */
+export async function listAllCampaignsForExport(input: {
+  q?: string;
+  status?: CampaignStatus;
+}): Promise<CampaignExportRow[]> {
+  const conds: SQL[] = [];
+  if (input.status) conds.push(eq(campaigns.status, input.status));
+  if (input.q) {
+    const pat = `%${input.q.replace(/[%_\\]/g, '\\$&')}%`;
+    conds.push(ilike(campaigns.name, pat));
+  }
+  const where = conds.length ? and(...conds) : undefined;
+
+  return db
+    .select({
+      id: campaigns.id,
+      name: campaigns.name,
+      status: campaigns.status,
+      isContinuous: campaigns.isContinuous,
+      createdAt: campaigns.createdAt,
+      scheduledAt: campaigns.scheduledAt,
+    })
+    .from(campaigns)
+    .where(where)
+    .orderBy(desc(campaigns.createdAt));
+}
+
+/**
+ * Todos os destinatários de uma campanha, sem paginação. Mesmas colunas e mesma
+ * ordenação da tabela do detalhe.
+ */
+export async function listAllRecipientsForExport(input: {
+  campaignId: string;
+  status?: 'pending' | 'sent' | 'failed' | 'skipped';
+}): Promise<PublicCampaignRecipient[]> {
+  const conds: SQL[] = [eq(campaignRecipients.campaignId, input.campaignId)];
+  if (input.status) conds.push(eq(campaignRecipients.status, input.status));
+
+  const rows = await db
+    .select({ recipient: campaignRecipients, leadName: leads.name })
+    .from(campaignRecipients)
+    .leftJoin(leads, eq(campaignRecipients.leadId, leads.id))
+    .where(and(...conds))
+    .orderBy(desc(campaignRecipients.createdAt));
+
+  return rows.map((r) => ({
+    id: r.recipient.id,
+    leadId: r.recipient.leadId,
+    leadName: r.leadName ?? 'Lead',
+    phone: r.recipient.phone,
+    status: r.recipient.status,
+    sentAt: r.recipient.sentAt?.toISOString() ?? null,
+    failureReason: r.recipient.failureReason,
+  }));
+}
 export async function listUnqualifiedLeads(campaignId: string): Promise<Array<{
   leadId: string;
   leadName: string;

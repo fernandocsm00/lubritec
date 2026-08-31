@@ -17,6 +17,8 @@ import {
   cancelHandler,
   deleteHandler,
   recipientsHandler,
+  exportCampaignsCsvHandler,
+  exportRecipientsCsvHandler,
   uploadMediaHandler,
   aggregateStatsHandler,
   timeseriesHandler,
@@ -40,9 +42,13 @@ router.get('/timeseries', ...guard, timeseriesHandler);
 router.get('/top', ...guard, topCampaignsHandler);
 router.get('/report-cities', ...guard, reportCitiesHandler);
 
+// export.csv ANTES de '/:id' — senão o Express casaria 'export.csv' como um id.
+router.get('/export.csv', ...guard, exportCampaignsCsvHandler);
+
 router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);
 router.get('/:id/recipients', ...guard, recipientsHandler);
+router.get('/:id/recipients.csv', ...guard, exportRecipientsCsvHandler);
 router.post('/dry-run', ...guard, dryRunHandler);
 // Import de audiência por CNPJ (reusa o parser de Cadastros).
 router.post(
