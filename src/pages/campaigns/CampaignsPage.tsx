@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/select';
 import { CampaignList } from '@/features/campaigns/CampaignList';
 import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
+import { ExportCsvButton } from '@/features/campaigns/ExportCsvButton';
 import { CampaignReportFilters } from '@/features/campaigns/CampaignReportFilters';
 import type { ReportLeadFilters } from '@/features/campaigns/api';
 import { CAMPAIGN_STATUSES } from '@shared/types';
@@ -37,6 +38,12 @@ export default function CampaignsPage() {
     setSearchParams(next, { replace: true });
   }
 
+  // O CSV exporta o mesmo recorte que está na tela, não a base inteira.
+  const exportQs = new URLSearchParams({
+    ...(q ? { q } : {}),
+    ...(status ? { status } : {}),
+  }).toString();
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] p-6 overflow-hidden">
       <div className="flex justify-between items-center mb-4 gap-4 flex-wrap">
@@ -45,6 +52,13 @@ export default function CampaignsPage() {
           <p className="text-sm text-muted-foreground">Disparo em massa de mensagens WhatsApp</p>
         </div>
         <div className="flex gap-2">
+          <ExportCsvButton
+
+            path={`/campaigns/export.csv${exportQs ? `?${exportQs}` : ''}`}
+
+            filename="campanhas.csv"
+
+          />
           <Button variant="outline" asChild>
             <Link to="/campanhas/relatorio"><BarChart3 className="h-4 w-4 mr-1" /> Ver relatório</Link>
           </Button>

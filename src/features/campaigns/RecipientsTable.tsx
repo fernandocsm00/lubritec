@@ -8,6 +8,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useRecipients } from './api';
+import { ExportCsvButton } from './ExportCsvButton';
 import { formatDateTime, RECIPIENT_STATUS_LABELS, RECIPIENT_STATUS_TONES } from './helpers';
 import type { CampaignRecipientStatus, CampaignStatus } from './types';
 
@@ -30,19 +31,25 @@ export function RecipientsTable({ campaignId, campaignStatus }: Props) {
     <div className="space-y-3">
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-semibold">Destinatários ({data?.total ?? 0})</h3>
-        <Select
-          value={status ?? 'all'}
-          onValueChange={(v) => { setStatus(v === 'all' ? undefined : v as CampaignRecipientStatus); setPage(1); }}
-        >
-          <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="pending">Pendentes</SelectItem>
-            <SelectItem value="sent">Enviados</SelectItem>
-            <SelectItem value="failed">Falharam</SelectItem>
-            <SelectItem value="skipped">Ignorados</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton
+            path={`/campaigns/${campaignId}/recipients.csv${status ? `?status=${status}` : ''}`}
+            filename="destinatarios.csv"
+          />
+          <Select
+            value={status ?? 'all'}
+            onValueChange={(v) => { setStatus(v === 'all' ? undefined : v as CampaignRecipientStatus); setPage(1); }}
+          >
+            <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="pending">Pendentes</SelectItem>
+              <SelectItem value="sent">Enviados</SelectItem>
+              <SelectItem value="failed">Falharam</SelectItem>
+              <SelectItem value="skipped">Ignorados</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="rounded-md border border-border max-h-96 overflow-auto">
