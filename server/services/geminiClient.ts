@@ -49,6 +49,11 @@ function getClient(): GoogleGenAI {
 
 const MODEL = 'gemini-2.5-flash';
 
+// Sem timeout, uma chamada lenta ao Gemini fica pendurada até o proxy do
+// EasyPanel desistir — e o proxy devolve HTML, não o JSON de erro do app, então
+// o usuário via "Request failed (HTTP 502)" sem nenhuma pista da causa.
+const GEMINI_TIMEOUT_MS = 20_000;
+
 /**
  * Backwards-compat — código antigo só queria texto.
  */
@@ -77,7 +82,11 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
           config: {
             systemInstruction: input.systemInstruction,
             temperature: input.temperature ?? 0.4,
-            maxOutputTokens: input.maxOutputTokens ?? 1024,
+            // O 2.5 Flash vem com thinking LIGADO e os tokens de raciocínio saem do
+            // mesmo maxOutputTokens. Com 1024 o modelo podia gastar tudo pensando e
+            // devolver texto vazio — que virava "empty response" e 3 retries.
+            maxOutputTokens: input.maxOutputTokens ?? 4096,
+            httpOptions: { timeout: GEMINI_TIMEOUT_MS },
           },
         });
         const text = response.text ?? '';
@@ -104,6 +113,9 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
         if (err instanceof GeminiError) {
           // Não retentar erro de configuração (sem API key).
           if (err.reason.includes('GEMINI_API_KEY')) return false;
+          // Nem timeout: retentar multiplicaria a espera pelo número de tentativas
+          // e voltaria a estourar o limite do proxy, que é o que o timeout evita.
+          if (/timed? ?out|abort/i.test(err.reason)) return false;
         }
         return true;
       },
