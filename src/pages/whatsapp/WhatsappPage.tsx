@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QueueTabs } from '@/features/whatsapp/QueueTabs';
 import { LineTabs } from '@/features/whatsapp/LineTabs';
-import { FilterBar, statusChipsToFilters } from '@/features/whatsapp/FilterBar';
+import { FilterBar } from '@/features/whatsapp/FilterBar';
+import { buildConversationFilters } from '@/features/whatsapp/filters';
 import { ConversationList } from '@/features/whatsapp/ConversationList';
 import { Thread } from '@/features/whatsapp/Thread';
 import { ChatHeader } from '@/features/whatsapp/ChatHeader';
@@ -28,16 +29,11 @@ export default function WhatsappPage() {
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
 
-  const filters: ConversationFilters = useMemo(() => ({
-    queue,
-    ...statusChipsToFilters(statusKeys),
-    origin: origins,
-    assignment,
-    uf: uf === 'all' ? undefined : uf,
-    instanceId,
-    q: q || undefined,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [queue, statusKeys.join(','), origins.join(','), assignment, uf, instanceId, q]);
+  const filters: ConversationFilters = useMemo(
+    () => buildConversationFilters({ queue, statusKeys, origins, assignment, uf, instanceId, q }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [queue, statusKeys.join(','), origins.join(','), assignment, uf, instanceId, q],
+  );
 
   const { data: convsData } = useConversations(filters);
   const { data: counts } = useConversationCounts(instanceId, queue);
@@ -61,7 +57,7 @@ export default function WhatsappPage() {
         const STATUS_TO_CHIP: Record<typeof conv.status, string> = {
           aguardando_atendimento: 'aguardando',
           em_atendimento: 'em_atendimento',
-          encerrada: 'encerradas',
+          encerrada: 'encerrada',
         };
         const next = new URLSearchParams(searchParams);
         next.set('queue', conv.queue);

@@ -38,6 +38,10 @@ interface Props {
 
 export function FilterBar(props: Props) {
   const [searchInput, setSearchInput] = useState(props.q);
+  // Com busca ativa, buildConversationFilters manda só o termo — os chips
+  // ficam suspensos. Sem sinalizar isso, a barra mostraria "Comercial +
+  // Aguardando" ativos enquanto a lista traz uma conversa encerrada da Recepção.
+  const searching = props.q.trim().length > 0;
   return (
     <div className="border-b border-border bg-background">
       <div className="px-3 py-2">
@@ -54,53 +58,68 @@ export function FilterBar(props: Props) {
         </div>
       </div>
 
-      <div className="px-3 pb-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] font-medium text-muted-foreground mr-1">UF:</span>
-        <Chip active={props.uf === 'all'} onClick={() => props.onUfChange('all')}>Todas</Chip>
-        {UF_VALUES.map((v) => (
-          <Chip key={v} active={props.uf === v} onClick={() => props.onUfChange(v)}>{v}</Chip>
-        ))}
-      </div>
+      {searching && (
+        <div className="px-3 pb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>Buscando em todas as filas, linhas e status — os filtros estão suspensos.</span>
+          <button
+            type="button"
+            className="underline hover:text-foreground"
+            onClick={() => { setSearchInput(''); props.onQChange(''); }}
+          >
+            limpar busca
+          </button>
+        </div>
+      )}
 
-      <div className="px-3 pb-2 flex flex-wrap gap-1.5">
-        {STATUS_OPTIONS.map((s) => (
-          <Chip
-            key={s.key}
-            active={props.statusKeys.includes(s.key)}
-            onClick={() => props.onStatusToggle(s.key)}
-          >
-            {s.key === 'aguardando_nos' && props.awaitingUsCount
-              ? `${s.label} (${props.awaitingUsCount})`
-              : s.label}
-          </Chip>
-        ))}
-      </div>
+      <div className={searching ? 'opacity-40 pointer-events-none' : undefined}>
+        <div className="px-3 pb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-medium text-muted-foreground mr-1">UF:</span>
+          <Chip active={props.uf === 'all'} onClick={() => props.onUfChange('all')}>Todas</Chip>
+          {UF_VALUES.map((v) => (
+            <Chip key={v} active={props.uf === v} onClick={() => props.onUfChange(v)}>{v}</Chip>
+          ))}
+        </div>
 
-      <div className="px-3 pb-2 flex flex-wrap gap-1.5">
-        {ASSIGNMENT_OPTIONS.map((a) => (
-          <Chip
-            key={a.key}
-            active={props.assignment === a.key}
-            onClick={() => props.onAssignmentChange(a.key)}
-          >
-            {a.label}
-          </Chip>
-        ))}
-        <span className="mx-2 text-muted-foreground/50">|</span>
-        {ORIGIN_OPTIONS.map((o) => (
-          <Chip
-            key={o.key}
-            active={props.origins.includes(o.key)}
-            onClick={() => {
-              const next = props.origins.includes(o.key)
-                ? props.origins.filter((x) => x !== o.key)
-                : [...props.origins, o.key];
-              props.onOriginsChange(next);
-            }}
-          >
-            {o.label}
-          </Chip>
-        ))}
+        <div className="px-3 pb-2 flex flex-wrap gap-1.5">
+          {STATUS_OPTIONS.map((s) => (
+            <Chip
+              key={s.key}
+              active={props.statusKeys.includes(s.key)}
+              onClick={() => props.onStatusToggle(s.key)}
+            >
+              {s.key === 'aguardando_nos' && props.awaitingUsCount
+                ? `${s.label} (${props.awaitingUsCount})`
+                : s.label}
+            </Chip>
+          ))}
+        </div>
+
+        <div className="px-3 pb-2 flex flex-wrap gap-1.5">
+          {ASSIGNMENT_OPTIONS.map((a) => (
+            <Chip
+              key={a.key}
+              active={props.assignment === a.key}
+              onClick={() => props.onAssignmentChange(a.key)}
+            >
+              {a.label}
+            </Chip>
+          ))}
+          <span className="mx-2 text-muted-foreground/50">|</span>
+          {ORIGIN_OPTIONS.map((o) => (
+            <Chip
+              key={o.key}
+              active={props.origins.includes(o.key)}
+              onClick={() => {
+                const next = props.origins.includes(o.key)
+                  ? props.origins.filter((x) => x !== o.key)
+                  : [...props.origins, o.key];
+                props.onOriginsChange(next);
+              }}
+            >
+              {o.label}
+            </Chip>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -130,18 +149,3 @@ function Chip({
 }
 
 // Helper para converter a tecla do chip de status nos filtros do backend.
-export function statusChipsToFilters(keys: string[]): {
-  status?: ConversationStatus[];
-  awaitingUs?: boolean;
-  noResponse?: boolean;
-} {
-  const result: { status?: ConversationStatus[]; awaitingUs?: boolean; noResponse?: boolean } = {};
-  const statusList: ConversationStatus[] = [];
-  if (keys.includes('aguardando')) statusList.push('aguardando_atendimento');
-  if (keys.includes('em_atendimento')) statusList.push('em_atendimento');
-  if (keys.includes('encerrada')) statusList.push('encerrada');
-  if (statusList.length) result.status = statusList;
-  if (keys.includes('aguardando_nos')) result.awaitingUs = true;
-  if (keys.includes('sem_retorno')) result.noResponse = true;
-  return result;
-}
