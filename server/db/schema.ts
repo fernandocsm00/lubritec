@@ -317,6 +317,10 @@ export const campaigns = pgTable('campaigns', {
   scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
+  // Vigência COMERCIAL — quando a condição vale, não quando o disparo
+  // acontece. Nula nas campanhas anteriores à migration 045.
+  validityStart: timestamp('validity_start', { withTimezone: true }),
+  validityEnd: timestamp('validity_end', { withTimezone: true }),
   sentCount: integer('sent_count').notNull().default(0),
   failedCount: integer('failed_count').notNull().default(0),
   skippedCount: integer('skipped_count').notNull().default(0),

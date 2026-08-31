@@ -18,6 +18,9 @@ import { CAMPAIGN_STATUS_LABELS } from '@/features/campaigns/helpers';
 export default function CampaignsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const q = searchParams.get('q') ?? '';
+  const rawValidity = searchParams.get('validity');
+  const validity = rawValidity === 'vigente' || rawValidity === 'expirada' || rawValidity === 'sem_vigencia'
+    ? rawValidity : undefined;
   const rawStatus = searchParams.get('status');
   const status: CampaignStatus | undefined =
     rawStatus && (CAMPAIGN_STATUSES as readonly string[]).includes(rawStatus)
@@ -42,6 +45,7 @@ export default function CampaignsPage() {
   const exportQs = new URLSearchParams({
     ...(q ? { q } : {}),
     ...(status ? { status } : {}),
+    ...(validity ? { validity } : {}),
   }).toString();
 
   return (
@@ -73,6 +77,23 @@ export default function CampaignsPage() {
 
       <div className="mb-3">
         <CampaignReportFilters value={leadFilters} onChange={setLeadFilters} />
+        <div className="flex flex-wrap gap-1.5 mt-2 items-center">
+          <span className="text-[11px] font-medium text-muted-foreground mr-1">Vigência:</span>
+          {([['', 'Todas'], ['vigente', 'Vigentes'], ['expirada', 'Expiradas'], ['sem_vigencia', 'Sem vigência']] as const).map(([key, label]) => (
+            <button
+              key={key || 'all'}
+              type="button"
+              onClick={() => patch({ validity: key || null })}
+              className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                (validity ?? '') === key
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-muted-foreground border-border hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <CampaignsReportBar filters={leadFilters} />
@@ -98,7 +119,7 @@ export default function CampaignsPage() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        <CampaignList filters={{ q: q || undefined, status }} />
+        <CampaignList filters={{ q: q || undefined, status, validity }} />
       </div>
     </div>
   );

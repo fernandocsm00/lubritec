@@ -58,6 +58,7 @@ export interface ListResult {
 export interface ListFilters {
   q?: string;
   status?: CampaignStatus;
+  validity?: 'vigente' | 'expirada' | 'sem_vigencia';
   page?: number;
 }
 
@@ -65,6 +66,7 @@ function buildListQuery(f: ListFilters): string {
   const u = new URLSearchParams();
   if (f.q) u.set('q', f.q);
   if (f.status) u.set('status', f.status);
+  if (f.validity) u.set('validity', f.validity);
   if (f.page && f.page > 1) u.set('page', String(f.page));
   const s = u.toString();
   return s ? `?${s}` : '';
@@ -190,6 +192,9 @@ export function useDryRun() {
 }
 
 interface CreateInput {
+  /** Vigência comercial. Omitido, o backend aplica 7 dias a partir do disparo. */
+  validityStart?: string | null;
+  validityEnd?: string | null;
   name: string;
   description?: string;
   instanceId: string;

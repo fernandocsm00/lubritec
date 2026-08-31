@@ -8,6 +8,11 @@ import type { InstanceListItem, HsmTemplateRecord } from '@shared/types';
 interface Props {
   scheduledAt: string | null;
   onScheduledAtChange: (v: string | null) => void;
+  /** Vigência comercial. Em branco, o backend aplica 7 dias a partir do disparo. */
+  validityStart: string | null;
+  onValidityStartChange: (v: string | null) => void;
+  validityEnd: string | null;
+  onValidityEndChange: (v: string | null) => void;
   audienceTotal: number;
   name: string;
   messageBody: string;
@@ -125,6 +130,34 @@ export function ReviewStep(p: Props) {
             className="mt-2 max-w-xs"
           />
         )}
+      </div>
+
+      <div>
+        <Label>Vigência da campanha</Label>
+        <p className="text-xs text-muted-foreground mt-1">
+          Período em que a condição comercial vale — diferente do disparo, que termina em horas.
+          Em branco, vale 7 dias corridos a partir do disparo.
+        </p>
+        <div className="flex gap-3 mt-2 flex-wrap">
+          <div>
+            <Label className="text-xs text-muted-foreground">Início</Label>
+            <Input
+              type="datetime-local"
+              value={p.validityStart ? utcIsoToBrtInput(p.validityStart) : ''}
+              onChange={(e) => p.onValidityStartChange(e.target.value ? brtInputToUtcIso(e.target.value) : null)}
+              className="max-w-xs"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Fim</Label>
+            <Input
+              type="datetime-local"
+              value={p.validityEnd ? utcIsoToBrtInput(p.validityEnd) : ''}
+              onChange={(e) => p.onValidityEndChange(e.target.value ? brtInputToUtcIso(e.target.value) : null)}
+              className="max-w-xs"
+            />
+          </div>
+        </div>
       </div>
 
       {p.audienceTotal > 50 && (

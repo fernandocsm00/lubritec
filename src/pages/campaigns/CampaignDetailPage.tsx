@@ -16,6 +16,7 @@ import {
 } from '@/features/campaigns/api';
 import { useAuthStore } from '@/features/auth/store';
 import { StatusBadge } from '@/features/campaigns/StatusBadge';
+import { ValidityBadge } from '@/features/campaigns/ValidityBadge';
 import { CampaignFunnel } from '@/features/campaigns/CampaignFunnel';
 import { CampaignAuditQueueTab } from '@/features/campaigns/CampaignAuditQueueTab';
 import { CampaignUnqualifiedTab } from '@/features/campaigns/CampaignUnqualifiedTab';
@@ -56,6 +57,7 @@ export default function CampaignDetailPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold">{data.name}</h1>
             <StatusBadge status={data.status} />
+            <ValidityBadge campaign={data} />
           </div>
           {data.description && <p className="text-sm text-muted-foreground mt-1">{data.description}</p>}
           <p className="text-xs text-muted-foreground mt-1">

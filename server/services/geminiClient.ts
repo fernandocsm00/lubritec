@@ -128,6 +128,11 @@ export async function generateReplyDetailed(input: GeminiCallInput): Promise<Gem
           // Nem timeout: retentar multiplicaria a espera pelo número de tentativas
           // e voltaria a estourar o limite do proxy, que é o que o timeout evita.
           if (/timed? ?out|abort/i.test(err.reason)) return false;
+          // Nem cota estourada: no free tier são 20 requisições por dia por modelo,
+          // e cada tentativa consome uma. O Google devolve retryDelay de ~4s, bem
+          // acima do backoff daqui (500ms/1s), então as 3 tentativas falham e
+          // queimam 3 da cota por clique. Falhar rápido e legível é melhor.
+          if (/RESOURCE_EXHAUSTED|"code":[ ]*429|exceeded your current quota/i.test(err.reason)) return false;
         }
         return true;
       },

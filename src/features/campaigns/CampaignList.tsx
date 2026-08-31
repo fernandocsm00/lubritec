@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/table';
 import { useCampaigns, type ListFilters } from './api';
 import { StatusBadge } from './StatusBadge';
+import { ValidityBadge } from './ValidityBadge';
 import { formatDateTime, formatPercent } from './helpers';
 
 interface Props { filters: ListFilters }
@@ -43,7 +44,7 @@ export function CampaignList({ filters }: Props) {
                 </Link>
                 {c.description && <div className="text-xs text-muted-foreground line-clamp-1">{c.description}</div>}
               </TableCell>
-              <TableCell><StatusBadge status={c.status} /></TableCell>
+              <TableCell className="whitespace-nowrap"><StatusBadge status={c.status} /> <ValidityBadge campaign={c} /></TableCell>
               <TableCell className="text-right">
                 {c.audienceTotal}
                 {c.skippedByCooldown > 0 && (
