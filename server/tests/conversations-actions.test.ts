@@ -238,3 +238,112 @@ describe('POST /api/conversations/:id/read', () => {
     expect(row.unreadCount).toBe(0);
   });
 });
+
+// Regressao: getConversationById varria a PAGINA 1 da listagem (PAGE_SIZE=50,
+// ordenada por last_message_at desc) procurando o id. Conversa fora das 50 mais
+// recentes -> 404, mesmo existindo. Como todas as acoes gravam ANTES de chamar
+// loadAndReturn, a escrita acontecia e o front mostrava "Falha ao mover".
+describe('acoes em conversa fora da primeira pagina da listagem', () => {
+  async function seedBeyondFirstPage() {
+    const lead = await createLead({ phone: '11000044001' });
+    // Alvo com last_message_at antigo -> vai pro fim da ordenacao.
+    const alvo = await createConversation({
+      phone: '11000044001',
+      leadId: lead.id,
+      queue: 'recepcao',
+      lastMessageAt: new Date('2020-01-01T00:00:00Z'),
+    });
+    // 55 conversas mais recentes empurram o alvo pra alem da pagina 1 (50).
+    for (let i = 0; i < 55; i++) {
+      const l = await createLead({ phone: `1100004${String(5000 + i).padStart(4, '0')}` });
+      await createConversation({
+        leadId: l.id,
+        lastMessageAt: new Date(Date.now() - i * 1000),
+      });
+    }
+    return alvo;
+  }
+
+  it('move a fila e devolve 200 (nao 404)', async () => {
+    const { token } = await loginAs();
+    const alvo = await seedBeyondFirstPage();
+
+    const res = await request(app)
+      .post(`/api/conversations/${alvo.id}/queue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ queue: 'comercial' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.queue).toBe('comercial');
+  });
+
+  it('GET detalhe devolve 200 (nao 404)', async () => {
+    const { token } = await loginAs();
+    const alvo = await seedBeyondFirstPage();
+
+    const res = await request(app)
+      .get(`/api/conversations/${alvo.id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(alvo.id);
+  });
+
+  it('404 continua valendo pra id inexistente', async () => {
+    const { token } = await loginAs();
+    const res = await request(app)
+      .get('/api/conversations/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+// Regressao: changeQueue setava queue='ia' e pending_ai_response=true mas NAO
+// limpava ai_disabled. O aiPendingWorker filtra por ai_disabled=false, entao a
+// conversa movida pra IA nunca era processada — o "Mover pra IA" nao devolvia
+// a conversa pra IA, em silencio. O botao "IA on" (setConversationAi) sempre
+// limpou o flag; os dois caminhos discordavam.
+describe('POST /api/conversations/:id/queue — freio da IA', () => {
+  it('mover pra ia religa a IA (limpa ai_disabled)', async () => {
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000046001' });
+    const conv = await createConversation({
+      phone: '11000046001',
+      leadId: lead.id,
+      queue: 'recepcao',
+      aiDisabled: true,
+    });
+    await createMessage({ conversationId: conv.id, direction: 'in', body: 'Oi' });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/queue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ queue: 'ia' });
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.queue).toBe('ia');
+    expect(row.aiDisabled).toBe(false);
+    expect(row.pendingAiResponse).toBe(true);
+  });
+
+  it('mover pra comercial NAO religa a IA', async () => {
+    const { token } = await loginAs();
+    const lead = await createLead({ phone: '11000046002' });
+    const conv = await createConversation({
+      phone: '11000046002',
+      leadId: lead.id,
+      queue: 'recepcao',
+      aiDisabled: true,
+    });
+
+    const res = await request(app)
+      .post(`/api/conversations/${conv.id}/queue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ queue: 'comercial' });
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(row.aiDisabled).toBe(true);
+  });
+});

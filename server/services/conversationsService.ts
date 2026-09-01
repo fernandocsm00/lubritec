@@ -82,6 +82,11 @@ function awaitingUsMinutesFor(
 
 interface ListInput extends ConversationFilters {
   currentUserId: string;
+  /**
+   * Busca UMA conversa pelo id, com todo o enriquecimento da listagem.
+   * Uso interno (getConversationById) — não é filtro exposto ao cliente.
+   */
+  id?: string;
 }
 
 export async function listConversations(input: ListInput): Promise<{
@@ -93,6 +98,7 @@ export async function listConversations(input: ListInput): Promise<{
   const page = Math.max(1, input.page ?? 1);
   const conds: SQL[] = [];
 
+  if (input.id) conds.push(eq(conversations.id, input.id));
   if (input.queue) conds.push(eq(conversations.queue, input.queue));
   if (input.status?.length) conds.push(inArray(conversations.status, input.status));
   if (input.awaitingUs) conds.push(awaitingUsSql());
@@ -319,20 +325,18 @@ export async function getConversationById(
   id: string,
   currentUserId: string,
 ): Promise<PublicConversation> {
+  // Filtra pelo id no SQL. Antes isto carregava a PRIMEIRA PÁGINA da listagem
+  // (PAGE_SIZE=50, ordenada por last_message_at desc) e procurava o id lá
+  // dentro: qualquer conversa fora das 50 mais recentes devolvia 404 mesmo
+  // existindo. Como todas as ações (mover, pegar, atribuir, IA on/off, encerrar,
+  // marcar lida) gravam ANTES de chamar loadAndReturn, a escrita acontecia e o
+  // atendente via "Falha ao mover" — erro falso sobre uma ação que funcionou.
   const result = await listConversations({
     currentUserId,
     page: 1,
-    queue: undefined,
+    id,
   });
-  const found = result.items.find((c) => c.id === id);
-  if (!found) {
-    const rows = await db
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, id))
-      .limit(1);
-    if (!rows.length) throw new HttpError(404, 'Conversation not found');
-  }
+  const found = result.items[0];
   if (!found) throw new HttpError(404, 'Conversation not found');
   return found;
 }
@@ -503,6 +507,15 @@ export async function changeQueue(
   // conversa pra fila IA depois que o cliente ja escreveu deixaria a msg sem
   // resposta ate o cliente mandar outra. Worker processa em <=60s (em horario).
   if (queue === 'ia') {
+    // Mover pra IA é intenção explícita de devolver a conversa pra IA, então
+    // solta o freio por conversa (ai_disabled). Sem isto o move era silenciosamente
+    // inócuo: o aiPendingWorker filtra por ai_disabled=false, então a conversa
+    // ficava na fila IA com pending_ai_response pendurado e a IA nunca falava.
+    // É o mesmo que o botão "IA on" (setConversationAi) sempre fez — os dois
+    // caminhos discordavam. Mover pra 'recepcao'/'comercial' NÃO religa: lá o
+    // freio pode ter sido posto de propósito por quem está atendendo.
+    patch.aiDisabled = false;
+
     const [last] = await db
       .select({ direction: messages.direction })
       .from(messages)
