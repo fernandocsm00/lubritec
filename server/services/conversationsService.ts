@@ -172,11 +172,17 @@ export async function listConversations(input: ListInput): Promise<{
     // essa coluna cai no fim via NULLS LAST. Demais casos: cronologica
     // reversa por ultima mensagem.
     .orderBy(
+      // Com o chip "Aguardando nós": fila de trabalho por tempo de espera
+      // (lastInboundAt ASC — quem espera há mais tempo primeiro). Essa ordem é
+      // o próprio propósito do chip; invertê-la o esvaziaria de sentido.
+      //
+      // Nos demais casos, inclusive na fila Comercial: cronológica reversa por
+      // última mensagem. O Comercial usava FIFO por entered_queue_at, mas a
+      // lista aparecia fora de ordem para quem lê datas (13/08, 13/08, 18/08) —
+      // quem prioriza por tempo de espera tem o chip acima para isso.
       input.awaitingUs
         ? sql`${conversations.lastInboundAt} ASC`
-        : input.queue === 'comercial'
-          ? sql`${conversations.enteredQueueAt} ASC NULLS LAST`
-          : desc(conversations.lastMessageAt),
+        : desc(conversations.lastMessageAt),
     )
     .limit(PAGE_SIZE)
     .offset((page - 1) * PAGE_SIZE);
