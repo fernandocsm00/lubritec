@@ -340,3 +340,22 @@ describe('GET /api/campaigns/:id/relatorio.xlsx', () => {
     expect(sheetRows(wb, 'Enviados')[1][0]).toBe('Cliente Um');
   });
 });
+
+/**
+ * O relatório não deduplica destinatário por lead, e isso só é correto porque o
+ * banco garante a unicidade (UNIQUE (campaign_id, lead_id), migration 012).
+ * Se alguém derrubar a constraint, a planilha passa a contar o mesmo cliente
+ * duas vezes em silêncio — este teste é o alarme.
+ */
+describe('invariante: um destinatário por lead em cada campanha', () => {
+  it('o banco recusa o segundo destinatário do mesmo lead', async () => {
+    const u = await createUser({ email: 'uniq@x.com', role: 'admin' });
+    const c = await createCampaign({ createdByUserId: u.id });
+    const l = await createLead({ phone: '5511900000001' });
+    await createCampaignRecipient({ campaignId: c.id, leadId: l.id, status: 'sent', sentAt: new Date() });
+
+    await expect(
+      createCampaignRecipient({ campaignId: c.id, leadId: l.id, status: 'sent', sentAt: new Date() }),
+    ).rejects.toThrow();
+  });
+});

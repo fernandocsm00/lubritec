@@ -164,8 +164,10 @@ export async function buildCampaignReport(campaignId: string): Promise<CampaignR
     ORDER BY l.name, cr.created_at
   `);
 
-  // Negócios do lead, não do destinatário: uma campanha contínua reenfileira o
-  // mesmo lead, e sem o DISTINCT o mesmo deal apareceria uma vez por disparo.
+  // Um lead pode ter mais de um negócio (recompra), e cada um vira uma linha —
+  // é o que o funil conta. O contrário, o mesmo negócio duplicado por vários
+  // disparos, não acontece: UNIQUE (campaign_id, lead_id) garante um
+  // destinatário por lead, inclusive nas contínuas (migration 012).
   const deals = await db.execute<DealRow>(sql`
     SELECT
       d.lead_id::text  AS lead_id,
@@ -186,7 +188,7 @@ export async function buildCampaignReport(campaignId: string): Promise<CampaignR
     FROM deals d
     JOIN leads l ON l.id = d.lead_id
     WHERE d.lead_id IN (
-      SELECT DISTINCT cr.lead_id FROM campaign_recipients cr
+      SELECT cr.lead_id FROM campaign_recipients cr
       WHERE cr.campaign_id = ${campaignId}::uuid
     )
     ORDER BY l.name, d.created_at
@@ -194,11 +196,9 @@ export async function buildCampaignReport(campaignId: string): Promise<CampaignR
 
   const phases = emptyPhases();
 
-  // Um lead pode ter mais de um destinatário na mesma campanha (contínua). O
-  // funil conta leads DISTINTOS em "respondidas", então dedupamos aqui também.
-  const seenReplied = new Set<string>();
-  const seenSilent = new Set<string>();
-
+  // Sem deduplicação por lead de propósito: a constraint UNIQUE já garante um
+  // destinatário por lead, então cada linha aqui É um cliente distinto — o
+  // mesmo que o funil conta com COUNT(DISTINCT lead_id).
   for (const r of recipients.rows as RecipientRow[]) {
     const row = toRow(r);
     if (r.status === 'sent') phases.enviados.push(row);
@@ -207,20 +207,9 @@ export async function buildCampaignReport(campaignId: string): Promise<CampaignR
     if (r.status === 'pending') phases.pendentes.push(row);
 
     if (r.status !== 'sent') continue;
-    if (r.replied_at) {
-      if (!seenReplied.has(r.lead_id)) {
-        seenReplied.add(r.lead_id);
-        phases.respondidas.push(row);
-      }
-    } else if (!seenSilent.has(r.lead_id)) {
-      seenSilent.add(r.lead_id);
-      phases.sem_resposta.push(row);
-    }
+    if (r.replied_at) phases.respondidas.push(row);
+    else phases.sem_resposta.push(row);
   }
-
-  // Um lead que respondeu num disparo e ficou calado noutro é "respondida" —
-  // a fase é do cliente, não da tentativa.
-  phases.sem_resposta = phases.sem_resposta.filter((r) => !seenReplied.has(r.leadId));
 
   for (const d of deals.rows as DealRow[]) {
     const row = toDealReportRow(d);
