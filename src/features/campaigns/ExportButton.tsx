@@ -13,11 +13,11 @@ interface Props {
 }
 
 /**
- * Baixa um CSV de endpoint autenticado. O trabalho real está em apiDownload;
- * aqui ficam só o estado de carregamento e o erro visível — a exportação pode
- * demorar alguns segundos e um botão mudo pareceria travado.
+ * Baixa um arquivo (CSV ou XLSX) de endpoint autenticado. O trabalho real está em
+ * apiDownload; aqui ficam só o estado de carregamento e o erro visível — a
+ * exportação pode demorar alguns segundos e um botão mudo pareceria travado.
  */
-export function ExportCsvButton({ path, filename, label = 'Exportar CSV' }: Props) {
+export function ExportButton({ path, filename, label = 'Exportar CSV' }: Props) {
   const [busy, setBusy] = useState(false);
 
   async function run() {
@@ -25,7 +25,7 @@ export function ExportCsvButton({ path, filename, label = 'Exportar CSV' }: Prop
     try {
       await apiDownload(path, filename);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao exportar CSV.');
+      toast.error(e instanceof Error ? e.message : 'Falha ao exportar o arquivo.');
     } finally {
       setBusy(false);
     }

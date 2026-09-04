@@ -8,7 +8,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useRecipients } from './api';
-import { ExportCsvButton } from './ExportCsvButton';
+import { ExportButton } from './ExportButton';
 import { formatDateTime, RECIPIENT_STATUS_LABELS, RECIPIENT_STATUS_TONES } from './helpers';
 import type { CampaignRecipientStatus, CampaignStatus } from './types';
 
@@ -32,7 +32,7 @@ export function RecipientsTable({ campaignId, campaignStatus }: Props) {
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-semibold">Destinatários ({data?.total ?? 0})</h3>
         <div className="flex items-center gap-2">
-          <ExportCsvButton
+          <ExportButton
             path={`/campaigns/${campaignId}/recipients.csv${status ? `?status=${status}` : ''}`}
             filename="destinatarios.csv"
           />

@@ -1,7 +1,7 @@
 import { db } from '../db/client';
 import { users, leads, conversations, messages, messageTemplates, deals, dealActivities, whatsappInstance, campaigns, campaignRecipients, whatsappHsmTemplates } from '../db/schema';
 import { hashPassword } from '../lib/hash';
-import type { Role, LeadStatus, LeadSource, LeadFlowStage } from '@shared/types';
+import type { Role, LeadStatus, LeadSource, LeadFlowStage, Imbp, Segment } from '@shared/types';
 import type { HsmCategory, HsmStatus, HsmComponent } from '@shared/types';
 import type {
   ConversationQueue,
@@ -57,6 +57,9 @@ export async function createLead(opts: {
   source?: LeadSource;
   flowStage?: LeadFlowStage;
   uf?: 'RS' | 'BA' | null;
+  city?: string | null;
+  imbp?: Imbp | null;
+  segment?: Segment | null;
   createdAt?: Date;
 }) {
   const phone = opts.phone === null ? null : (opts.phone ?? `5511${String(++_phoneSeq).padStart(8, '0')}`);
@@ -72,6 +75,9 @@ export async function createLead(opts: {
       source: opts.source ?? 'manual',
       flowStage: opts.flowStage ?? (phone ? 'complete' : 'incomplete'),
       uf: opts.uf ?? null,
+      city: opts.city ?? null,
+      imbp: opts.imbp ?? null,
+      segment: opts.segment ?? null,
       ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     })
     .returning();

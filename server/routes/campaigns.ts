@@ -19,6 +19,7 @@ import {
   recipientsHandler,
   exportCampaignsCsvHandler,
   exportRecipientsCsvHandler,
+  exportCampaignReportXlsxHandler,
   uploadMediaHandler,
   aggregateStatsHandler,
   timeseriesHandler,
@@ -49,6 +50,7 @@ router.get('/', ...guard, listHandler);
 router.get('/:id', ...guard, getHandler);
 router.get('/:id/recipients', ...guard, recipientsHandler);
 router.get('/:id/recipients.csv', ...guard, exportRecipientsCsvHandler);
+router.get('/:id/relatorio.xlsx', ...guard, exportCampaignReportXlsxHandler);
 router.post('/dry-run', ...guard, dryRunHandler);
 // Import de audiência por CNPJ (reusa o parser de Cadastros).
 router.post(
