@@ -18,6 +18,7 @@ import { useAuthStore } from '@/features/auth/store';
 import { StatusBadge } from '@/features/campaigns/StatusBadge';
 import { ValidityBadge } from '@/features/campaigns/ValidityBadge';
 import { CampaignFunnel } from '@/features/campaigns/CampaignFunnel';
+import { ExportButton } from '@/features/campaigns/ExportButton';
 import { CampaignAuditQueueTab } from '@/features/campaigns/CampaignAuditQueueTab';
 import { CampaignUnqualifiedTab } from '@/features/campaigns/CampaignUnqualifiedTab';
 import { DispatchProgress } from '@/features/campaigns/DispatchProgress';
@@ -119,7 +120,15 @@ export default function CampaignDetailPage() {
 
         <TabsContent value="funnel">
           <div className="rounded-lg border border-border bg-card p-4 mb-4">
-            <h3 className="text-sm font-semibold mb-3">Funil ROI</h3>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-semibold">Funil ROI</h3>
+              {/* Os cards dizem QUANTOS; o Excel diz QUEM — uma aba por fase. */}
+              <ExportButton
+                path={`/campaigns/${id}/relatorio.xlsx`}
+                filename="relatorio-campanha.xlsx"
+                label="Exportar relatório (Excel)"
+              />
+            </div>
             <CampaignFunnel funnel={data.funnel} campaignId={id} />
           </div>
 

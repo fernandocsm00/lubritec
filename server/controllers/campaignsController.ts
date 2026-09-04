@@ -33,6 +33,8 @@ import {
   getTopCampaigns,
   listCampaignReportCities,
 } from '../services/campaignsService';
+import { buildCampaignReport } from '../services/campaignReportService';
+import { campaignReportWorkbook, campaignReportFilename } from '../lib/campaignReportXlsx';
 import { dryRun } from '../services/campaignsAudience';
 import { importCampaignAudience } from '../services/campaignAudienceImport';
 import { startScopedEnrichment } from '../services/enrichmentJobs';
@@ -488,5 +490,29 @@ export async function exportRecipientsCsvHandler(req: Request, res: Response, ne
 
     const slug = campaign.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campanha';
     sendCsv(res, `destinatarios-${slug}.csv`, toCsv(['lead', 'telefone', 'status', 'enviada_em', 'erro'], body));
+  } catch (e) { next(e); }
+}
+
+/**
+ * Relatório completo da campanha em Excel. Diferente do CSV de destinatários,
+ * que só diz o status do disparo, aqui cada fase do funil vira uma aba com os
+ * clientes nominais — a pergunta que a tela não responde é "quem são os 4 que
+ * fecharam", não "quantos fecharam".
+ */
+export async function exportCampaignReportXlsxHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const report = await buildCampaignReport(id);
+    const buffer = await campaignReportWorkbook(report).xlsx.writeBuffer();
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${campaignReportFilename(report.campaign)}"`,
+    );
+    res.send(Buffer.from(buffer));
   } catch (e) { next(e); }
 }

@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/select';
 import { CampaignList } from '@/features/campaigns/CampaignList';
 import { CampaignsReportBar } from '@/features/campaigns/CampaignsReportBar';
-import { ExportCsvButton } from '@/features/campaigns/ExportCsvButton';
+import { ExportButton } from '@/features/campaigns/ExportButton';
 import { CampaignReportFilters } from '@/features/campaigns/CampaignReportFilters';
 import type { ReportLeadFilters } from '@/features/campaigns/api';
 import { CAMPAIGN_STATUSES } from '@shared/types';
@@ -56,7 +56,7 @@ export default function CampaignsPage() {
           <p className="text-sm text-muted-foreground">Disparo em massa de mensagens WhatsApp</p>
         </div>
         <div className="flex gap-2">
-          <ExportCsvButton
+          <ExportButton
 
             path={`/campaigns/export.csv${exportQs ? `?${exportQs}` : ''}`}
 
