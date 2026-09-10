@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/apiClient';
+import type { RetryFailedResult } from './retryFailed';
 import type {
   AudienceFilters,
   CampaignDryRunResponse,
@@ -250,6 +251,15 @@ export function useCancelCampaign() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<PublicCampaign>(`/campaigns/${id}/cancel`, { method: 'POST' }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useRetryFailedCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<RetryFailedResult>(`/campaigns/${id}/retry-failed`, { method: 'POST' }),
     onSuccess: () => invalidate(qc),
   });
 }

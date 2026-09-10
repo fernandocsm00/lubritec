@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ChevronLeft, Pause, Play, X, Trash2 } from 'lucide-react';
+import { ChevronLeft, Pause, Play, X, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,8 +12,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   useCampaign, usePauseCampaign, useResumeCampaign,
-  useCancelCampaign, useDeleteCampaign,
+  useCancelCampaign, useDeleteCampaign, useRetryFailedCampaign,
 } from '@/features/campaigns/api';
+import { retryFailedConfirmText, retryFailedResultMessage } from '@/features/campaigns/retryFailed';
+import { campaignValidityState } from '@/features/campaigns/validity';
 import { useAuthStore } from '@/features/auth/store';
 import { StatusBadge } from '@/features/campaigns/StatusBadge';
 import { ValidityBadge } from '@/features/campaigns/ValidityBadge';
@@ -35,7 +37,9 @@ export default function CampaignDetailPage() {
   const resume = useResumeCampaign();
   const cancel = useCancelCampaign();
   const del = useDeleteCampaign();
+  const retryFailed = useRetryFailedCampaign();
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmRetryOpen, setConfirmRetryOpen] = useState(false);
 
   if (isLoading || !data) {
     return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -43,6 +47,10 @@ export default function CampaignDetailPage() {
 
   const isRunningOrPaused = data.status === 'running' || data.status === 'paused';
   const isCancellable = ['scheduled', 'running', 'paused', 'draft'].includes(data.status);
+  // Rascunho nunca disparou; cancelada não reabre. O resto pode reenviar.
+  const canRetryFailed = data.failedCount > 0
+    && !['draft', 'cancelled'].includes(data.status);
+  const validityExpired = campaignValidityState(data) === 'expirada';
   const onActionError = (e: unknown) => {
     toast.error(e instanceof Error ? e.message : 'Falha ao executar ação.');
   };
@@ -83,6 +91,11 @@ export default function CampaignDetailPage() {
               onError: onActionError,
             })}>
               <Play className="h-4 w-4 mr-1" /> Retomar
+            </Button>
+          )}
+          {canRetryFailed && (
+            <Button size="sm" variant="outline" onClick={() => setConfirmRetryOpen(true)}>
+              <RotateCcw className="h-4 w-4 mr-1" /> Reenviar falhados ({data.failedCount})
             </Button>
           )}
           {isCancellable && (
@@ -159,6 +172,35 @@ export default function CampaignDetailPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={confirmRetryOpen} onOpenChange={setConfirmRetryOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reenviar os disparos que falharam?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {retryFailedConfirmText({
+                failedCount: data.failedCount,
+                status: data.status,
+                validityExpired,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => retryFailed.mutate(id, {
+                onSuccess: (r) => {
+                  const { title, description } = retryFailedResultMessage(r);
+                  toast.success(title, { description });
+                },
+                onError: onActionError,
+              })}
+            >
+              Reenviar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <AlertDialogContent>
