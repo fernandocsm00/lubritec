@@ -23,6 +23,18 @@ const RETRY_BASE_MS = 2 * 60_000; // backoff: 2min, 4min
 const STATUS_CHECK_EVERY = 10;
 // 'sending' órfão: claim feito por um processo que morreu antes de concluir.
 const STALE_SENDING_MS = 10 * 60_000;
+
+/**
+ * Motivo do recipient que morreu no meio do envio. É a ÚNICA falha em que não
+ * sabemos se a mensagem chegou — o processo caiu entre o POST ao provedor e a
+ * gravação do resultado.
+ *
+ * Constante e não literal solto porque `retryFailedRecipients` decide por ela
+ * quem pode ser reenviado: comparado por string no meio do serviço, reescrever
+ * este texto passaria a reenviar disparo possivelmente já entregue, sem nenhum
+ * teste quebrar.
+ */
+export const INTERRUPTED_MID_SEND_REASON = 'interrompido: processo reiniciou durante o envio';
 // Janela em que um atendimento humano ainda conta como "vivo". Disparo de
 // campanha NÃO religa a IA numa conversa em que alguém do time falou dentro
 // dessa janela — o vendedor provavelmente ainda está com o lead na mão.
@@ -77,7 +89,7 @@ export async function tick(): Promise<void> {
     // duplicada pro cliente (risco de ban do chip). Marca failed pra auditoria.
     const stale = await db.update(campaignRecipients).set({
       status: 'failed',
-      failureReason: 'interrompido: processo reiniciou durante o envio',
+      failureReason: INTERRUPTED_MID_SEND_REASON,
       updatedAt: new Date(),
     }).where(and(
       eq(campaignRecipients.status, 'sending'),
@@ -362,6 +374,10 @@ async function sendOne(c: Campaign, r: CampaignRecipient): Promise<void> {
       provider: providerKind,
       rawPayload: sentResult.rawPayload as object,
       sentAt,
+      // Aceita na fila do provedor — NÃO é entrega. O disparo em massa é
+      // justamente onde a diferença importa: um número fora do WhatsApp entra
+      // aqui como "enviado" e só o ACK do webhook desmente (migration 046).
+      deliveryStatus: 'queued',
     }).returning();
 
     await db.update(campaignRecipients).set({

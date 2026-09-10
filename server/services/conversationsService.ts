@@ -406,6 +406,9 @@ export async function listMessages(
     sentAt: r.msg.sentAt.toISOString(),
     editedAt: r.msg.editedAt?.toISOString() ?? null,
     deletedAt: r.msg.deletedAt?.toISOString() ?? null,
+    deliveryStatus: r.msg.deliveryStatus ?? null,
+    deliveryErrorCode: r.msg.deliveryErrorCode ?? null,
+    deliveryErrorMessage: r.msg.deliveryErrorMessage ?? null,
     replyTo: r.replyTo ?? null,
   }));
 
@@ -722,6 +725,8 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
         rawPayload: sendResult.rawPayload as object,
         sentAt,
         replyToMessageId: input.replyToMessageId ?? null,
+        // Aceita na fila do provedor. Só o ACK do webhook confirma entrega.
+        deliveryStatus: 'queued',
       })
       .returning();
 
@@ -791,6 +796,9 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     sentAt: msg.sentAt.toISOString(),
     editedAt: msg.editedAt?.toISOString() ?? null,
     deletedAt: msg.deletedAt?.toISOString() ?? null,
+    deliveryStatus: msg.deliveryStatus ?? null,
+    deliveryErrorCode: msg.deliveryErrorCode ?? null,
+    deliveryErrorMessage: msg.deliveryErrorMessage ?? null,
     replyTo: replyToSnapshot,
   };
 }
@@ -952,6 +960,9 @@ async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
     sentAt: row.msg.sentAt.toISOString(),
     editedAt: row.msg.editedAt?.toISOString() ?? null,
     deletedAt: row.msg.deletedAt?.toISOString() ?? null,
+    deliveryStatus: row.msg.deliveryStatus ?? null,
+    deliveryErrorCode: row.msg.deliveryErrorCode ?? null,
+    deliveryErrorMessage: row.msg.deliveryErrorMessage ?? null,
     replyTo: row.replyTo ?? null,
   };
 }
@@ -1224,6 +1235,7 @@ async function sendFirstHsmTemplate(args: {
           raw: sendResult.rawPayload,
         } as object,
         sentAt,
+        deliveryStatus: 'queued',
       })
       .returning();
 

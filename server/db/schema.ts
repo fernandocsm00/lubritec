@@ -22,6 +22,7 @@ import {
   CONVERSATION_STATUSES,
   MESSAGE_DIRECTIONS,
   MESSAGE_KINDS,
+  DELIVERY_STATUSES,
   ORIGIN_KINDS,
   DEAL_STAGES,
   LOSS_REASONS,
@@ -153,6 +154,12 @@ export const messages = pgTable('messages', {
   originalBody: text('original_body'),
   // "Responder citando" (migration 039): mensagem citada (self-FK).
   replyToMessageId: uuid('reply_to_message_id').references((): AnyPgColumn => messages.id, { onDelete: 'set null' }),
+  // Entrega real (migration 046) — alimentado pelos webhooks de ACK do provedor.
+  // NULL = mensagem anterior à instrumentação, entrega desconhecida.
+  deliveryStatus: text('delivery_status', { enum: DELIVERY_STATUSES }),
+  deliveryStatusAt: timestamp('delivery_status_at', { withTimezone: true }),
+  deliveryErrorCode: text('delivery_error_code'),
+  deliveryErrorMessage: text('delivery_error_message'),
 }, (t) => ({
   providerMsgidUniq: uniqueIndex('idx_messages_provider_msgid')
     .on(t.provider, t.providerMsgId)
