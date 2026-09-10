@@ -8,8 +8,9 @@ import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebh
 import { processInboundWithAi } from '../../aiAtendimento';
 import { getMediaUrl, downloadMedia } from './client';
 import { persistInboundMedia } from '../inboundMediaStore';
-import type { MessageKind } from '@shared/types';
+import type { DeliveryStatus, MessageKind } from '@shared/types';
 import { updateTemplateStatus } from '../../hsmTemplateService';
+import { recordDeliveryStatus } from '../../messageDelivery';
 import { toCanonicalBrPhone } from '../../../lib/phoneBR';
 
 interface MetaInboundMessage {
@@ -33,7 +34,24 @@ interface MetaWebhookValue {
   metadata?: { phone_number_id: string; display_phone_number: string };
   contacts?: Array<{ profile: { name: string }; wa_id: string }>;
   messages?: MetaInboundMessage[];
-  statuses?: Array<unknown>;
+  statuses?: MetaStatusUpdate[];
+}
+
+/**
+ * ACK de entrega da Meta. Chega no MESMO `field: 'messages'` das mensagens
+ * recebidas, só que no array `statuses` em vez de `messages`.
+ *
+ * Este é o único sinal de entrega real: o POST /messages devolve 200 com o
+ * wamid mesmo pra mensagem que vai falhar depois (número fora do WhatsApp,
+ * janela de 24h, bloqueio). A recusa vem aqui, minutos depois, com o código.
+ * https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components
+ */
+interface MetaStatusUpdate {
+  id?: string;
+  status?: string;
+  timestamp?: string;
+  recipient_id?: string;
+  errors?: Array<{ code?: number | string; title?: string; message?: string; error_data?: { details?: string } }>;
 }
 
 interface MetaWebhookEntry {
@@ -217,6 +235,42 @@ async function processOneMessage(
   }
 }
 
+/** Vocabulário da Meta → nosso DeliveryStatus. */
+function toDeliveryStatus(raw: string | undefined): DeliveryStatus | null {
+  switch ((raw ?? '').toLowerCase()) {
+    case 'sent': return 'sent';
+    case 'delivered': return 'delivered';
+    case 'read': return 'read';
+    case 'failed': return 'failed';
+    default: return null;   // 'warning', 'deleted' e futuros: fora de escopo
+  }
+}
+
+/**
+ * Aplica os ACKs do lote. Cada status é independente: um erro num não pode
+ * impedir os outros de gravar — a Meta não reentrega status individualmente.
+ */
+async function processStatusUpdates(statuses: MetaStatusUpdate[]): Promise<void> {
+  for (const s of statuses) {
+    const status = toDeliveryStatus(s.status);
+    if (!status || !s.id) continue;
+
+    const err = s.errors?.[0];
+    try {
+      await recordDeliveryStatus({
+        provider: 'meta_cloud',
+        providerMsgId: s.id,
+        status,
+        errorCode: err?.code !== undefined ? String(err.code) : null,
+        errorMessage: err?.error_data?.details ?? err?.message ?? err?.title ?? null,
+        at: s.timestamp ? new Date(Number(s.timestamp) * 1000) : undefined,
+      });
+    } catch (e) {
+      console.error('[meta-webhook] delivery status update failed:', e);
+    }
+  }
+}
+
 export async function processMetaWebhook(
   fallbackInstanceId: string,
   fallbackCfg: MetaCloudConfig,
@@ -247,6 +301,9 @@ export async function processMetaWebhook(
         if (ingestedAny) {
           markWebhookSubscribed(target.instanceId).catch(() => { /* best-effort */ });
         }
+      }
+      if (change.field === 'messages' && change.value.statuses?.length) {
+        await processStatusUpdates(change.value.statuses);
       }
       if (change.field === 'message_template_status_update') {
         // Status de template é por WABA (entry.id) — roteia pela linha dona da WABA.

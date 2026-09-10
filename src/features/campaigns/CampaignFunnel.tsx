@@ -28,6 +28,43 @@ export function CampaignFunnel({ funnel, campaignId }: Props) {
         <FunnelCard label="Perdido" value={funnel.lost} ofTotal={total} tone="destructive" />
       </div>
 
+      {/* "Enviadas" é o que saiu — o provedor aceitou na fila. Entrega é o que o
+          ACK do WhatsApp confirmou. Antes da migration 046 os dois eram tratados
+          como a mesma coisa e disparo que nunca chegou contava como enviado. */}
+      {funnel.sent > 0 && (
+        <div className="rounded-md border bg-muted/30 p-3 text-xs">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span>
+              Entregues no aparelho:{' '}
+              <strong>{funnel.delivered}</strong>
+              <span className="text-muted-foreground">
+                {' '}({formatPercent(funnel.delivered, funnel.sent)} do enviado)
+              </span>
+            </span>
+            <span>
+              Lidas: <strong>{funnel.read}</strong>
+            </span>
+            {funnel.awaitingAck > 0 && (
+              <span className="text-lc-amber">
+                Sem confirmação: <strong>{funnel.awaitingAck}</strong>
+              </span>
+            )}
+            {funnel.failed > 0 && (
+              <span className="text-destructive">
+                Falharam: <strong>{funnel.failed}</strong>
+              </span>
+            )}
+          </div>
+          {funnel.awaitingAck > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Sem confirmação = o provedor aceitou mas o WhatsApp ainda não
+              confirmou entrega — inclui disparos anteriores ao registro de
+              entrega. Não é o mesmo que falha.
+            </p>
+          )}
+        </div>
+      )}
+
       {funnel.totalWonValue > 0 && (
         <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
           <strong>{formatCurrency(funnel.totalWonValue)}</strong> em vendas fechadas

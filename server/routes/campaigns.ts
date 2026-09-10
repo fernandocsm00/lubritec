@@ -15,6 +15,7 @@ import {
   pauseHandler,
   resumeHandler,
   cancelHandler,
+  retryFailedHandler,
   deleteHandler,
   recipientsHandler,
   exportCampaignsCsvHandler,
@@ -74,6 +75,7 @@ router.post('/:id/dispatch', ...guard, dispatchHandler);
 router.post('/:id/pause', ...guard, pauseHandler);
 router.post('/:id/resume', ...guard, resumeHandler);
 router.post('/:id/cancel', ...guard, cancelHandler);
+router.post('/:id/retry-failed', ...guard, retryFailedHandler);
 router.post(
   '/upload-media',
   ...guard,
