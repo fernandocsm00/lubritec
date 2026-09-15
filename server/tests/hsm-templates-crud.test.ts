@@ -169,6 +169,21 @@ describe('GET /api/whatsapp/instances/:id/templates', () => {
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(2);
   });
+
+  // Nova conversa em linha oficial exige escolher template — vendedor precisa ler.
+  it('allows non-admin to list templates', async () => {
+    await loginAdmin();
+    const [adminRow] = await db.select().from(users).limit(1);
+    const inst = await seedMetaInstance();
+    await createHsmTemplate({ instanceId: inst.id, createdBy: adminRow.id, name: 'tpl_a' });
+    await createUser({ email: 'c@x.com', password: 'pw12345', role: 'comercial' });
+    const r = await request(app).post('/api/auth/login').send({ email: 'c@x.com', password: 'pw12345' });
+    const res = await request(app)
+      .get(`/api/whatsapp/instances/${inst.id}/templates`)
+      .set('Authorization', `Bearer ${r.body.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+  });
 });
 
 describe('DELETE /api/whatsapp/instances/:id/templates/:tid', () => {
