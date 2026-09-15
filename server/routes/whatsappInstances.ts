@@ -15,7 +15,10 @@ import { syncHandler } from '../controllers/hsmTemplatesController';
 const router = Router();
 const adminOnly = [authGuard, requireRole('admin')];
 
-router.get('/', ...adminOnly, listHandler);
+// Listagem liberada pra qualquer usuário logado: "Nova conversa", abas de linha
+// da Inbox e campanhas precisam saber quais linhas existem e qual é oficial.
+// O item (toListItem) não expõe providerConfig/credenciais. O resto segue admin.
+router.get('/', authGuard, listHandler);
 router.post('/', ...adminOnly, createHandler);
 router.get('/:id', ...adminOnly, detailHandler);
 router.patch('/:id', ...adminOnly, patchHandler);
