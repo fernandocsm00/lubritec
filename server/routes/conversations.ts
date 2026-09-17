@@ -20,6 +20,7 @@ import {
   uploadMediaHandler,
   deleteMessageHandler,
   editMessageHandler,
+  retryMediaHandler,
 } from '../controllers/conversationsController';
 
 const router = Router();
@@ -55,5 +56,6 @@ router.post('/:id/read', authGuard, readHandler);
 router.post('/:id/messages', authGuard, sendMessageHandler);
 router.delete('/:id/messages/:msgId', authGuard, deleteMessageHandler);
 router.patch('/:id/messages/:msgId', authGuard, editMessageHandler);
+router.post('/:id/messages/:msgId/retry-media', authGuard, retryMediaHandler);
 
 export default router;

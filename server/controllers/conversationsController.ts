@@ -25,6 +25,7 @@ import {
   editOutboundMessage,
 } from '../services/conversationsService';
 
+import { retryInboundMedia } from '../services/inboundMediaRetry';
 import { ensureSendableAudio } from '../lib/audioConvert';
 
 const csvOf = <T extends string>(values: readonly T[]) =>
@@ -271,6 +272,13 @@ export async function editMessageHandler(req: Request, res: Response, next: Next
     const { msgId } = msgIdParams.parse(req.params);
     const { body } = editBody.parse(req.body);
     res.json(await editOutboundMessage(msgId, req.user!.userId, body));
+  } catch (e) { next(e); }
+}
+
+export async function retryMediaHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, msgId } = msgIdParams.parse(req.params);
+    res.json(await retryInboundMedia(id, msgId));
   } catch (e) { next(e); }
 }
 

@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { encryptSecret, _resetKeyCache } from '../lib/crypto';
 import textFixture from './fixtures/meta-webhook-text.json';
 import imageFixture from './fixtures/meta-webhook-image.json';
+import { getMediaUrl } from '../services/whatsapp/metaCloud/client';
 
 vi.mock('../services/whatsapp/metaCloud/client', () => ({
   getPhoneNumberInfo: vi.fn(),
@@ -179,6 +180,34 @@ describe('POST /api/whatsapp/webhook/meta/:instanceId (events)', () => {
     expect(msg.mediaUrl).toMatch(/^\/uploads\/inbound\//);
     expect(msg.mediaUrl).not.toContain('lookaside');
     expect(msg.mediaMime).toBe('image/jpeg');
+  });
+
+  it('áudio sem legenda com download falho: grava o rótulo "🎵 Áudio", não mensagem vazia', async () => {
+    // Regressão: token da Meta vencido → download falhava, áudio não tem legenda,
+    // e a mensagem entrava sem body e sem media_url ("Mensagem não suportada").
+    vi.mocked(getMediaUrl).mockRejectedValueOnce(new Error('401 token expired'));
+    const row = await seedMetaInstance();
+    const audioFixture = structuredClone(imageFixture) as typeof imageFixture;
+    const m = audioFixture.entry[0].changes[0].value.messages[0] as Record<string, unknown>;
+    m.id = 'wamid.HBgNAUDIO1';
+    m.type = 'audio';
+    delete m.image;
+    m.audio = { id: 'MEDIA_AUDIO_1', mime_type: 'audio/ogg; codecs=opus' };
+    const body = JSON.stringify(audioFixture);
+    const res = await request(app)
+      .post(`/api/whatsapp/webhook/meta/${row.id}`)
+      .set('X-Hub-Signature-256', signBody(body, APP_SECRET))
+      .set('Content-Type', 'application/json')
+      .send(body);
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+
+    const [msg] = await db.select().from(messages);
+    expect(msg.kind).toBe('audio');
+    expect(msg.mediaUrl).toBeNull();
+    expect(msg.body).toBe('🎵 Áudio');
+    // media id preservado pro "Tentar de novo".
+    expect((msg.rawPayload as { audio: { id: string } }).audio.id).toBe('MEDIA_AUDIO_1');
   });
 });
 

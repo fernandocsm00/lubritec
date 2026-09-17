@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { MoreVertical, Pencil, Trash2, Check, X, CornerUpLeft } from 'lucide-react';
+import { MoreVertical, Pencil, Trash2, Check, X, CornerUpLeft, RotateCw } from 'lucide-react';
+import { INBOUND_MEDIA_FALLBACK_LABEL, INBOUND_MEDIA_KINDS, isInboundMediaFallbackLabel } from '@shared/types';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthStore } from '@/features/auth/store';
 import { ImageLightbox } from './ImageLightbox';
-import { useDeleteMessage, useEditMessage } from './api';
+import { useDeleteMessage, useEditMessage, useRetryInboundMedia } from './api';
 import type { PublicMessage } from './types';
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -48,8 +49,25 @@ export function MessageBubble({ msg, onReply }: { msg: PublicMessage; onReply?: 
   const canReply = !!onReply;
   const showMenu = canReply || canEdit || canDelete;
 
+  // Recebida com arquivo que não baixou (token vencido, mídia expirada...): em vez
+  // de "Mensagem não suportada", diz o que o cliente mandou e deixa tentar de novo.
+  const mediaMissing = !isOut && !msg.mediaUrl
+    && (INBOUND_MEDIA_KINDS as readonly string[]).includes(msg.kind);
+  // O rótulo fallback ("🎵 Áudio") vira redundante com o aviso; legenda real fica.
+  const visibleBody = mediaMissing && isInboundMediaFallbackLabel(msg.body) ? null : msg.body;
+
   const del = useDeleteMessage();
   const edit = useEditMessage();
+  const retryMedia = useRetryInboundMedia();
+
+  async function handleRetryMedia() {
+    try {
+      const updated = await retryMedia.mutateAsync({ conversationId: msg.conversationId, messageId: msg.id });
+      if (updated.mediaUrl) toast.success('Arquivo carregado.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao baixar o arquivo.');
+    }
+  }
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(msg.body ?? '');
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -233,12 +251,31 @@ export function MessageBubble({ msg, onReply }: { msg: PublicMessage; onReply?: 
           </div>
         ) : (
           <>
-            {msg.body && (
+            {mediaMissing && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-0.5">
+                <p className="text-sm italic text-muted-foreground/90 leading-snug">
+                  {msg.body === INBOUND_MEDIA_FALLBACK_LABEL.sticker
+                    ? INBOUND_MEDIA_FALLBACK_LABEL.sticker
+                    : INBOUND_MEDIA_FALLBACK_LABEL[msg.kind as keyof typeof INBOUND_MEDIA_FALLBACK_LABEL]}
+                  {' — não foi possível carregar'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRetryMedia}
+                  disabled={retryMedia.isPending}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded border border-border/60 hover:bg-black/5 disabled:opacity-60"
+                >
+                  <RotateCw className={`h-3 w-3 ${retryMedia.isPending ? 'animate-spin' : ''}`} />
+                  {retryMedia.isPending ? 'Baixando…' : 'Tentar de novo'}
+                </button>
+              </div>
+            )}
+            {visibleBody && (
               <p className="text-sm whitespace-pre-wrap break-words leading-snug">
-                {renderWhatsappBold(msg.body)}
+                {renderWhatsappBold(visibleBody)}
               </p>
             )}
-            {!msg.body && !msg.mediaUrl && (
+            {!msg.body && !msg.mediaUrl && !mediaMissing && (
               <p className="text-sm italic text-muted-foreground/80 leading-snug">
                 📎 Mensagem não suportada
               </p>

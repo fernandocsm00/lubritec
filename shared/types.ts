@@ -255,6 +255,27 @@ export const MESSAGE_KINDS = [
 ] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
+/**
+ * Rótulos gravados no `body` de uma mensagem RECEBIDA quando o arquivo não pôde
+ * ser baixado — a bolha (e a prévia da conversa) nunca fica vazia. O front usa
+ * a lista pra reconhecer o rótulo e trocar por um aviso com "Tentar de novo".
+ */
+export const INBOUND_MEDIA_FALLBACK_LABEL = {
+  image: '🖼️ Imagem',
+  audio: '🎵 Áudio',
+  video: '🎬 Vídeo',
+  document: '📎 Documento',
+  sticker: '🎞️ Figurinha',
+  unknown: '📎 Mensagem não suportada',
+} as const;
+
+export const INBOUND_MEDIA_KINDS = ['image', 'audio', 'video', 'document'] as const;
+
+export function isInboundMediaFallbackLabel(body: string | null | undefined): boolean {
+  if (!body) return false;
+  return (Object.values(INBOUND_MEDIA_FALLBACK_LABEL) as string[]).includes(body.trim());
+}
+
 export const ORIGIN_KINDS = ['organic', 'campaign'] as const;
 export type OriginKind = (typeof ORIGIN_KINDS)[number];
 
