@@ -6,6 +6,8 @@ import { uazapiInboundSchema, extractInbound } from '../lib/uazapiSchema';
 import { ingestInbound } from '../services/whatsappWebhookService';
 import { materializeInboundMedia } from '../services/whatsapp/uazapi/inboundMedia';
 import { loadValidWebhookTokens, resolveInstanceIdByWebhookToken } from '../services/whatsappInstanceService';
+import { recordDeliveryStatus } from '../services/messageDelivery';
+import type { DeliveryStatus } from '@shared/types';
 import { processInboundWithAi } from '../services/aiAtendimento';
 import {
   pushDebugEntry,
@@ -14,13 +16,38 @@ import {
 } from '../lib/webhookDebugBuffer';
 
 /**
- * UazAPI manda evento 'messages_update' (ou 'messages.update') com status
- * 'Deleted' quando uma msg eh revogada — seja por nos via POST /message/delete
- * OU pelo proprio cliente apagando pelo celular dele.
+ * Traduz o vocabulario de status da UazAPI (herdado do Baileys) pro nosso
+ * DeliveryStatus. 'Deleted' NAO entra aqui — revogacao e outro eixo, tratada
+ * separadamente.
  *
- * Marca deleted_at na msg local correspondente (idempotente). Retorna o
- * resultado pro debug buffer se conseguiu casar, ou null se nao eh esse tipo
- * de evento (e o handler segue pro extractInbound normal).
+ * Vocabulario observado: Pending, ServerAck/Sent, DeliveryAck/Delivered, Read,
+ * Played, Error/Failed. Normalizamos removendo tudo que nao e letra porque a
+ * mesma instancia ja mandou 'DeliveryAck', 'delivery_ack' e 'DELIVERY-ACK'.
+ */
+function toDeliveryStatus(rawStatus: string): DeliveryStatus | null {
+  const s = rawStatus.toLowerCase().replace(/[^a-z]/g, '');
+  if (!s) return null;
+  if (s.includes('error') || s.includes('fail')) return 'failed';
+  // 'played' e o ACK de audio ouvido — para o remetente equivale a lido.
+  if (s.includes('read') || s.includes('played')) return 'read';
+  if (s.includes('deliver')) return 'delivered';
+  if (s.includes('serverack') || s === 'sent' || s === 'ack') return 'sent';
+  if (s.includes('pending')) return 'queued';
+  return null;
+}
+
+/**
+ * UazAPI manda evento 'messages_update' (ou 'messages.update') com o status da
+ * mensagem de saida: Pending → ServerAck → DeliveryAck → Read, ou Error quando
+ * o envio falha. Tambem manda 'Deleted' quando uma msg eh revogada — seja por
+ * nos via POST /message/delete OU pelo proprio cliente apagando pelo celular.
+ *
+ * Este e o UNICO sinal de entrega real que existe: a resposta do /send devolve
+ * `status: "Pending"` sempre, ou seja "entrou na fila", nunca "chegou". Antes da
+ * migration 046 tudo que nao fosse 'Deleted' era descartado aqui — por isso
+ * mensagem que nunca chegou ao destino ficava indistinguivel de mensagem lida.
+ *
+ * Retorna null se nao eh evento de update (e o handler segue pro extractInbound).
  *
  * Match pelo provider_msg_id: aceita formato 'owner:messageid' OU so 'messageid'
  * porque o ID que gravamos no send vem nesse formato e o webhook ja vem com
@@ -28,7 +55,12 @@ import {
  */
 async function tryHandleMessageUpdate(
   payload: Record<string, unknown>,
-): Promise<{ kind: 'message_deleted'; messageId: string } | { kind: 'ignored_update'; reason: string } | null> {
+): Promise<
+  | { kind: 'message_deleted'; messageId: string }
+  | { kind: 'delivery_status'; messageId: string; status: DeliveryStatus }
+  | { kind: 'ignored_update'; reason: string }
+  | null
+> {
   const event = String(
     payload.event ?? payload.EventType ?? payload.type ?? payload.eventType ?? '',
   ).toLowerCase();
@@ -39,9 +71,6 @@ async function tryHandleMessageUpdate(
     (payload.data as Record<string, unknown> | undefined) ??
     payload;
   const status = String(msgObj.status ?? '').toLowerCase();
-  if (!status.includes('delete')) {
-    return { kind: 'ignored_update', reason: `status=${status || 'unknown'}` };
-  }
 
   const msgId =
     (msgObj.id as string | undefined) ??
@@ -49,24 +78,54 @@ async function tryHandleMessageUpdate(
     (msgObj.messageId as string | undefined);
   if (!msgId) return { kind: 'ignored_update', reason: 'missing message id' };
 
-  // Match flexivel: provider_msg_id pode estar gravado como 'owner:messageid'
-  // (vindo do send response) ou so 'messageid' (vindo do payload de update).
-  const suffix = msgId.includes(':') ? msgId.split(':').pop()! : msgId;
-  const result = await db
-    .update(messages)
-    .set({ deletedAt: new Date() })
-    .where(
-      or(
-        eq(messages.providerMsgId, msgId),
-        eq(messages.providerMsgId, suffix),
-      ),
-    )
-    .returning({ id: messages.id });
+  if (status.includes('delete')) {
+    // Match flexivel: provider_msg_id pode estar gravado como 'owner:messageid'
+    // (vindo do send response) ou so 'messageid' (vindo do payload de update).
+    const suffix = msgId.includes(':') ? msgId.split(':').pop()! : msgId;
+    const result = await db
+      .update(messages)
+      .set({ deletedAt: new Date() })
+      .where(
+        or(
+          eq(messages.providerMsgId, msgId),
+          eq(messages.providerMsgId, suffix),
+        ),
+      )
+      .returning({ id: messages.id });
 
-  if (result.length === 0) {
-    return { kind: 'ignored_update', reason: `no local message matching ${msgId}` };
+    if (result.length === 0) {
+      return { kind: 'ignored_update', reason: `no local message matching ${msgId}` };
+    }
+    return { kind: 'message_deleted', messageId: result[0].id };
   }
-  return { kind: 'message_deleted', messageId: result[0].id };
+
+  const delivery = toDeliveryStatus(status);
+  if (!delivery) {
+    return { kind: 'ignored_update', reason: `status=${status || 'unknown'}` };
+  }
+
+  const res = await recordDeliveryStatus({
+    provider: 'uazapi',
+    providerMsgId: msgId,
+    status: delivery,
+    errorCode: firstString(msgObj, ['code', 'errorCode', 'statusCode']),
+    errorMessage: firstString(msgObj, ['error', 'errorMessage', 'reason', 'description']),
+  });
+
+  if (!res.updated) {
+    return { kind: 'ignored_update', reason: res.reason ?? 'not applied' };
+  }
+  return { kind: 'delivery_status', messageId: res.messageId!, status: delivery };
+}
+
+/** Primeiro valor string nao-vazio entre as chaves dadas. */
+function firstString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'string' && v.trim()) return v;
+    if (typeof v === 'number') return String(v);
+  }
+  return null;
 }
 
 /**

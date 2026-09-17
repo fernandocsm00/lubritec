@@ -34,7 +34,7 @@ beforeEach(async () => {
   await db.delete(leads);
 });
 
-async function loginAs(role: 'admin' | 'comercial') {
+async function loginAs(role: 'admin' | 'comercial' | 'recepcao') {
   await createUser({ email: `${role}@x.com`, password: 'pw12345', role });
   const res = await request(app).post('/api/auth/login')
     .send({ email: `${role}@x.com`, password: 'pw12345' });
@@ -54,9 +54,22 @@ describe('GET /api/whatsapp/instances', () => {
     expect(res.body.items.map((i: any) => i.displayName).sort()).toEqual(['A', 'B']);
   });
 
-  it('blocks non-admin', async () => {
-    const token = await loginAs('comercial');
+  // Comercial e recepção precisam da lista pra "Nova conversa" saber se a linha
+  // é oficial (Meta Cloud → template HSM). O item não carrega credenciais.
+  it.each(['comercial', 'recepcao'] as const)('allows %s to list (read-only)', async (role) => {
+    const token = await loginAs(role);
+    await createWhatsappInstance({ displayName: 'A', isDefault: true });
     const res = await request(app).get('/api/whatsapp/instances')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0]).not.toHaveProperty('providerConfig');
+  });
+
+  it('keeps instance detail admin-only', async () => {
+    const token = await loginAs('comercial');
+    const row = await createWhatsappInstance({ displayName: 'A', isDefault: true });
+    const res = await request(app).get(`/api/whatsapp/instances/${row.id}`)
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
   });

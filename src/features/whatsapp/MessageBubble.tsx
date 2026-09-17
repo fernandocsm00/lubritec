@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuthStore } from '@/features/auth/store';
 import { ImageLightbox } from './ImageLightbox';
 import { useDeleteMessage, useEditMessage, useRetryInboundMedia } from './api';
+import { deliveryTick, DELIVERY_TICK_CLASS } from './deliveryTicks';
 import type { PublicMessage } from './types';
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -36,6 +37,7 @@ function quoteText(reply: NonNullable<PublicMessage['replyTo']>): string {
 
 export function MessageBubble({ msg, onReply }: { msg: PublicMessage; onReply?: (m: PublicMessage) => void }) {
   const isOut = msg.direction === 'out';
+  const tick = deliveryTick(msg);
   const time = new Date(msg.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
@@ -287,8 +289,15 @@ export function MessageBubble({ msg, onReply }: { msg: PublicMessage; onReply?: 
           <div className="text-[10px] text-muted-foreground/80 text-right mt-0.5">
             {msg.editedAt && <span className="mr-1 italic">(editado)</span>}
             {time}
-            {isOut && <span className="ml-1 text-sky-400">✓✓</span>}
+            {tick && (
+              <span className={`ml-1 ${DELIVERY_TICK_CLASS[tick.tone]}`} title={tick.label}>
+                {tick.glyph}
+              </span>
+            )}
           </div>
+        )}
+        {tick?.tone === 'failed' && (
+          <div className="mt-1 text-[10px] text-red-500">{tick.label}</div>
         )}
       </div>
     </div>

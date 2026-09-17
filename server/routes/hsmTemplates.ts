@@ -15,7 +15,10 @@ import {
 const router = Router({ mergeParams: true });
 const adminOnly = [authGuard, requireRole('admin')];
 
-router.get('/', ...adminOnly, listHandler);
+// Leitura liberada pra qualquer usuário logado: linha oficial só inicia conversa
+// via template aprovado, então o vendedor precisa escolher um. Criar/editar/apagar
+// continua admin.
+router.get('/', authGuard, listHandler);
 router.post('/', ...adminOnly, createHandler);
 // Upload da imagem de header (memória + sharp→JPEG no service). Reusa o multer de
 // mídia de campanha (memoryStorage, 5MB, image/*).

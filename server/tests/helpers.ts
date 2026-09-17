@@ -8,6 +8,7 @@ import type {
   ConversationStatus,
   MessageDirection,
   MessageKind,
+  DeliveryStatus,
   OriginKind,
 } from '@shared/types';
 import type {
@@ -158,10 +159,12 @@ export async function createMessage(opts: {
   provider?: 'uazapi' | 'meta_cloud';
   rawPayload?: unknown;
   sentAt?: Date;
+  deliveryStatus?: DeliveryStatus | null;
 }) {
   const [m] = await db
     .insert(messages)
     .values({
+      deliveryStatus: opts.deliveryStatus ?? null,
       conversationId: opts.conversationId,
       direction: opts.direction ?? 'in',
       kind: opts.kind ?? 'text',

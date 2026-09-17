@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { campaigns, campaignRecipients, leads, conversations, messages, deals, users, whatsappInstance } from '../db/schema';
-import { eq, and, or, ilike, desc, sql, inArray, isNull, type SQL } from 'drizzle-orm';
+import { eq, and, or, ne, ilike, desc, sql, inArray, isNull, type SQL } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicCampaign,
@@ -20,6 +20,7 @@ import { LOSS_REASONS } from '@shared/types';
 import { resolveAudience, materializeCsvLeads } from './campaignsAudience';
 import { filterEligibleLeads } from './campaignsCooldown';
 import { getTemplateById, countBodyVariables, hsmBodyText } from './hsmTemplateService';
+import { INTERRUPTED_MID_SEND_REASON } from './campaignsDispatcher';
 import type { HsmComponent } from '@shared/types';
 
 const LIST_PAGE_SIZE = 50;
@@ -395,6 +396,86 @@ export async function cancelCampaign(id: string): Promise<PublicCampaign> {
   });
 
   return getCampaignById(id);
+}
+
+export interface RetryFailedResult {
+  /** Destinatários devolvidos pra fila. */
+  requeued: number;
+  /**
+   * Destinatários deixados em `failed` de propósito: morreram no meio do envio
+   * e a mensagem PODE ter sido entregue.
+   */
+  skippedInterrupted: number;
+  /** Status da campanha depois da operação (pode ter reaberto pra running). */
+  campaignStatus: CampaignStatus;
+}
+
+/**
+ * Devolve pra fila os disparos que falharam SEM ter saído.
+ *
+ * Elegibilidade: tudo em `failed` MENOS `INTERRUPTED_MID_SEND_REASON` — nesse
+ * caso o processo morreu entre o POST ao provedor e a gravação, e ninguém sabe
+ * se a mensagem chegou. Reenviar duplicaria mensagem pro cliente, que é risco
+ * de ban do chip; é a mesma razão pela qual o dispatcher não os recicla sozinho.
+ *
+ * O reenvio em si é do dispatcher: voltar pra 'pending' basta pra ele reivindicar
+ * no próximo tick, com claim atômico, ratePerMinute e o freio de cooldown de 24h
+ * já aplicados. Campanha `completed`/`paused` volta pra `running` senão o
+ * dispatcher nunca olharia pra ela — e se fecha sozinha de novo ao drenar a fila.
+ */
+export async function retryFailedRecipients(id: string): Promise<RetryFailedResult> {
+  const [row] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  if (!row) throw new HttpError(404, 'Campaign not found');
+  if (row.status === 'draft') {
+    throw new HttpError(400, 'Campanha em rascunho ainda não disparou — não há o que reenviar');
+  }
+  if (row.status === 'cancelled') {
+    throw new HttpError(400, 'Campanha cancelada não pode reenviar — duplique a campanha para disparar de novo');
+  }
+
+  const [{ skippedInterrupted }] = await db.select({
+    skippedInterrupted: sql<number>`count(*)::int`,
+  }).from(campaignRecipients).where(and(
+    eq(campaignRecipients.campaignId, id),
+    eq(campaignRecipients.status, 'failed'),
+    eq(campaignRecipients.failureReason, INTERRUPTED_MID_SEND_REASON),
+  ));
+
+  const requeued = await db.transaction(async (tx) => {
+    const reset = await tx.update(campaignRecipients).set({
+      status: 'pending',
+      // Zera o backoff: o operador pediu uma tentativa nova, não a continuação
+      // da série que já se esgotou.
+      attemptCount: 0,
+      nextAttemptAt: null,
+      failureReason: null,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(campaignRecipients.campaignId, id),
+      eq(campaignRecipients.status, 'failed'),
+      or(
+        isNull(campaignRecipients.failureReason),
+        ne(campaignRecipients.failureReason, INTERRUPTED_MID_SEND_REASON),
+      ),
+    )).returning({ id: campaignRecipients.id });
+
+    if (reset.length === 0) return 0;
+
+    await tx.update(campaigns).set({
+      failedCount: sql`GREATEST(0, ${campaigns.failedCount} - ${reset.length})`,
+      ...(row.status === 'completed' || row.status === 'paused'
+        ? { status: 'running' as const, completedAt: null }
+        : {}),
+      updatedAt: new Date(),
+    }).where(eq(campaigns.id, id));
+
+    return reset.length;
+  });
+
+  const [after] = await db.select({ status: campaigns.status })
+    .from(campaigns).where(eq(campaigns.id, id)).limit(1);
+
+  return { requeued, skippedInterrupted, campaignStatus: after.status };
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
@@ -823,6 +904,23 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
     skippedOther: sql<number>`count(*) FILTER (WHERE status = 'skipped' AND (failure_reason IS NULL OR failure_reason <> 'cooldown_24h'))::int`,
   }).from(campaignRecipients).where(eq(campaignRecipients.campaignId, id));
 
+  // Entrega confirmada: vem do ACK do provedor gravado na mensagem do disparo
+  // (migration 046), não do status do recipient — que só diz que o disparo saiu.
+  // LEFT JOIN porque recipient antigo pode ter message_id nulo; nesse caso a
+  // entrega é desconhecida e cai em awaitingAck, nunca em delivered.
+  const deliveryRows = await db.execute(sql`
+    SELECT
+      COUNT(*) FILTER (WHERE m.delivery_status IN ('delivered', 'read'))::int AS delivered,
+      COUNT(*) FILTER (WHERE m.delivery_status = 'read')::int AS read,
+      COUNT(*) FILTER (WHERE m.delivery_status IS NULL OR m.delivery_status IN ('queued', 'sent'))::int AS awaiting_ack
+    FROM campaign_recipients cr
+    LEFT JOIN messages m ON m.id = cr.message_id
+    WHERE cr.campaign_id = ${id}
+      AND cr.status = 'sent'
+  `);
+  const delivery = deliveryRows.rows[0] as
+    { delivered: number; read: number; awaiting_ack: number } | undefined;
+
   const repliedRows = await db.execute(sql`
     SELECT COUNT(DISTINCT cr.lead_id)::int AS replied
     FROM campaign_recipients cr
@@ -875,6 +973,9 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
   return {
     totalRecipients: counts.total,
     sent: counts.sent,
+    delivered: delivery?.delivered ?? 0,
+    read: delivery?.read ?? 0,
+    awaitingAck: delivery?.awaiting_ack ?? 0,
     failed: counts.failed,
     skipped: counts.skipped,
     skippedByCooldown: counts.skippedByCooldown,
@@ -892,7 +993,8 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
 /** Funil zerado — usado para campanhas sem nenhum destinatário. */
 function emptyFunnel(): CampaignFunnel {
   return {
-    totalRecipients: 0, sent: 0, failed: 0, skipped: 0,
+    totalRecipients: 0, sent: 0, delivered: 0, read: 0, awaitingAck: 0,
+    failed: 0, skipped: 0,
     skippedByCooldown: 0, skippedOther: 0,
     replied: 0, inDeal: 0, won: 0, lost: 0,
     lostByReason: { condicoes_comerciais: 0, preco: 0, sem_retorno: 0, fora_do_perfil: 0 },
@@ -940,6 +1042,31 @@ export async function getCampaignFunnelsBatch(ids: string[]): Promise<Map<string
     f.skipped = r.skipped;
     f.skippedByCooldown = r.skippedByCooldown;
     f.skippedOther = r.skippedOther;
+  }
+
+  // Mesma agregação de entrega da versão individual (ver getCampaignFunnel).
+  // Sem isto o CSV exportaria delivered=0 pra todas as campanhas — um número
+  // errado, pior do que um ausente.
+  const deliveryRows = await db.execute(sql`
+    SELECT
+      cr.campaign_id::text AS campaign_id,
+      COUNT(*) FILTER (WHERE m.delivery_status IN ('delivered', 'read'))::int AS delivered,
+      COUNT(*) FILTER (WHERE m.delivery_status = 'read')::int AS read,
+      COUNT(*) FILTER (WHERE m.delivery_status IS NULL OR m.delivery_status IN ('queued', 'sent'))::int AS awaiting_ack
+    FROM campaign_recipients cr
+    LEFT JOIN messages m ON m.id = cr.message_id
+    WHERE cr.campaign_id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})
+      AND cr.status = 'sent'
+    GROUP BY cr.campaign_id
+  `);
+  for (const row of deliveryRows.rows as Array<{
+    campaign_id: string; delivered: number; read: number; awaiting_ack: number;
+  }>) {
+    const f = out.get(row.campaign_id);
+    if (!f) continue;
+    f.delivered = row.delivered;
+    f.read = row.read;
+    f.awaitingAck = row.awaiting_ack;
   }
 
   const repliedRows = await db.execute(sql`

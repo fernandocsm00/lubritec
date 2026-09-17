@@ -22,6 +22,7 @@ import {
   pauseCampaign,
   resumeCampaign,
   cancelCampaign,
+  retryFailedRecipients,
   deleteCampaign,
   listRecipients,
   getCampaignFunnel,
@@ -320,6 +321,13 @@ export async function resumeHandler(req: Request, res: Response, next: NextFunct
   try {
     const { id } = idParams.parse(req.params);
     res.json(await resumeCampaign(id));
+  } catch (e) { next(e); }
+}
+
+export async function retryFailedHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    res.json(await retryFailedRecipients(id));
   } catch (e) { next(e); }
 }
 

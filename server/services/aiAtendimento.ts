@@ -416,6 +416,9 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
           provider: provider.kind,
           rawPayload: { ai: true, afterHours: true, raw: sendResp.rawPayload } as object,
           sentAt: new Date(),
+          // Aceita na fila do provedor. Vira sent/delivered/read/failed quando
+          // o ACK chegar pelo webhook (migration 046).
+          deliveryStatus: 'queued',
         });
         sentReply = afterMsg;
       } catch (err) {
@@ -631,6 +634,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       provider: provider.kind,
       rawPayload: { ai: true, qualification, raw: sendResp.rawPayload } as object,
       sentAt,
+      deliveryStatus: 'queued',
     });
 
     const convPatch: Partial<typeof conversations.$inferInsert> = {

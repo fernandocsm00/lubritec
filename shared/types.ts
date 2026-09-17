@@ -276,6 +276,20 @@ export function isInboundMediaFallbackLabel(body: string | null | undefined): bo
   return (Object.values(INBOUND_MEDIA_FALLBACK_LABEL) as string[]).includes(body.trim());
 }
 
+/**
+ * Status de entrega REAL de uma mensagem de saída, alimentado pelos webhooks de
+ * ACK do provedor (UazAPI `messages_update`, Meta `statuses`).
+ *
+ * `queued` = o provedor aceitou na fila dele e nada mais. NÃO é entrega: a
+ * UazAPI devolve `status: "Pending"` em 100% dos sends e a Meta devolve 200 com
+ * o wamid mesmo pra mensagem que vai falhar depois. Só sai de `queued` quando
+ * chega o ACK.
+ *
+ * `null` na coluna = mensagem anterior à instrumentação; entrega desconhecida.
+ */
+export const DELIVERY_STATUSES = ['queued', 'sent', 'delivered', 'read', 'failed'] as const;
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+
 export const ORIGIN_KINDS = ['organic', 'campaign'] as const;
 export type OriginKind = (typeof ORIGIN_KINDS)[number];
 
@@ -330,6 +344,14 @@ export interface PublicMessage {
   sentAt: string;
   editedAt: string | null;
   deletedAt: string | null;
+  /**
+   * Entrega real (migration 046). null em mensagem recebida e em mensagem
+   * anterior à instrumentação — nesse caso a entrega é DESCONHECIDA, não
+   * confirmada.
+   */
+  deliveryStatus: DeliveryStatus | null;
+  deliveryErrorCode: string | null;
+  deliveryErrorMessage: string | null;
   /** Mensagem citada ("responder citando"), snapshot pra render; null se não é reply. */
   replyTo: {
     id: string;
@@ -695,7 +717,21 @@ export interface PublicCampaign {
 
 export interface CampaignFunnel {
   totalRecipients: number;
+  /**
+   * Disparos que saíram — o provedor aceitou. NÃO é entrega: use `delivered`
+   * pra isso. Continua sendo o denominador histórico do funil.
+   */
   sent: number;
+  /** Disparos com ACK de entrega no aparelho (delivered ou read). */
+  delivered: number;
+  /** Subconjunto de `delivered` que o cliente abriu. */
+  read: number;
+  /**
+   * Disparos que saíram e ainda não têm ACK: presos na fila do provedor, ou
+   * anteriores à instrumentação de entrega (migration 046). Entrega
+   * DESCONHECIDA — não confundir com falha.
+   */
+  awaitingAck: number;
   failed: number;
   skipped: number;
   skippedByCooldown: number;
