@@ -925,7 +925,7 @@ export async function editOutboundMessage(
   return loadPublicMessage(messageId);
 }
 
-async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
+export async function loadPublicMessage(messageId: string): Promise<PublicMessage> {
   const [row] = await db
     .select({
       msg: messages,

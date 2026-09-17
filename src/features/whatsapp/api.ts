@@ -295,6 +295,21 @@ export function useEditMessage() {
   });
 }
 
+/** Baixa de novo o arquivo de uma mensagem recebida que ficou sem mídia. */
+export function useRetryInboundMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, messageId }: { conversationId: string; messageId: string }) =>
+      api<PublicMessage>(`/conversations/${conversationId}/messages/${messageId}/retry-media`, {
+        method: 'POST',
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages', vars.conversationId] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
 export function useCloseConversation() {
   const qc = useQueryClient();
   return useMutation({

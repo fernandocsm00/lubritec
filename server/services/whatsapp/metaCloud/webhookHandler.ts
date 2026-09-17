@@ -6,8 +6,8 @@ import { decryptSecret } from '../../../lib/crypto';
 import { metaCloudConfigSchema, type MetaCloudConfig } from './configSchema';
 import { ingestInboundMessage, type NormalizedInbound } from '../../whatsappWebhookService';
 import { processInboundWithAi } from '../../aiAtendimento';
-import { getMediaUrl, downloadMedia } from './client';
-import { persistInboundMedia } from '../inboundMediaStore';
+import { fetchAndPersistMetaMedia } from './inboundMedia';
+import { fallbackBodyFor } from '../../../lib/uazapiSchema';
 import type { MessageKind } from '@shared/types';
 import { updateTemplateStatus } from '../../hsmTemplateService';
 import { toCanonicalBrPhone } from '../../../lib/phoneBR';
@@ -151,22 +151,22 @@ async function processOneMessage(
   }
   let mediaUrl: string | undefined;
   let mediaMime: string | undefined;
+  let text = extractText(msg);
   const media = extractMediaId(msg);
   if (media) {
     try {
       // A URL da Meta (lookaside) é efêmera e exige Bearer token — inutilizável
-      // direto num <img>. Resolve, baixa o binário com o token AGORA (enquanto a
-      // URL é válida) e persiste local; grava a URL local servida pelo /uploads.
-      const { url, mimeType } = await getMediaUrl({ mediaId: media.mediaId, accessToken });
-      const { buffer, mimeType: downloadedMime } = await downloadMedia({ url, accessToken });
-      const resolvedMime = downloadedMime ?? mimeType ?? media.mime;
-      mediaUrl = await persistInboundMedia(buffer, resolvedMime);
-      mediaMime = mimeType ?? media.mime;
+      // direto num <img>. Baixa agora e grava a URL local servida pelo /uploads.
+      const saved = await fetchAndPersistMetaMedia({ mediaId: media.mediaId, mimeHint: media.mime, accessToken });
+      mediaUrl = saved.mediaUrl;
+      mediaMime = saved.mediaMime ?? undefined;
     } catch (err) {
-      // Não grava a URL lookaside como fallback (geraria imagem quebrada). Sem
-      // mediaUrl, a UI mostra só a legenda/texto. O raw_payload guarda o media
-      // id pra um eventual reprocessamento.
+      // Não grava a URL lookaside como fallback (geraria imagem quebrada). O
+      // raw_payload guarda o media id pro "Tentar de novo" da Inbox.
       console.warn('[meta-webhook] failed to download/persist inbound media:', err);
+      // Sem arquivo e sem legenda a mensagem ficava sem nada — a Inbox mostrava
+      // "Mensagem não suportada" e ninguém sabia que o cliente mandou um áudio.
+      if (!text?.trim()) text = fallbackBodyFor(kind, false);
     }
   }
   const normalized: NormalizedInbound = {
@@ -177,7 +177,7 @@ async function processOneMessage(
     leadPhone: toCanonicalBrPhone(msg.from) ?? msg.from.replace(/\D/g, ''),
     leadName: contactName,
     kind,
-    text: extractText(msg),
+    text,
     mediaUrl,
     mediaMime,
     providerMsgId: msg.id,

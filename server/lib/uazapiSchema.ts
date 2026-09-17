@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { MessageKind } from '@shared/types';
+import { INBOUND_MEDIA_FALLBACK_LABEL, type MessageKind } from '@shared/types';
 
 /**
  * Schema do payload de webhook da uazapiGO — DEFENSIVO.
@@ -86,12 +86,9 @@ function mapKind(raw: string | null): MessageKind {
 /** Texto fallback pra bubble nao ficar em branco quando nao da pra renderizar
  *  a media (sem URL, kind nao suportado, download falhou, etc). */
 export function fallbackBodyFor(kind: MessageKind, isSticker: boolean): string {
-  if (isSticker) return '🎞️ Figurinha';
-  if (kind === 'image') return '🖼️ Imagem';
-  if (kind === 'audio') return '🎵 Áudio';
-  if (kind === 'video') return '🎬 Vídeo';
-  if (kind === 'document') return '📎 Documento';
-  return '📎 Mensagem não suportada';
+  if (isSticker) return INBOUND_MEDIA_FALLBACK_LABEL.sticker;
+  if (kind === 'text') return INBOUND_MEDIA_FALLBACK_LABEL.unknown;
+  return INBOUND_MEDIA_FALLBACK_LABEL[kind];
 }
 
 /** URLs placeholder que uazapiGO manda em vez de download direto.
