@@ -16,6 +16,7 @@ import {
   closeHandler,
   readHandler,
   sendMessageHandler,
+  sendTemplateHandler,
   startConversationHandler,
   uploadMediaHandler,
   deleteMessageHandler,
@@ -54,6 +55,7 @@ router.post('/:id/ai', authGuard, setAiHandler);
 router.post('/:id/close', authGuard, closeHandler);
 router.post('/:id/read', authGuard, readHandler);
 router.post('/:id/messages', authGuard, sendMessageHandler);
+router.post('/:id/template', authGuard, sendTemplateHandler);
 router.delete('/:id/messages/:msgId', authGuard, deleteMessageHandler);
 router.patch('/:id/messages/:msgId', authGuard, editMessageHandler);
 router.post('/:id/messages/:msgId/retry-media', authGuard, retryMediaHandler);

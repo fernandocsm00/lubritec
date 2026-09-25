@@ -20,6 +20,7 @@ import {
   closeConversation,
   markRead,
   sendMessage,
+  sendTemplateToConversation,
   startConversation,
   deleteOutboundMessage,
   editOutboundMessage,
@@ -254,6 +255,25 @@ export async function startConversationHandler(req: Request, res: Response, next
       hsmVariables: data.hsmVariables ?? null,
     });
     res.json(result);
+  } catch (e) { next(e); }
+}
+
+const templateBody = z.object({
+  hsmTemplateId: z.string().uuid(),
+  hsmVariables: z.array(startHsmVariableSchema).default([]),
+});
+
+export async function sendTemplateHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    const data = templateBody.parse(req.body);
+    const msg = await sendTemplateToConversation({
+      conversationId: id,
+      userId: req.user!.userId,
+      hsmTemplateId: data.hsmTemplateId,
+      hsmVariables: data.hsmVariables,
+    });
+    res.json(msg);
   } catch (e) { next(e); }
 }
 
