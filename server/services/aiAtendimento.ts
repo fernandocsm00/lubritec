@@ -262,6 +262,14 @@ interface ProcessInput {
   leadId: string;
   phone: string;
   inboundText: string;
+  /**
+   * Lote de mensagens que esta resposta cobre (ver aiInboundBatch): tudo que o
+   * cliente mandou depois de `since` até `until`, já juntado em `inboundText`.
+   * Sai do histórico (senão o Gemini recebe cada pedaço duas vezes) e `until`
+   * fica gravado na resposta, pra mensagem que chegar durante a digitação da
+   * IA cair no próximo lote em vez de ficar sem resposta.
+   */
+  turn?: { since: Date | null; until: Date };
 }
 
 export interface ProcessResult {
@@ -465,23 +473,32 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
 
   // Carrega historico (ultimas N mensagens, em ordem cronologica).
   const historyRows = await db
-    .select({ direction: messages.direction, body: messages.body, kind: messages.kind })
+    .select({ direction: messages.direction, body: messages.body, kind: messages.kind, sentAt: messages.sentAt })
     .from(messages)
     .where(eq(messages.conversationId, input.conversationId))
     .orderBy(desc(messages.sentAt))
     .limit(MAX_HISTORY + 1); // +1 pra pular a inbound atual ao montar history
 
-  const history: GeminiMessage[] = historyRows
-    .reverse()
+  // O que o cliente mandou nesta vez vai como userMessage — no histórico, só o
+  // que veio antes. Com lote: todo inbound depois de `since` (o lote e o que
+  // chegou depois dele, que é do próximo). Sem lote: a mensagem de mesmo texto.
+  const turn = input.turn;
+  const isCurrentTurn = (m: { direction: string; body: string | null; sentAt: Date }) =>
+    m.direction === 'in' &&
+    (turn ? turn.since === null || m.sentAt > turn.since : m.body === input.inboundText);
+  const priorRows = historyRows.reverse().filter((m) => !isCurrentTurn(m));
+
+  const history: GeminiMessage[] = priorRows
     .filter((m) => m.kind === 'text' && m.body)
-    .filter((m) => !(m.direction === 'in' && m.body === input.inboundText)) // evita duplicar
     .map((m) => ({
       role: m.direction === 'out' ? ('model' as const) : ('user' as const),
       text: m.body!,
     }));
 
   // Determinar qualification path: primeiro inbound de conversa originada de campanha = campaign_direct
-  const isFirstInbound = historyRows.filter((m) => m.direction === 'in').length <= 1;
+  const isFirstInbound = turn
+    ? !priorRows.some((m) => m.direction === 'in')
+    : historyRows.filter((m) => m.direction === 'in').length <= 1;
   const [convFull] = await db.select({ originKind: conversations.originKind, originCampaignId: conversations.originCampaignId })
     .from(conversations)
     .where(eq(conversations.id, input.conversationId))
@@ -581,7 +598,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       qualified: false,
       decisionReason: 'silence',
       qualificationPath,
-      questionsAnswers: extractQuestionsAnswers(historyRows, input.inboundText),
+      questionsAnswers: extractQuestionsAnswers(priorRows, input.inboundText),
       promptVersion: PROMPT_VERSION,
       campaignId: campaignIdForLog,
     });
@@ -638,7 +655,13 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       sentByUserId: null, // null = enviado pela IA
       providerMsgId: sendResp.providerMsgId,
       provider: provider.kind,
-      rawPayload: { ai: true, qualification, raw: sendResp.rawPayload } as object,
+      rawPayload: {
+        ai: true,
+        qualification,
+        // Até onde esta resposta cobriu — fronteira do próximo lote (aiInboundBatch).
+        ...(turn ? { coveredUntil: turn.until.toISOString() } : {}),
+        raw: sendResp.rawPayload,
+      } as object,
       sentAt,
       deliveryStatus: 'queued',
     });
@@ -732,7 +755,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     qualified: qualification === 'qualified',
     decisionReason: summary,
     qualificationPath,
-    questionsAnswers: extractQuestionsAnswers(historyRows, input.inboundText),
+    questionsAnswers: extractQuestionsAnswers(priorRows, input.inboundText),
     promptVersion: PROMPT_VERSION,
     campaignId: campaignIdForLog,
   });
