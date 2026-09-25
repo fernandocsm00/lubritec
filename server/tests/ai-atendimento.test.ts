@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 process.env.AI_REPLY_MIN_MS = '0';
 
 import { db } from '../db/client';
-import { conversations, messages, leads, orgSettings } from '../db/schema';
+import { conversations, messages, leads, notifications, orgSettings } from '../db/schema';
 import {
   detectHumanIntent,
   buildSystemPrompt,
@@ -428,6 +428,79 @@ describe('processInboundWithAi', () => {
     expect(r.status).toBe('replied');
     const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
     expect(updated.queue).toBe('recepcao'); // continua visível na Recepção
+  });
+
+  // Prod 25/09/2026: contato orgânico pelo site ("gostaria de mais informações")
+  // foi qualificado e caiu direto no Comercial em segundos — a Recepção nunca viu,
+  // e a 2ª mensagem dele era pedindo o contato do RH. Na Recepção quem encaminha
+  // pro Comercial é o time; a qualificação da IA só avisa.
+  it('qualificado na RECEPÇÃO: continua na Recepção, com resumo, e a IA sai da conversa', async () => {
+    await enableAi();
+    mockGeminiText(
+      'Vou direcionar seu contato para um de nossos consultores comerciais.\n' +
+      '[RESUMO]\nQuer informações gerais sobre produtos.\n[/RESUMO]\n' +
+      '[QUALIFICADO]',
+    );
+    mockSendOk('ai-recep-qualif-1');
+
+    const lead = await createLead({ phone: '5511900000030', flowStage: 'engaged' });
+    const conv = await createConversation({ phone: '5511900000030', leadId: lead.id, queue: 'recepcao' });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000030',
+      inboundText: 'Encontrei seu contato pelo site e gostaria de mais informações',
+    });
+    expect(r.status).toBe('qualified_and_replied');
+
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.queue).toBe('recepcao');
+    // A IA acabou de prometer um consultor — não pode seguir respondendo aqui.
+    expect(updated.aiDisabled).toBe(true);
+    // Resumo vira o banner que a Recepção usa pra triar.
+    expect(updated.handoffSummary).toBe('Quer informações gerais sobre produtos.');
+  });
+
+  it('qualificado na RECEPÇÃO: ainda cria o card e avisa o comercial, sem dizer que foi pra fila Comercial', async () => {
+    await enableAi();
+    const vendedor = await createUser({ email: 'vend-recep@x.com', role: 'comercial' });
+    mockGeminiText('Vou te conectar com um consultor. [QUALIFICADO]'); // sem RESUMO
+    mockSendOk('ai-recep-qualif-2');
+
+    const lead = await createLead({ name: 'Eduardo', phone: '5511900000031', flowStage: 'engaged' });
+    const conv = await createConversation({ phone: '5511900000031', leadId: lead.id, queue: 'recepcao' });
+
+    await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000031', inboundText: 'quero um orçamento',
+    });
+
+    const [updatedLead] = await db.select().from(leads).where(eq(leads.id, lead.id));
+    expect(updatedLead.flowStage).toBe('handed_off'); // card criado no pipeline
+
+    const notifs = await db.select().from(notifications).where(eq(notifications.userId, vendedor.id));
+    expect(notifs).toHaveLength(1);
+    expect(notifs[0].kind).toBe('lead_qualified');
+    expect(notifs[0].body).toBe('Eduardo foi qualificado e está na Recepção.');
+  });
+
+  it('qualificado na RECEPÇÃO não desfaz quem já tinha pegado a conversa', async () => {
+    await enableAi();
+    const recepcionista = await createUser({ email: 'recep-pegou@x.com', role: 'recepcao' });
+    mockGeminiText('Vou te conectar com um consultor. [QUALIFICADO]');
+    mockSendOk('ai-recep-qualif-3');
+
+    const lead = await createLead({ phone: '5511900000032', flowStage: 'engaged' });
+    const conv = await createConversation({
+      phone: '5511900000032', leadId: lead.id, queue: 'recepcao',
+      status: 'em_atendimento', assignedTo: recepcionista.id,
+    });
+
+    await processInboundWithAi({
+      conversationId: conv.id, leadId: lead.id, phone: '5511900000032', inboundText: 'quero um orçamento',
+    });
+
+    const [updated] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(updated.status).toBe('em_atendimento');
+    expect(updated.assignedTo).toBe(recepcionista.id);
   });
 
   it('não responde quando a IA foi desligada naquela conversa (humano assumiu)', async () => {

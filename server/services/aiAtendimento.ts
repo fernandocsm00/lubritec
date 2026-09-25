@@ -290,7 +290,8 @@ export interface ProcessResult {
  *   2. Se conversa NAO esta na fila IA → no-op (humano ja assumiu)
  *   3. Se cliente pediu humano → move conversa pra Recepcao + no-op
  *   4. Senao → carrega historico + chama Gemini + envia resposta + persiste
- *      → se Gemini sinalizou QUALIFICADO → move pra Comercial + lead.flowStage=qualified
+ *      → se Gemini sinalizou QUALIFICADO → lead.flowStage=qualified + card no pipeline;
+ *        fila IA move pra Comercial, Recepcao fica onde esta (com a IA desligada)
  */
 export async function processInboundWithAi(input: ProcessInput): Promise<ProcessResult> {
   const pipelineStartedAt = Date.now();
@@ -594,6 +595,11 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
   // Só passa pro Comercial se o Gemini qualificou E não é um auto-reply. Auto-reply
   // qualificado fica na IA (a IA responde, mas não incomoda o comercial).
   const shouldHandoff = qualification === 'qualified' && !isAutoReply;
+  // Na Recepção a IA atende SEM tirar a conversa de lá (decisão de 05/08, ver
+  // AI_QUEUES): quem encaminha pro Comercial é o time, que faz a triagem do
+  // contato orgânico (RH, fornecedor, suporte...). Até 25/09/2026 o handoff movia
+  // recepcao→comercial em segundos e a Recepção nunca via a conversa.
+  const handoffStaysInRecepcao = conv.queue === 'recepcao';
 
   // Delay humanizado antes do envio — alvo proporcional ao tamanho da resposta,
   // descontando o que ja foi gasto no pipeline (Gemini, IO etc).
@@ -644,10 +650,16 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     };
 
     if (shouldHandoff) {
-      convPatch.queue = 'comercial';
-      convPatch.status = 'aguardando_atendimento';
-      convPatch.enteredQueueAt = sentAt;
       convPatch.handoffSummary = summary;
+      if (handoffStaysInRecepcao) {
+        // A IA acabou de prometer um consultor — não pode seguir respondendo.
+        // No Comercial quem a cala é a própria fila; aqui, o freio por conversa.
+        convPatch.aiDisabled = true;
+      } else {
+        convPatch.queue = 'comercial';
+        convPatch.status = 'aguardando_atendimento';
+        convPatch.enteredQueueAt = sentAt;
+      }
     }
 
     await tx.update(conversations).set(convPatch).where(eq(conversations.id, input.conversationId));
@@ -685,14 +697,17 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     });
 
     // Notifica admins/comerciais que tem lead qualificado pra atender.
-    const inboxUrl = `/whatsapp?queue=comercial&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`;
+    const handoffQueue = handoffStaysInRecepcao ? 'recepcao' : 'comercial';
+    const inboxUrl = `/whatsapp?queue=${handoffQueue}&statusChips=aguardando,em_atendimento&assignment=all&origin=organic,campaign&lead=${input.leadId}`;
     await emitNotification({
       toRoles: ['admin', 'comercial'],
       kind: 'lead_qualified',
       title: 'Lead qualificado pela IA',
       body: summary
         ? `${leadRow?.name ?? input.phone}: ${summary.split('\n')[0]}`
-        : `${leadRow?.name ?? input.phone} foi qualificado e enviado pra fila Comercial.`,
+        : `${leadRow?.name ?? input.phone} foi qualificado e ${
+          handoffStaysInRecepcao ? 'está na Recepção' : 'enviado pra fila Comercial'
+        }.`,
       actionUrl: inboxUrl,
       metadata: { leadId: input.leadId, conversationId: input.conversationId },
     });
