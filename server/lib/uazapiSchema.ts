@@ -91,6 +91,25 @@ export function fallbackBodyFor(kind: MessageKind, isSticker: boolean): string {
   return INBOUND_MEDIA_FALLBACK_LABEL[kind];
 }
 
+/** Tipos sem arquivo que dá pra nomear na bolha, casados por substring do
+ *  messageType (LocationMessage, LiveLocationMessage, ContactMessage,
+ *  ContactsArrayMessage, PollCreationMessage...). */
+const UNKNOWN_TYPE_LABELS: ReadonlyArray<readonly [string, string]> = [
+  ['location', '📍 Localização'],
+  ['contact', '👤 Contato'],
+  ['poll', '📊 Enquete'],
+];
+
+/** Corpo de mensagem de tipo que o mapKind nao conhece. A uazapiGO costuma mandar
+ *  o texto legivel mesmo assim (template de empresa, por exemplo) — ate 25/09/2026
+ *  ele era descartado e a bolha dizia so "Mensagem não suportada". */
+function unknownKindBody(rawType: string | null, text: string | null): string {
+  const t = rawType?.toLowerCase() ?? '';
+  const label = UNKNOWN_TYPE_LABELS.find(([key]) => t.includes(key))?.[1];
+  if (label) return text ? `${label}\n${text}` : label;
+  return text ?? INBOUND_MEDIA_FALLBACK_LABEL.unknown;
+}
+
 /** URLs placeholder que uazapiGO manda em vez de download direto.
  *  https://a.whatsapp.net eh marker; directPath eh path encriptado nao baixavel sem mediaKey. */
 function isUsableMediaUrl(url: string | null | undefined): boolean {
@@ -192,6 +211,10 @@ export function extractInbound(payload: UazapiInbound): InboundMessage | null {
     pickString(asObj(msg.message), ['conversation', 'text']) ??
     pickString(asObj(asObj(msg.message)?.extendedTextMessage), ['text']);
 
+  // Reação: o emoji vem no texto. Sem emoji = reação removida — não é mensagem.
+  const isReaction = rawType?.toLowerCase().includes('reaction') ?? false;
+  if (isReaction && !text) return null;
+
   // Media URL pode vir no root ou dentro de `content` (caso uazapiGO recente).
   const content = asObj(msg.content);
   const rawMediaUrl =
@@ -218,14 +241,21 @@ export function extractInbound(payload: UazapiInbound): InboundMessage | null {
 
   // Body final:
   //  - text → o texto da msg
+  //  - reacao → "Reagiu com 👍"
   //  - midia com URL renderizavel → null (UI mostra o anexo)
-  //  - midia SEM URL ou kind=unknown → label fallback ("🎞️ Figurinha" etc) pra
-  //    bubble nunca ficar em branco no chat.
+  //  - kind=unknown → o texto que a uazapiGO mandou; sem texto, um rotulo
+  //    ("📍 Localização", ou "📎 Mensagem não suportada" se nem o tipo e conhecido)
+  //  - midia SEM URL → label fallback ("🎞️ Figurinha" etc) pra bubble nunca
+  //    ficar em branco no chat.
   let finalText: string | null;
   if (kind === 'text') {
     finalText = text;
+  } else if (isReaction) {
+    finalText = `Reagiu com ${text}`;
   } else if (mediaUrl) {
     finalText = text; // caption opcional do anexo, quando vier
+  } else if (kind === 'unknown') {
+    finalText = unknownKindBody(rawType, text);
   } else {
     finalText = fallbackBodyFor(kind, isSticker);
   }

@@ -100,3 +100,86 @@ describe('extractInbound — figurinhas e fallbacks', () => {
     expect(out).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tipos que o mapKind não conhece. Até 25/09/2026 todos viravam o rótulo
+// "📎 Mensagem não suportada" e o texto que a UazAPI manda era descartado — caso
+// real: convite de cotação da 3p Engenharia (TemplateMessage) que ninguém leu.
+// Payloads reduzidos a partir dos capturados em produção.
+// ---------------------------------------------------------------------------
+
+const templatePayload = {
+  EventType: 'messages',
+  chat: { wa_chatid: '5571927501332@s.whatsapp.net' },
+  message: {
+    id: '5554923677475:3EB0TEMPLATE01',
+    type: 'text',
+    text: 'Olá, tudo bem? Aqui é John Everton, da 3p Engenharia LTDA. Abrimos uma cotação e queremos incluir vocês entre os fornecedores convidados.',
+    fromMe: false,
+    chatid: '5571927501332@s.whatsapp.net',
+    sender_pn: '5571927501332@s.whatsapp.net',
+    mediaType: '',
+    messageType: 'TemplateMessage',
+    isGroup: false,
+    messageTimestamp: 1790258428000,
+    content: {
+      Format: null,
+      templateID: '1361348756005564',
+      hydratedTemplate: { hydratedContentText: 'Olá, tudo bem? Aqui é John Everton...' },
+    },
+  },
+};
+
+const reactionPayload = {
+  EventType: 'messages',
+  message: {
+    id: '5554923677475:3EB0REACTION01',
+    type: 'reaction',
+    text: '👍🏻',
+    reaction: '3EB0D99B24F58801AECE98',
+    fromMe: false,
+    chatid: '5551999990000@s.whatsapp.net',
+    sender_pn: '5551999990000@s.whatsapp.net',
+    mediaType: '',
+    messageType: 'ReactionMessage',
+    isGroup: false,
+    messageTimestamp: 1786046744364,
+    content: { key: { ID: '3EB0D99B24F58801AECE98', fromMe: false }, text: '👍🏻' },
+  },
+};
+
+describe('extractInbound — tipos que o sistema não reconhece', () => {
+  it('template de empresa: grava o texto que a UazAPI mandou, não o rótulo', () => {
+    const out = extractInbound(templatePayload as Record<string, unknown>);
+    expect(out).not.toBeNull();
+    expect(out!.text).toBe(templatePayload.message.text);
+    // Continua fora do fluxo de texto (a IA só age em kind=text).
+    expect(out!.kind).toBe('unknown');
+  });
+
+  it('reação: vira "Reagiu com <emoji>"', () => {
+    const out = extractInbound(reactionPayload as Record<string, unknown>);
+    expect(out!.text).toBe('Reagiu com 👍🏻');
+  });
+
+  it('reação removida (sem emoji) não vira mensagem', () => {
+    const removed = { ...reactionPayload, message: { ...reactionPayload.message, text: '' } };
+    expect(extractInbound(removed as Record<string, unknown>)).toBeNull();
+  });
+
+  it('localização sem texto: rótulo específico', () => {
+    const location = {
+      ...reactionPayload,
+      message: { ...reactionPayload.message, type: 'location', text: '', messageType: 'LocationMessage' },
+    };
+    expect(extractInbound(location as Record<string, unknown>)!.text).toBe('📍 Localização');
+  });
+
+  it('tipo desconhecido sem texto nenhum: segue o rótulo genérico', () => {
+    const mystery = {
+      ...reactionPayload,
+      message: { ...reactionPayload.message, type: 'unknown', text: '', messageType: 'FutureMessage' },
+    };
+    expect(extractInbound(mystery as Record<string, unknown>)!.text).toBe('📎 Mensagem não suportada');
+  });
+});
