@@ -18,6 +18,7 @@
     "merge-duplicate-phones": "tsx server/scripts/mergeDuplicatePhones.ts",
     "backfill-meta-inbound-media": "tsx server/scripts/backfillMetaInboundMedia.ts",
     "backfill-uazapi-inbound-media": "tsx server/scripts/backfillUazapiInboundMedia.ts",
+    "backfill-uazapi-unsupported": "tsx server/scripts/backfillUazapiUnsupported.ts",
     "update-meta-token": "tsx server/scripts/updateMetaToken.ts",
     "migrate-supabase-storage": "tsx server/scripts/migrateSupabaseStorage.ts",
     "db:up": "docker-compose up -d",
