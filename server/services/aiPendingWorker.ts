@@ -1,10 +1,10 @@
 import { db } from '../db/client';
-import { conversations, messages } from '../db/schema';
-import { eq, desc, and, lt, inArray } from 'drizzle-orm';
+import { conversations } from '../db/schema';
+import { eq, and, lt, inArray } from 'drizzle-orm';
 import { isAiBusinessHours } from '../lib/businessHours';
 import { AI_QUEUES } from '../lib/aiQueues';
 import { loadOrgSettingsRow } from './orgSettingsService';
-import { processInboundWithAi } from './aiAtendimento';
+import { aiBatchWaitMs, isAiReplyInFlight, replyToPendingInbound } from './aiInboundBatch';
 
 /**
  * Worker que reprocessa conversas marcadas com pending_ai_response=true.
@@ -12,9 +12,9 @@ import { processInboundWithAi } from './aiAtendimento';
  * Quando uma mensagem inbound chega fora do horario comercial, aiAtendimento
  * envia (opcionalmente) a mensagem fora-do-horario e marca pending=true sem
  * chamar Gemini. Este worker fica varrendo de 60 em 60 segundos: quando o
- * horario comercial volta, ele pega cada conversa pendente, carrega a ultima
- * mensagem inbound dela e dispara processInboundWithAi de novo — IA processa
- * normalmente e limpa o flag.
+ * horario comercial volta, ele pega cada conversa pendente e responde o lote
+ * do cliente (replyToPendingInbound) — IA processa normalmente e limpa o flag.
+ * Tambem cobre a espera do lote perdida num restart do processo.
  *
  * Single-tenant + Lubritec roda single-instance (sem necessidade de lock
  * distribuido por ora). Flag isProcessing previne reentry da mesma instancia.
@@ -63,12 +63,13 @@ export async function processPending(): Promise<{ processed: number; skipped: nu
     return { processed: 0, skipped: 0 };
   }
 
-  // Pega só conversas cujo último inbound tem >=3min: além do caso fora-do-horário,
-  // o flag agora é setado na INGESTÃO de todo inbound de texto na fila IA (rede de
-  // segurança contra crash no meio do pipeline). O fire-and-forget do webhook pode
-  // levar até ~2min (Gemini + delay humanizado de até 60s) — sem esse threshold o
-  // worker roubaria a conversa em voo e o cliente receberia resposta dupla.
-  const pickupThreshold = new Date(Date.now() - 3 * 60_000);
+  // Pega só conversas cujo último inbound passou da espera do lote + 3min: além
+  // do caso fora-do-horário, o flag é setado na INGESTÃO de todo inbound de texto
+  // na fila IA (rede de segurança contra crash). A resposta normal sai depois da
+  // espera do lote (aiInboundBatch) e ainda leva até ~2min (Gemini + delay
+  // humanizado de até 60s) — sem essa folga o worker roubaria a conversa em voo
+  // e o cliente receberia resposta dupla.
+  const pickupThreshold = new Date(Date.now() - aiBatchWaitMs() - 3 * 60_000);
   const pending = await db
     .select({
       id: conversations.id,
@@ -102,35 +103,25 @@ export async function processPending(): Promise<{ processed: number; skipped: nu
       skipped++;
       continue;
     }
-    // Pega a ultima mensagem inbound da conversa.
-    const [lastInbound] = await db
-      .select({ body: messages.body })
-      .from(messages)
-      .where(and(eq(messages.conversationId, conv.id), eq(messages.direction, 'in')))
-      .orderBy(desc(messages.sentAt))
-      .limit(1);
-
-    if (!lastInbound || !lastInbound.body) {
-      // Sem inbound — nao deveria acontecer; limpa flag pra nao ficar em loop.
-      await db
-        .update(conversations)
-        .set({ pendingAiResponse: false, updatedAt: new Date() })
-        .where(eq(conversations.id, conv.id));
+    // Resposta desta conversa já agendada/rodando neste processo: é dela.
+    if (isAiReplyInFlight(conv.id)) {
       skipped++;
       continue;
     }
 
     try {
-      const r = await processInboundWithAi({
+      // Responde o LOTE (tudo que o cliente mandou desde a última resposta),
+      // não só a última mensagem. Sem lote, o próprio replyToPendingInbound
+      // limpa o flag pra conversa não ficar em loop.
+      const r = await replyToPendingInbound({
         conversationId: conv.id,
         leadId: conv.leadId,
         phone: conv.phone,
-        inboundText: lastInbound.body,
       });
       // processInboundWithAi ja limpa pendingAiResponse no patch de sucesso.
       // Se voltar 'after_hours_queued' aqui, eh porque o horario fechou de novo
       // entre o tick e a chamada — fica pending pro proximo tick.
-      if (r.status === 'replied' || r.status === 'qualified_and_replied') {
+      if (r && (r.status === 'replied' || r.status === 'qualified_and_replied')) {
         processed++;
       } else {
         skipped++;

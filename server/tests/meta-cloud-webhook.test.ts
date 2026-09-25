@@ -33,14 +33,13 @@ vi.mock('../services/whatsapp/metaCloud/client', () => ({
   },
 }));
 
-// A IA roda em fire-and-forget dentro do webhook — mockamos pra observar a
-// CHAMADA sem depender do Gemini. recordAiCall e o resto do modulo seguem reais.
-const processInboundWithAiMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue({ status: 'ai_disabled' as const }),
-);
-vi.mock('../services/aiAtendimento', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../services/aiAtendimento')>()),
-  processInboundWithAi: processInboundWithAiMock,
+// O webhook só AGENDA a resposta da IA (espera o cliente parar de digitar e
+// responde o lote de uma vez) — mockamos o agendamento pra observar a chamada
+// sem esperar os 2 minutos nem depender do Gemini.
+const scheduleAiReplyMock = vi.hoisted(() => vi.fn());
+vi.mock('../services/aiInboundBatch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/aiInboundBatch')>()),
+  scheduleAiReply: scheduleAiReplyMock,
 }));
 
 const app = createApp();
@@ -49,7 +48,7 @@ const APP_SECRET = 'test-app-secret';
 const VERIFY_TOKEN = 'test-verify-token-very-long-string';
 
 beforeEach(async () => {
-  processInboundWithAiMock.mockClear();
+  scheduleAiReplyMock.mockClear();
   process.env.WHATSAPP_CREDENTIALS_KEY = crypto.randomBytes(32).toString('hex');
   _resetKeyCache();
   await db.delete(messages); await db.delete(conversations);
@@ -221,7 +220,7 @@ describe('gatilho da IA no inbound Meta Cloud', () => {
       .send(body);
   }
 
-  it('dispara processInboundWithAi pra mensagem de texto', async () => {
+  it('agenda a resposta da IA pra mensagem de texto', async () => {
     // Regressao: o webhook da Meta so ingeria a mensagem e nunca acionava a IA
     // (so o webhook da UazAPI acionava). Como a linha Meta eh a padrao e a que
     // faz os disparos, na pratica a IA nunca respondia quem respondia campanha.
@@ -230,14 +229,13 @@ describe('gatilho da IA no inbound Meta Cloud', () => {
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 250));
 
-    expect(processInboundWithAiMock).toHaveBeenCalledTimes(1);
+    expect(scheduleAiReplyMock).toHaveBeenCalledTimes(1);
     const [conv] = await db.select().from(conversations);
     const [lead] = await db.select().from(leads);
-    expect(processInboundWithAiMock).toHaveBeenCalledWith({
+    expect(scheduleAiReplyMock).toHaveBeenCalledWith({
       conversationId: conv.id,
       leadId: lead.id,
       phone: '5511988887777',
-      inboundText: 'Olá Lubritec',
     });
   });
 
@@ -246,7 +244,7 @@ describe('gatilho da IA no inbound Meta Cloud', () => {
     const res = await postFixture(row.id, imageFixture);
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 250));
-    expect(processInboundWithAiMock).not.toHaveBeenCalled();
+    expect(scheduleAiReplyMock).not.toHaveBeenCalled();
   });
 
   it('não dispara de novo em webhook duplicado (mesmo wamid)', async () => {
@@ -255,7 +253,7 @@ describe('gatilho da IA no inbound Meta Cloud', () => {
     await new Promise((r) => setTimeout(r, 250));
     await postFixture(row.id, textFixture);
     await new Promise((r) => setTimeout(r, 250));
-    expect(processInboundWithAiMock).toHaveBeenCalledTimes(1);
+    expect(scheduleAiReplyMock).toHaveBeenCalledTimes(1);
   });
 });
 

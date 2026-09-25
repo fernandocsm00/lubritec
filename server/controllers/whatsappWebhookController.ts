@@ -8,7 +8,7 @@ import { materializeInboundMedia } from '../services/whatsapp/uazapi/inboundMedi
 import { loadValidWebhookTokens, resolveInstanceIdByWebhookToken } from '../services/whatsappInstanceService';
 import { recordDeliveryStatus } from '../services/messageDelivery';
 import type { DeliveryStatus } from '@shared/types';
-import { processInboundWithAi } from '../services/aiAtendimento';
+import { scheduleAiReply } from '../services/aiInboundBatch';
 import {
   pushDebugEntry,
   summarizeHeaders,
@@ -357,10 +357,11 @@ export async function whatsappWebhookHandler(
     debug.result = { kind: ingestResult.status, messageId: inbound.id };
     pushDebugEntry(debug);
 
-    // Dispara IA de atendimento em background (fire-and-forget) — não trava
-    // a resposta pra UazAPI (que tem timeout curto e retry agressivo).
-    // Só pra mensagens de TEXTO com kind=text recém inseridas. Se a IA estiver
-    // desligada ou conversa não estiver na fila IA, o orchestrator faz no-op.
+    // Agenda a resposta da IA: ela espera o cliente parar de digitar e responde
+    // o lote de uma vez (aiInboundBatch) — responder cada pedaço na hora dava
+    // uma resposta por mensagem. Não trava a resposta pra UazAPI (timeout curto,
+    // retry agressivo). Só texto recém-inserido; IA desligada ou conversa fora
+    // da fila IA viram no-op lá na frente.
     if (
       ingestResult.status === 'inserted' &&
       ingestResult.conversationId &&
@@ -368,22 +369,11 @@ export async function whatsappWebhookHandler(
       inbound.kind === 'text' &&
       inbound.text
     ) {
-      const convId = ingestResult.conversationId;
-      const leadId = ingestResult.leadId;
-      const phone = inbound.from.replace(/\D/g, '');
-      const text = inbound.text;
-      // Não await: roda em background, log de erros via console.
-      processInboundWithAi({ conversationId: convId, leadId, phone, inboundText: text })
-        .then((r) => {
-          if (r.status === 'gemini_error' || r.status === 'send_error') {
-            console.error('[ai] processInbound failed:', r.status, r.errorMessage);
-          } else {
-            console.log('[ai] processInbound:', r.status);
-          }
-        })
-        .catch((err) => {
-          console.error('[ai] processInbound threw:', err);
-        });
+      scheduleAiReply({
+        conversationId: ingestResult.conversationId,
+        leadId: ingestResult.leadId,
+        phone: inbound.from.replace(/\D/g, ''),
+      });
     }
 
     return res.status(200).end();
