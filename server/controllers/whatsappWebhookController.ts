@@ -52,32 +52,109 @@ function toDeliveryStatus(rawStatus: string): DeliveryStatus | null {
  * Match pelo provider_msg_id: aceita formato 'owner:messageid' OU so 'messageid'
  * porque o ID que gravamos no send vem nesse formato e o webhook ja vem com
  * messageid puro — entao matchamos por OU.
+ *
+ * O formato real do recibo nunca foi visto em producao: ate 25/09/2026 o webhook
+ * nao assinava messages_update e filtrava wasSentByApi, entao nenhum chegou.
+ * `collectAcks` aceita as familias plausiveis; o que nao casar vira
+ * ignored_update com o corpo cru no painel de debug, pra ajustar em cima do real.
  */
-async function tryHandleMessageUpdate(
-  payload: Record<string, unknown>,
-): Promise<
+type UpdateResult =
   | { kind: 'message_deleted'; messageId: string }
   | { kind: 'delivery_status'; messageId: string; status: DeliveryStatus }
-  | { kind: 'ignored_update'; reason: string }
-  | null
-> {
-  const event = String(
-    payload.event ?? payload.EventType ?? payload.type ?? payload.eventType ?? '',
-  ).toLowerCase();
-  if (!event.includes('update')) return null;
+  | { kind: 'ignored_update'; reason: string };
 
-  const msgObj =
-    (payload.message as Record<string, unknown> | undefined) ??
-    (payload.data as Record<string, unknown> | undefined) ??
-    payload;
-  const status = String(msgObj.status ?? '').toLowerCase();
+async function tryHandleMessageUpdate(
+  payload: Record<string, unknown>,
+): Promise<UpdateResult | null> {
+  const isUpdate = eventName(payload).includes('update');
+  if (!isUpdate && !isOwnEchoWithStatus(payload)) return null;
 
-  const msgId =
-    (msgObj.id as string | undefined) ??
-    (msgObj.messageid as string | undefined) ??
-    (msgObj.messageId as string | undefined);
-  if (!msgId) return { kind: 'ignored_update', reason: 'missing message id' };
+  const acks = collectAcks(payload);
+  if (acks.length === 0) return { kind: 'ignored_update', reason: 'missing message id' };
 
+  // Recibo do whatsmeow agrupa varios ids num evento so: aplica a cada um e
+  // reporta o primeiro que mudou alguma coisa.
+  let result: UpdateResult | null = null;
+  for (const ack of acks) {
+    const r = await applyAck(ack);
+    if (!result || (result.kind === 'ignored_update' && r.kind !== 'ignored_update')) result = r;
+  }
+  return result;
+}
+
+interface Ack {
+  id: string;
+  status: string;
+  /** Objeto de onde tirar codigo/motivo do erro. */
+  source: Record<string, unknown>;
+}
+
+function asObject(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+/** Nome do evento: o primeiro campo TEXTO entre os candidatos. No recibo do
+ * whatsmeow `event` e o objeto do recibo, nao o nome — String() dele dava
+ * "[object Object]" e o recibo se perdia como "nao e mensagem". */
+function eventName(payload: Record<string, unknown>): string {
+  for (const k of ['event', 'EventType', 'type', 'eventType']) {
+    const v = payload[k];
+    if (typeof v === 'string' && v.trim()) return v.toLowerCase();
+  }
+  return '';
+}
+
+/** Eco de mensagem que NOS enviamos, carregando status. extractInbound descarta
+ * o eco (fromMe) — sem isto o status que ele traz se perderia junto. */
+function isOwnEchoWithStatus(payload: Record<string, unknown>): boolean {
+  const msg = asObject(payload.message);
+  if (!msg) return false;
+  const own = msg.fromMe === true || msg.wasSentByApi === true;
+  return own && typeof msg.status === 'string' && msg.status.trim() !== '';
+}
+
+// Status numerico do Baileys (proto WebMessageInfo.Status).
+const BAILEYS_STATUS = ['error', 'pending', 'serverack', 'deliveryack', 'read', 'played'];
+
+function statusText(v: unknown): string {
+  if (typeof v === 'number') return BAILEYS_STATUS[v] ?? '';
+  return typeof v === 'string' ? v.toLowerCase() : '';
+}
+
+function idOf(obj: Record<string, unknown>): string | null {
+  return firstString(obj, ['id', 'messageid', 'messageId']);
+}
+
+function collectAcks(payload: Record<string, unknown>): Ack[] {
+  // Baileys nativo: [{ key: { id }, update: { status: <numero> } }]
+  const list = Array.isArray(payload.data) ? payload.data : null;
+  if (list) {
+    return list.flatMap((item) => {
+      const o = asObject(item);
+      if (!o) return [];
+      const key = asObject(o.key) ?? o;
+      const update = asObject(o.update) ?? o;
+      const id = idOf(key);
+      return id ? [{ id, status: statusText(update.status), source: update }] : [];
+    });
+  }
+
+  // whatsmeow: { event: { MessageIDs: [...], Type }, state }
+  const ev = asObject(payload.event);
+  if (ev && Array.isArray(ev.MessageIDs)) {
+    const status = statusText(payload.state) || statusText(ev.State) || statusText(ev.Type);
+    return ev.MessageIDs
+      .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      .map((id) => ({ id, status, source: ev }));
+  }
+
+  // Objeto normalizado da UazAPI: { message: { id, status } }
+  const msgObj = asObject(payload.message) ?? asObject(payload.data) ?? payload;
+  const id = idOf(msgObj);
+  return id ? [{ id, status: statusText(msgObj.status), source: msgObj }] : [];
+}
+
+async function applyAck({ id: msgId, status, source: msgObj }: Ack): Promise<UpdateResult> {
   if (status.includes('delete')) {
     // Match flexivel: provider_msg_id pode estar gravado como 'owner:messageid'
     // (vindo do send response) ou so 'messageid' (vindo do payload de update).

@@ -162,9 +162,15 @@ export async function deleteInstance(cfg: UazapiInstanceConfig): Promise<void> {
  *
  * Body baseado no projeto APP_ORION que opera em produção contra a mesma
  * uazapiGO (oriondigital.uazapi.com): a chave é `excludeMessages` (não
- * `addUrlTypesMessages`). Filtros nativos do uazapiGO:
- *   - `excludeMessages: ['wasSentByApi']` → equivalente ao filtro fromMe
- *   - `excludeMessages: ['isGroupYes']`  → ignora grupos
+ * `addUrlTypesMessages`). Filtros nativos do uazapiGO: `wasSentByApi`,
+ * `isGroupYes` e afins.
+ *
+ * Só `isGroupYes` fica. `wasSentByApi` NÃO pode ser filtrado: o recibo de
+ * entrega (`messages_update`) vem sobre o objeto da própria mensagem enviada, e
+ * o filtro descartava o recibo de 100% do que o sistema envia — a linha não
+ * oficial mostrava "na fila" pra sempre, inclusive em mensagem que nunca chegou.
+ * O eco das nossas mensagens é descartado do nosso lado (`extractInbound`
+ * ignora fromMe/wasSentByApi, e provider_msg_id é único).
  *
  * uazapiGO NÃO armazena secret nem envia headers de auth nos webhooks.
  * A autenticação é via `instanceToken` na query string da URL cadastrada
@@ -181,13 +187,15 @@ export async function setWebhook(
     'message',
     'message_received',
     'messages.upsert',
+    // Recibo de entrega: enviada / entregue / lida / erro.
+    'messages_update',
   ]));
 
   const body = {
     url: opts.url,
     enabled: true,
     events: allEventNames,
-    excludeMessages: ['wasSentByApi', 'isGroupYes'],
+    excludeMessages: ['isGroupYes'],
   };
 
   return call(cfg, 'instance', 'POST', '/webhook', body);

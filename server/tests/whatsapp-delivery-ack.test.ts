@@ -97,6 +97,71 @@ describe('ACK de entrega da UazAPI (messages_update)', () => {
     expect((await readBack(msg.id)).deliveryStatus).toBe('read');
   });
 
+  // Nenhum ACK da UazAPI chegou em produção até 25/09/2026 (o webhook não
+  // assinava messages_update e filtrava wasSentByApi), então o formato real
+  // nunca foi visto. Os casos abaixo cobrem as famílias plausíveis: o objeto
+  // normalizado da própria UazAPI, o recibo do whatsmeow (Go, base da uazapiGO)
+  // e o evento nativo do Baileys. O que não casar vira ignored_update com o
+  // corpo cru no painel de debug.
+  it('lê o formato com EventType (convenção real dos eventos da UazAPI)', async () => {
+    const msg = await outbound('5554921084500:ACK-7');
+
+    await postUpdate({
+      EventType: 'messages_update',
+      message: { id: '5554921084500:ACK-7', status: 'DeliveryAck', fromMe: true, wasSentByApi: true },
+    });
+
+    expect((await readBack(msg.id)).deliveryStatus).toBe('delivered');
+  });
+
+  it('lê recibo no formato whatsmeow, com `event` objeto e vários ids', async () => {
+    // `event` aqui é o objeto do recibo, não o nome do evento — o nome vem em
+    // EventType. Antes, String(event) virava "[object Object]" e o recibo se
+    // perdia como "não é mensagem".
+    const a = await outbound('ACK-8');
+    const b = await outbound('ACK-9');
+
+    const res = await postUpdate({
+      EventType: 'messages_update',
+      event: { MessageIDs: ['ACK-8', 'ACK-9'], Type: 'read', IsFromMe: true },
+      state: 'Read',
+    });
+
+    expect(res.status).toBe(200);
+    expect((await readBack(a.id)).deliveryStatus).toBe('read');
+    expect((await readBack(b.id)).deliveryStatus).toBe('read');
+  });
+
+  it('lê o evento nativo do Baileys (lista com status numérico)', async () => {
+    const msg = await outbound('ACK-10');
+
+    await postUpdate({
+      event: 'messages.update',
+      data: [{ key: { id: 'ACK-10', fromMe: true }, update: { status: 3 } }],
+    });
+
+    expect((await readBack(msg.id)).deliveryStatus).toBe('delivered');
+  });
+
+  it('aproveita o status do eco da própria mensagem enviada', async () => {
+    const msg = await outbound('ACK-11');
+
+    const res = await postUpdate({
+      EventType: 'messages',
+      message: {
+        id: 'ACK-11', fromMe: true, wasSentByApi: true, status: 'ServerAck',
+        chatid: '5554999990000@s.whatsapp.net', text: 'orçamento', messageTimestamp: 1779909500000,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect((await readBack(msg.id)).deliveryStatus).toBe('sent');
+    // Eco não vira mensagem recebida.
+    const rows = await db.select().from(messages).where(eq(messages.providerMsgId, 'ACK-11'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].direction).toBe('out');
+  });
+
   it('responde 200 para ACK de mensagem que não existe localmente', async () => {
     const res = await postUpdate({
       event: 'messages_update',
