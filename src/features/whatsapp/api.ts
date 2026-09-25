@@ -198,6 +198,25 @@ export function useSendMessage(conversationId: string) {
   });
 }
 
+/** Template HSM dentro da conversa — o que a linha oficial aceita fora da janela de 24h. */
+export function useSendConversationTemplate(conversationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      hsmTemplateId: string;
+      hsmVariables: Array<{ index: number; source: 'static' | 'lead_field'; value: string }>;
+    }) =>
+      api<PublicMessage>(`/conversations/${conversationId}/template`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages', conversationId] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
 export function useClaimConversation() {
   const qc = useQueryClient();
   return useMutation({

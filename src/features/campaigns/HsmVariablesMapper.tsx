@@ -14,7 +14,7 @@ const LEAD_FIELDS: Array<{ value: string; label: string }> = [
   { value: 'notes', label: 'Observações' },
 ];
 
-function detectIndices(template: HsmTemplateRecord): number[] {
+export function detectIndices(template: HsmTemplateRecord): number[] {
   const body = template.components.find((c) => c.type === 'BODY') as HsmBody | undefined;
   if (!body) return [];
   const matches = body.text.match(/\{\{(\d+)\}\}/g) ?? [];

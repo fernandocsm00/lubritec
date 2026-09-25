@@ -158,7 +158,7 @@ export default function WhatsappPage() {
         {selectedConv ? (
           <>
             <ChatHeader conv={selectedConv} currentUserId={currentUserId} />
-            <Thread conversationId={selectedConv.id} />
+            <Thread conv={selectedConv} />
           </>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">

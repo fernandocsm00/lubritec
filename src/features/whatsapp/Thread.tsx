@@ -3,18 +3,33 @@ import { useMessages, useMarkRead, fetchOlderMessages } from './api';
 import { MessageBubble } from './MessageBubble';
 import { DayDivider } from './DayDivider';
 import { Composer } from './Composer';
+import { SessionWindowClosed, SessionWindowClosingHint } from './SessionWindowBar';
 import { dayLabel } from './helpers';
 import { mergeMessages } from './mergeMessages';
-import type { PublicMessage } from './types';
+import { sessionWindowView } from './sessionWindow';
+import { useInstancesList } from '@/features/settings/whatsapp/api';
+import type { PublicConversation, PublicMessage } from './types';
 
-interface Props { conversationId: string }
+interface Props { conv: PublicConversation }
 
 // Distância do topo que dispara a busca do trecho anterior. Folga suficiente
 // pra página chegar antes de o usuário bater na borda.
 const TOPO_PX = 120;
 
-export function Thread({ conversationId }: Props) {
+// A janela de 24h fecha sozinha com o passar do tempo, sem mensagem nova nenhuma:
+// sem um relógio o Composer seguiria liberado numa conversa que já passou do prazo.
+const RELOGIO_MS = 30_000;
+
+export function Thread({ conv }: Props) {
+  const conversationId = conv.id;
   const { data, isLoading } = useMessages(conversationId);
+  const { data: instancesData } = useInstancesList();
+  const provider = instancesData?.items.find((i) => i.id === conv.instanceId)?.provider;
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), RELOGIO_MS);
+    return () => window.clearInterval(t);
+  }, []);
   const markRead = useMarkRead();
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +66,12 @@ export function Thread({ conversationId }: Props) {
   // Só a mais RECENTE governa o auto-scroll: carregar histórico muda o tamanho
   // da lista sem ser motivo pra jogar o usuário lá pra baixo.
   const idMaisRecente = items.length ? items[items.length - 1].id : null;
+  const janela = sessionWindowView({
+    provider,
+    lastInboundAt: conv.lastInboundAt,
+    messages: items,
+    now,
+  });
 
   const carregarAnteriores = useCallback(async () => {
     if (loadingOlder || !temMais || !maisAntiga) return;
@@ -128,11 +149,25 @@ export function Thread({ conversationId }: Props) {
         ))}
         <div ref={bottomRef} />
       </div>
-      <Composer
-        conversationId={conversationId}
-        replyingTo={replyingTo}
-        onClearReply={() => setReplyingTo(null)}
-      />
+      {janela.state === 'fechada' ? (
+        <SessionWindowClosed
+          conversationId={conversationId}
+          instanceId={conv.instanceId}
+          view={janela}
+          now={now}
+        />
+      ) : (
+        <>
+          {janela.state === 'aberta' && janela.closingSoon && (
+            <SessionWindowClosingHint closesAt={janela.closesAt} now={now} />
+          )}
+          <Composer
+            conversationId={conversationId}
+            replyingTo={replyingTo}
+            onClearReply={() => setReplyingTo(null)}
+          />
+        </>
+      )}
     </>
   );
 }

@@ -618,6 +618,11 @@ import {
   ProviderError,
   OutOfSessionWindowError,
 } from './whatsapp/provider';
+import { isSessionWindowOpen } from '@shared/sessionWindow';
+
+const SESSION_WINDOW_CLOSED_MESSAGE =
+  'Janela de 24h fechada: o cliente não manda mensagem há mais de 24h. Pelo número oficial '
+  + 'só dá pra enviar template aprovado — use "Enviar template" e aguarde a resposta dele.';
 
 export interface SendInput {
   conversationId: string;
@@ -674,6 +679,15 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
   // Envia pelo provider da instância da conversa (não assume UazAPI default —
   // conversas Meta Cloud quebravam aqui antes deste fix).
   const provider = await resolveProvider(conv.instanceId);
+
+  // Linha oficial fora da janela de 24h: a Meta aceita o envio (200) e só recusa
+  // minutos depois, pelo webhook (131047). O catch de OutOfSessionWindowError
+  // abaixo nunca vê esse caso — a mensagem ficava gravada e voltava "não
+  // entregue". Barra antes de chamar o provedor.
+  if (provider.kind === 'meta_cloud' && !isSessionWindowOpen(conv.lastInboundAt)) {
+    throw new HttpError(409, SESSION_WINDOW_CLOSED_MESSAGE);
+  }
+
   let sendResult: { providerMsgId: string; rawPayload: unknown };
   try {
     if (input.kind === 'text') {
@@ -697,8 +711,7 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
     }
   } catch (err) {
     if (err instanceof OutOfSessionWindowError) {
-      throw new HttpError(409,
-        'Janela de 24h fechada — para reabrir, envie um template HSM aprovado.');
+      throw new HttpError(409, SESSION_WINDOW_CLOSED_MESSAGE);
     }
     if (err instanceof ProviderError) {
       throw new HttpError(502, `Falha no provedor (${err.providerKind}): ${err.message}`);
@@ -1054,16 +1067,7 @@ export async function startConversation(
   }
 
   // Carrega e valida o template HSM antecipadamente (mesma razão: fail fast).
-  let hsmTemplate: Awaited<ReturnType<typeof getTemplateById>> | null = null;
-  if (isMeta) {
-    hsmTemplate = await getTemplateById(input.hsmTemplateId!);
-    if (!hsmTemplate || hsmTemplate.instanceId !== instanceId) {
-      throw new HttpError(404, 'Template HSM não encontrado para esta instância.');
-    }
-    if (hsmTemplate.status !== 'APPROVED') {
-      throw new HttpError(400, `Template HSM não está aprovado (status: ${hsmTemplate.status}).`);
-    }
-  }
+  const hsmTemplate = isMeta ? await loadApprovedTemplate(input.hsmTemplateId!, instanceId) : null;
 
   // 1. Lead — find ou create (com proteção a race igual ao webhook ingest).
   let leadId: string;
@@ -1151,7 +1155,7 @@ export async function startConversation(
     // Número oficial: dispara o template HSM. Espelha o persist do dispatcher
     // de campanha (sendTemplate + insert), em vez de passar pelo sendMessage
     // genérico (que só sabe texto/mídia).
-    message = await sendFirstHsmTemplate({
+    message = await sendHsmTemplate({
       conversationId,
       instanceId,
       leadId,
@@ -1178,16 +1182,67 @@ export async function startConversation(
   return { conversation, message };
 }
 
-/** Dispara um template HSM como primeira mensagem de uma conversa Meta Cloud e
- * persiste a mensagem outbound. O lead já existe (resolvemos as variáveis
- * lead_field contra ele). */
-async function sendFirstHsmTemplate(args: {
+type HsmTemplateRow = NonNullable<Awaited<ReturnType<typeof getTemplateById>>>;
+
+async function loadApprovedTemplate(templateId: string, instanceId: string): Promise<HsmTemplateRow> {
+  const template = await getTemplateById(templateId);
+  if (!template || template.instanceId !== instanceId) {
+    throw new HttpError(404, 'Template HSM não encontrado para esta instância.');
+  }
+  if (template.status !== 'APPROVED') {
+    throw new HttpError(400, `Template HSM não está aprovado (status: ${template.status}).`);
+  }
+  return template;
+}
+
+export interface SendTemplateInput {
+  conversationId: string;
+  userId: string;
+  hsmTemplateId: string;
+  hsmVariables: CampaignHsmVariable[];
+}
+
+/** Template HSM numa conversa que já existe — o único envio que a linha oficial
+ * aceita fora da janela de 24h. Não reabre a janela: só a resposta do cliente
+ * reabre, então o chat continua travado até ela chegar. */
+export async function sendTemplateToConversation(input: SendTemplateInput): Promise<PublicMessage> {
+  const [conv] = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, input.conversationId))
+    .limit(1);
+  if (!conv) throw new HttpError(404, 'Conversation not found');
+
+  const [instance] = await db
+    .select({ provider: whatsappInstance.provider })
+    .from(whatsappInstance)
+    .where(eq(whatsappInstance.id, conv.instanceId))
+    .limit(1);
+  if (instance?.provider !== 'meta_cloud') {
+    throw new HttpError(400, 'Templates HSM só se aplicam a números oficiais (Meta Cloud).');
+  }
+
+  const template = await loadApprovedTemplate(input.hsmTemplateId, conv.instanceId);
+  return sendHsmTemplate({
+    conversationId: conv.id,
+    instanceId: conv.instanceId,
+    leadId: conv.leadId,
+    phone: conv.phone,
+    userId: input.userId,
+    template,
+    variables: input.hsmVariables,
+  });
+}
+
+/** Dispara um template HSM numa conversa Meta Cloud e persiste a mensagem
+ * outbound. O lead já existe (resolvemos as variáveis lead_field contra ele). */
+async function sendHsmTemplate(args: {
   conversationId: string;
   instanceId: string;
   leadId: string;
   phone: string;
   userId: string;
-  template: NonNullable<Awaited<ReturnType<typeof getTemplateById>>>;
+  template: HsmTemplateRow;
   variables: CampaignHsmVariable[];
 }): Promise<PublicMessage> {
   const [leadRow] = await db.select().from(leads).where(eq(leads.id, args.leadId)).limit(1);
