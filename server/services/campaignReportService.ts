@@ -164,10 +164,8 @@ export async function buildCampaignReport(campaignId: string): Promise<CampaignR
     ORDER BY l.name, cr.created_at
   `);
 
-  // Um lead pode ter mais de um negócio (recompra), e cada um vira uma linha —
-  // é o que o funil conta. O contrário, o mesmo negócio duplicado por vários
-  // disparos, não acontece: UNIQUE (campaign_id, lead_id) garante um
-  // destinatário por lead, inclusive nas contínuas (migration 012).
+  // Cada card da campanha vira uma linha (deals.campaign_id). Um lead pode ter
+  // mais de um card, cada um de uma campanha — aqui entram só os desta.
   const deals = await db.execute<DealRow>(sql`
     SELECT
       d.lead_id::text  AS lead_id,
@@ -187,10 +185,7 @@ export async function buildCampaignReport(campaignId: string): Promise<CampaignR
       ) AS sent_at
     FROM deals d
     JOIN leads l ON l.id = d.lead_id
-    WHERE d.lead_id IN (
-      SELECT cr.lead_id FROM campaign_recipients cr
-      WHERE cr.campaign_id = ${campaignId}::uuid
-    )
+    WHERE d.campaign_id = ${campaignId}::uuid
     ORDER BY l.name, d.created_at
   `);
 

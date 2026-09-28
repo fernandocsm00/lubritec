@@ -679,8 +679,8 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
   `);
   const replied = (repliedRows.rows[0] as { replied: number }).replied ?? 0;
 
-  // Deals agregados: usa closed_at quando ganho/perdido (estagios terminais), senao
-  // usa created_at — captura tanto deals fechados no periodo quanto deals abertos no periodo.
+  // Cards que vieram de campanha (deals.campaign_id) — cada um conta uma vez,
+  // na campanha dele.
   const dealsAgg = await db.execute(sql`
     SELECT
       COUNT(*) FILTER (WHERE d.stage IN ('lead_no_comercial','proposta_enviada','em_negociacao')
@@ -696,13 +696,10 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
                         AND COALESCE(d.closed_at, d.created_at) < ${end}
                    THEN d.proposal_value ELSE 0 END), 0) AS won_value
     FROM deals d
-    WHERE EXISTS (
-      SELECT 1 FROM campaign_recipients cr
-      JOIN campaigns c ON c.id = cr.campaign_id
-      WHERE cr.lead_id = d.lead_id
-        ${kindCampaignFilter}
-    )
-    ${leadDealFilter}
+    JOIN campaigns c ON c.id = d.campaign_id
+    WHERE TRUE
+      ${kindCampaignFilter}
+      ${leadDealFilter}
   `);
   const deal = dealsAgg.rows[0] as { in_deal: number; won: number; lost: number; won_value: string | number };
   const inDeal = deal.in_deal ?? 0;
@@ -719,9 +716,8 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
       AND COALESCE(d.closed_at, d.created_at) < ${end}
       AND d.loss_reason IS NOT NULL
       AND EXISTS (
-        SELECT 1 FROM campaign_recipients cr
-        JOIN campaigns c ON c.id = cr.campaign_id
-        WHERE cr.lead_id = d.lead_id
+        SELECT 1 FROM campaigns c
+        WHERE c.id = d.campaign_id
           ${kindCampaignFilter}
       )
       ${leadDealFilter}
@@ -804,7 +800,7 @@ export async function getTopCampaigns(input: {
         THEN d.proposal_value ELSE 0 END), 0) AS won_value
     FROM campaigns c
     JOIN campaign_recipients cr ON cr.campaign_id = c.id
-    LEFT JOIN deals d ON d.lead_id = cr.lead_id
+    LEFT JOIN deals d ON d.lead_id = cr.lead_id AND d.campaign_id = c.id
     WHERE cr.sent_at >= ${start} AND cr.sent_at < ${end}
       ${kindFilter}
       ${leadCrFilter}
@@ -894,9 +890,8 @@ export async function getCampaignsTimeseries(input: {
       AND COALESCE(d.closed_at, d.created_at) >= ${start}
       AND COALESCE(d.closed_at, d.created_at) < ${end}
       AND EXISTS (
-        SELECT 1 FROM campaign_recipients cr
-        JOIN campaigns c ON c.id = cr.campaign_id
-        WHERE cr.lead_id = d.lead_id
+        SELECT 1 FROM campaigns c
+        WHERE c.id = d.campaign_id
           ${kindCampaignFilter}
       )
       ${leadDealFilter}
@@ -975,14 +970,15 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
   `);
   const replied = (repliedRows.rows[0] as { replied: number }).replied;
 
+  // Cada card conta só na campanha dele (deals.campaign_id). Até 28/09/2026 o
+  // card de um lead contava em toda campanha que o lead tinha recebido.
   const dealsRows = await db.select({
     stage: deals.stage,
     lossReason: deals.lossReason,
     proposalValue: deals.proposalValue,
   })
     .from(deals)
-    .innerJoin(campaignRecipients, eq(deals.leadId, campaignRecipients.leadId))
-    .where(eq(campaignRecipients.campaignId, id));
+    .where(eq(deals.campaignId, id));
 
   let inDeal = 0;
   let won = 0;
@@ -1042,10 +1038,10 @@ function emptyFunnel(): CampaignFunnel {
  * todas as campanhas de uma vez — em laço seriam 4×N idas ao banco, e com o
  * Postgres fora da região do app isso vira dezenas de segundos.
  *
- * A semântica é deliberadamente idêntica à da versão individual, inclusive o
- * join de deals por lead_id sem filtrar status do destinatário (um lead em duas
- * campanhas conta nas duas). campaigns-export.test.ts trava essa equivalência —
- * se alguém mudar uma das duas, o teste quebra.
+ * A semântica é deliberadamente idêntica à da versão individual, inclusive a
+ * contagem de cada card só na própria campanha (deals.campaign_id).
+ * campaigns-export.test.ts trava essa equivalência — se alguém mudar uma das
+ * duas, o teste quebra.
  *
  * Campanhas sem destinatários voltam zeradas, não ausentes do mapa.
  */
@@ -1123,17 +1119,16 @@ export async function getCampaignFunnelsBatch(ids: string[]): Promise<Map<string
   }
 
   const dealsRows = await db.select({
-    campaignId: campaignRecipients.campaignId,
+    campaignId: deals.campaignId,
     stage: deals.stage,
     lossReason: deals.lossReason,
     proposalValue: deals.proposalValue,
   })
     .from(deals)
-    .innerJoin(campaignRecipients, eq(deals.leadId, campaignRecipients.leadId))
-    .where(inArray(campaignRecipients.campaignId, ids));
+    .where(inArray(deals.campaignId, ids));
 
   for (const d of dealsRows) {
-    const f = out.get(d.campaignId);
+    const f = d.campaignId ? out.get(d.campaignId) : undefined;
     if (!f) continue;
     if (d.stage === 'lead_no_comercial' || d.stage === 'proposta_enviada' || d.stage === 'em_negociacao') f.inDeal++;
     if (d.stage === 'ganho') {
