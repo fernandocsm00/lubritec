@@ -349,7 +349,7 @@ export async function endHandler(req: Request, res: Response, next: NextFunction
 export async function deleteHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = idParams.parse(req.params);
-    await deleteCampaign(id);
+    await deleteCampaign(id, req.user!.userId);
     res.status(204).end();
   } catch (e) { next(e); }
 }

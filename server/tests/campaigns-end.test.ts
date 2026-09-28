@@ -110,3 +110,23 @@ describe('GET /api/campaigns/:id — openCardsCount', () => {
     expect(res.body.openCardsCount).toBe(2);
   });
 });
+
+describe('DELETE /api/campaigns/:id', () => {
+  it('lead com card aberto da campanha E card aberto sem campanha: apaga sem 500, fecha só o card da campanha', async () => {
+    const { token, userId } = await loginAs('admin');
+    const c = await createCampaign({ createdByUserId: userId, status: 'completed' });
+    const lead = await newLead();
+    const daCampanha = await createDeal({ leadId: lead.id, stage: 'proposta_enviada', campaignId: c.id });
+    const semCampanha = await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', campaignId: null });
+
+    const res = await request(app).delete(`/api/campaigns/${c.id}`).set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(204);
+    const [semCampanhaAfter] = await db.select().from(deals).where(eq(deals.id, semCampanha.id));
+    expect(semCampanhaAfter.stage).toBe('lead_no_comercial');
+    const [daCampanhaAfter] = await db.select().from(deals).where(eq(deals.id, daCampanha.id));
+    expect(daCampanhaAfter.stage).toBe('perdido');
+    expect(daCampanhaAfter.lossReason).toBe('campanha_encerrada');
+    expect(daCampanhaAfter.campaignId).toBeNull();
+  });
+});

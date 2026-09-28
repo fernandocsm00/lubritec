@@ -522,9 +522,18 @@ export async function retryFailedRecipients(id: string): Promise<RetryFailedResu
   return { requeued, skippedInterrupted, campaignStatus: after.status };
 }
 
-export async function deleteCampaign(id: string): Promise<void> {
+export async function deleteCampaign(id: string, actorUserId: string): Promise<void> {
   const [row] = await db.select({ id: campaigns.id }).from(campaigns).where(eq(campaigns.id, id)).limit(1);
   if (!row) throw new HttpError(404, 'Campaign not found');
+
+  // Fecha os cards ABERTOS da campanha antes de apagar. `deals.campaign_id` é
+  // ON DELETE SET NULL: um lead com card aberto desta campanha E outro já
+  // "sem campanha" colidiriam no balde null do índice único (23505 →  500).
+  // Card fechado fica fora do índice parcial, então o SET NULL nunca colide.
+  // Sem isso o card também ficaria "sem campanha" pra sempre, sem nunca fechar
+  // sozinho (a varredura automática só olha campanha existente).
+  await closeCampaignCards(id, actorUserId);
+
   await db.delete(campaigns).where(eq(campaigns.id, id));
 }
 
