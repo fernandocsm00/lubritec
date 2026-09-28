@@ -114,6 +114,18 @@ export function useDealByLead(leadId: string | null) {
   });
 }
 
+/** Cards ABERTOS do lead, mais recente primeiro (card por campanha). */
+export function useOpenDealsByLead(leadId: string | null) {
+  return useQuery({
+    queryKey: ['deals', 'by-lead', leadId, 'open'],
+    queryFn: () => api<PublicDeal[]>(`/deals/by-lead/${leadId}/open`),
+    enabled: !!leadId,
+    // Mesmo motivo do useDealByLead: a leitura do print escreve no card em background.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
