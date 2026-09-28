@@ -64,4 +64,25 @@ describe('card conta só na campanha dele', () => {
     const series = await getCampaignsTimeseries({ start, end });
     expect(series.reduce((s, x) => s + x.won, 0)).toBe(1);
   });
+
+  it('lead com dois cards da mesma campanha (recompra) não dobra o sent no ranking', async () => {
+    const u = await createUser({ email: 'attr2@x.com', role: 'admin' });
+    const a = await createCampaign({ name: 'Recompra Campanha', createdByUserId: u.id, status: 'completed' });
+    const lead = await createLead({ phone: '5554991921900', name: 'Diana' });
+    // Um único disparo (um recipient), mas o lead acumulou dois cards da
+    // campanha: o ganho de um ciclo anterior e o aberto do ciclo de recompra.
+    await createCampaignRecipient({ campaignId: a.id, leadId: lead.id, status: 'sent', sentAt: new Date(Date.now() - DAY) });
+    await createDeal({
+      leadId: lead.id, stage: 'ganho', proposalValue: 500,
+      closedAt: new Date(Date.now() - DAY), campaignId: a.id,
+    });
+    await createDeal({ leadId: lead.id, stage: 'em_negociacao', campaignId: a.id });
+
+    const start = new Date(Date.now() - 30 * DAY);
+    const end = new Date(Date.now() + DAY);
+    const top = await getTopCampaigns({ start, end });
+    const byName = Object.fromEntries(top.map((t) => [t.name, t]));
+
+    expect(byName['Recompra Campanha'].sent).toBe(1);
+  });
 });

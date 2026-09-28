@@ -780,13 +780,16 @@ export async function getTopCampaigns(input: {
       : sql`AND c.is_continuous = false`;
 
   // Agrega sent/replied/won/wonValue por campaign_id. Replied via subquery EXISTS.
+  // sent usa COUNT(DISTINCT cr.id): o LEFT JOIN com deals multiplica a linha do
+  // recipient quando o lead tem mais de um card da mesma campanha (recompra —
+  // ciclo antigo fechado + card novo), senão o mesmo disparo seria contado 2x.
   const rows = await db.execute(sql`
     SELECT
       c.id,
       c.name,
       c.status,
       c.is_continuous,
-      COUNT(cr.id) FILTER (WHERE cr.status = 'sent')::int AS sent,
+      COUNT(DISTINCT cr.id) FILTER (WHERE cr.status = 'sent')::int AS sent,
       COUNT(DISTINCT cr.lead_id) FILTER (
         WHERE cr.status = 'sent'
           AND EXISTS (
@@ -814,7 +817,7 @@ export async function getTopCampaigns(input: {
       ${kindFilter}
       ${leadCrFilter}
     GROUP BY c.id, c.name, c.status, c.is_continuous
-    HAVING COUNT(cr.id) FILTER (WHERE cr.status = 'sent') > 0
+    HAVING COUNT(DISTINCT cr.id) FILTER (WHERE cr.status = 'sent') > 0
     ORDER BY sent DESC
     LIMIT ${limit}
   `);
