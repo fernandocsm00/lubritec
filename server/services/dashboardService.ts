@@ -447,6 +447,86 @@ interface MacroFunnelArgs {
   campaignIds?: string[];
 }
 
+// type (não interface): db.execute<T> exige T atribuível a Record<string, unknown>.
+type FunnelRow = {
+  total: number; incomplete: number; complete: number; dispatched: number;
+  engaged: number; qualified: number; handed_off: number; lost: number; won: number;
+};
+
+// Sem filtro de campanha: leads criados no período, pela etapa ATUAL do lead.
+async function periodFunnelRow(start: Date, end: Date, lf?: DashboardLeadFilters): Promise<FunnelRow> {
+  const [row] = await db.execute<FunnelRow>(sql`
+    SELECT
+      count(*)::int as total,
+      count(*) filter (where ${leads.flowStage} = 'incomplete')::int as incomplete,
+      count(*) filter (where ${leads.flowStage} in ('complete','dispatched','engaged','qualified','handed_off'))::int as complete,
+      count(*) filter (where ${leads.flowStage} in ('dispatched','engaged','qualified','handed_off'))::int as dispatched,
+      count(*) filter (where ${leads.flowStage} in ('engaged','qualified','handed_off'))::int as engaged,
+      count(*) filter (where ${leads.flowStage} in ('qualified','handed_off'))::int as qualified,
+      count(*) filter (where ${leads.flowStage} = 'handed_off')::int as handed_off,
+      count(*) filter (where ${leads.flowStage} = 'lost')::int as lost,
+      count(*) filter (where EXISTS (SELECT 1 FROM ${deals} d WHERE d.lead_id = ${leads.id} AND d.stage = 'ganho'))::int as won
+    FROM ${leads}
+    WHERE ${leads.createdAt} >= ${start} AND ${leads.createdAt} < ${end}
+    ${leadFilterDirect(lf)}
+  `).then((r) => ((r as any).rows ?? r) as any[]);
+  return row;
+}
+
+// Com campanha(s) selecionada(s): só o que a campanha gerou, com as regras do
+// funil da tela da campanha (getCampaignFunnel) — destinatários, disparo
+// enviado, resposta DEPOIS do disparo, card DA campanha. Leads únicos quando há
+// mais de uma campanha. Até 28/09/2026 o funil filtrado olhava a etapa atual do
+// lead: quem ganhou na campanha A aparecia como ganho no funil da B.
+// Destinatário sempre tem telefone, então "com telefone" = todos e "sem
+// telefone" = 0; "qualificado" = "no comercial" (a qualificação abre o card).
+async function campaignScopedFunnelRow(campaignIds: string[], lf?: DashboardLeadFilters): Promise<FunnelRow> {
+  const ids = sql.join(campaignIds.map((id) => sql`${id}`), sql`, `);
+  const [row] = await db.execute<{
+    total: number; dispatched: number; engaged: number; handed_off: number; won: number; lost: number;
+  }>(sql`
+    WITH rec AS (
+      SELECT cr.lead_id, cr.status, cr.sent_at
+      FROM ${campaignRecipients} cr
+      JOIN ${leads} ON ${leads.id} = cr.lead_id
+      WHERE cr.campaign_id IN (${ids})
+      ${leadFilterDirect(lf)}
+    ),
+    cards AS (
+      SELECT d.lead_id, d.stage
+      FROM ${deals} d
+      WHERE d.campaign_id IN (${ids})
+        AND d.lead_id IN (SELECT lead_id FROM rec)
+    )
+    SELECT
+      (SELECT count(DISTINCT lead_id) FROM rec)::int AS total,
+      (SELECT count(DISTINCT lead_id) FROM rec WHERE status = 'sent')::int AS dispatched,
+      (SELECT count(DISTINCT r.lead_id) FROM rec r
+        WHERE r.status = 'sent'
+          AND EXISTS (
+            SELECT 1 FROM ${conversations} c
+            JOIN ${messages} m ON m.conversation_id = c.id
+            WHERE c.lead_id = r.lead_id
+              AND m.direction = 'in'
+              AND m.sent_at > r.sent_at
+          ))::int AS engaged,
+      (SELECT count(DISTINCT lead_id) FROM cards)::int AS handed_off,
+      (SELECT count(DISTINCT lead_id) FROM cards WHERE stage = 'ganho')::int AS won,
+      (SELECT count(DISTINCT lead_id) FROM cards WHERE stage = 'perdido')::int AS lost
+  `).then((r) => ((r as any).rows ?? r) as any[]);
+  return {
+    total: row.total,
+    incomplete: 0,
+    complete: row.total,
+    dispatched: row.dispatched,
+    engaged: row.engaged,
+    qualified: row.handed_off,
+    handed_off: row.handed_off,
+    lost: row.lost,
+    won: row.won,
+  };
+}
+
 export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacroFunnel> {
   // Aceita period OU range customizado.
   let start: Date;
@@ -471,33 +551,10 @@ export async function macroFunnel(args: MacroFunnelArgs): Promise<DashboardMacro
   if (scopedByCampaign) {
     label = args.campaignIds!.length === 1 ? 'Campanha selecionada' : `${args.campaignIds!.length} campanhas`;
   }
-  const periodPart = scopedByCampaign
-    ? sql``
-    : sql` AND ${leads.createdAt} >= ${start} AND ${leads.createdAt} < ${end}`;
-  const campaignPart = scopedByCampaign
-    ? sql` AND EXISTS (SELECT 1 FROM ${campaignRecipients} cr WHERE cr.lead_id = ${leads.id} AND cr.campaign_id IN (${sql.join(args.campaignIds!.map((id) => sql`${id}`), sql`, `)}))`
-    : sql``;
-
   // Counts cumulativos por stage — uma query.
-  const filterDirect = leadFilterDirect(lf);
-  const [row] = await db.execute<{
-    total: number; incomplete: number; complete: number; dispatched: number;
-    engaged: number; qualified: number; handed_off: number; lost: number; won: number;
-  }>(sql`
-    SELECT
-      count(*)::int as total,
-      count(*) filter (where ${leads.flowStage} = 'incomplete')::int as incomplete,
-      count(*) filter (where ${leads.flowStage} in ('complete','dispatched','engaged','qualified','handed_off'))::int as complete,
-      count(*) filter (where ${leads.flowStage} in ('dispatched','engaged','qualified','handed_off'))::int as dispatched,
-      count(*) filter (where ${leads.flowStage} in ('engaged','qualified','handed_off'))::int as engaged,
-      count(*) filter (where ${leads.flowStage} in ('qualified','handed_off'))::int as qualified,
-      count(*) filter (where ${leads.flowStage} = 'handed_off')::int as handed_off,
-      count(*) filter (where ${leads.flowStage} = 'lost')::int as lost,
-      count(*) filter (where EXISTS (SELECT 1 FROM ${deals} d WHERE d.lead_id = ${leads.id} AND d.stage = 'ganho'))::int as won
-    FROM ${leads}
-    WHERE 1=1${periodPart}${campaignPart}
-    ${filterDirect}
-  `).then((r) => ((r as any).rows ?? r) as any[]);
+  const row = scopedByCampaign
+    ? await campaignScopedFunnelRow(args.campaignIds!, lf)
+    : await periodFunnelRow(start, end, lf);
   const handedOff = row.handed_off;
 
   // Tempo médio em cada etapa — janela LEAD por lead, computa diff até a próxima
