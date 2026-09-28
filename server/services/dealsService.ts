@@ -34,7 +34,7 @@ interface RawDealRow {
   isStale: boolean;
   aiSummary: string | null;
   campaigns: Array<{ id: string; name: string; sentAt: string }>;
-  originCampaign: { id: string; name: string } | null;
+  cardCampaign: { id: string; name: string } | null;
 }
 
 function toPublic(row: RawDealRow): PublicDeal {
@@ -60,8 +60,8 @@ function toPublic(row: RawDealRow): PublicDeal {
     enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
     aiSummary: row.aiSummary,
     campaigns: row.campaigns ?? [],
-    originCampaignId: row.originCampaign?.id ?? null,
-    originCampaignName: row.originCampaign?.name ?? null,
+    campaignId: row.cardCampaign?.id ?? null,
+    campaignName: row.cardCampaign?.name ?? null,
     createdAt: row.deal.createdAt.toISOString(),
     updatedAt: row.deal.updatedAt.toISOString(),
   };
@@ -84,19 +84,12 @@ const campaignsSql = sql<Array<{ id: string; name: string; sentAt: string }>>`CO
   '[]'::json
 )`;
 
-// Campanha que ORIGINOU o contato — mesma fonte que o badge da conversa
-// (conversations.origin_campaign_id). Pega a conversa originada de campanha mais
-// recente do lead. Mesmo cuidado de qualificação do campaignsSql: usa
-// sql.raw('deals.lead_id') porque cv.lead_id colidiria com lead_id não-qualificado.
-const originCampaignSql = sql<{ id: string; name: string } | null>`(
+// Campanha DO CARD (deals.campaign_id, migration 049). sql.raw pelo mesmo
+// motivo do campaignsSql: o Drizzle renderizaria a coluna sem qualificar.
+const cardCampaignSql = sql<{ id: string; name: string } | null>`(
   SELECT json_build_object('id', ca.id, 'name', ca.name)
-  FROM conversations cv
-  JOIN campaigns ca ON ca.id = cv.origin_campaign_id
-  WHERE cv.lead_id = ${sql.raw('deals.lead_id')}
-    AND cv.origin_kind = 'campaign'
-    AND cv.origin_campaign_id IS NOT NULL
-  ORDER BY cv.created_at DESC
-  LIMIT 1
+  FROM campaigns ca
+  WHERE ca.id = ${sql.raw('deals.campaign_id')}
 )`;
 
 // Resumo mais recente da IA para o lead do deal (varre conversas do lead e
@@ -165,13 +158,16 @@ export async function listBoard(input: {
     conds.push(eq(deals.ownerUserId, input.ownerFilter));
   }
 
-  // Show: active stages OR (terminal AND closed_at within last 7 days)
+  // Show: active stages OR (terminal AND closed_at within last 7 days). Perdido
+  // por campanha encerrada vai direto pro Histórico: encerrar uma campanha grande
+  // não pode inundar a coluna Perdido.
   conds.push(
     sql`(
       ${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')
       OR (
         ${deals.stage} IN ('ganho', 'perdido')
         AND ${deals.closedAt} > now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'
+        AND ${deals.lossReason} IS DISTINCT FROM 'campanha_encerrada'
       )
     )`,
   );
@@ -199,7 +195,7 @@ export async function listBoard(input: {
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -207,29 +203,21 @@ export async function listBoard(input: {
     .where(where)
     .orderBy(desc(deals.updatedAt));
 
-  // Opções de campanha de origem: distintas entre os deals do escopo atual
+  // Opções "Campanha do card": campanhas dos cards do escopo atual
   // (owner/busca/stage), SEM aplicar o filtro de campanha.
-  const originCampaigns = await db
+  const cardCampaigns = await db
     .selectDistinct({ id: campaigns.id, name: campaigns.name })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
-    .innerJoin(
-      conversations,
-      and(
-        eq(conversations.leadId, deals.leadId),
-        eq(conversations.originKind, 'campaign'),
-        sql`${conversations.originCampaignId} IS NOT NULL`,
-      ),
-    )
-    .innerJoin(campaigns, eq(campaigns.id, conversations.originCampaignId))
+    .innerJoin(campaigns, eq(campaigns.id, deals.campaignId))
     .where(and(...conds))
     .orderBy(campaigns.name);
 
   // Campanhas que DISPARARAM (recipient enviado) pra algum card do escopo, mas
-  // que não são a campanha de origem — grupo "Recebeu disparo". Cobre o caso do
+  // que não são a campanha do card — grupo "Recebeu disparo". Cobre o caso do
   // re-disparo: uma lista nova sobre uma base já contatada não sobrescreve a
-  // origem (conversations.origin_campaign_id é gravado uma vez só), então nunca
-  // apareceria no grupo de origem. Aqui ela vira selecionável.
+  // campanha do card, então nunca apareceria no grupo "Campanha do card". Aqui
+  // ela vira selecionável.
   const recipientCampaignsRaw = await db
     .selectDistinct({ id: campaigns.id, name: campaigns.name })
     .from(deals)
@@ -246,10 +234,10 @@ export async function listBoard(input: {
     .where(and(...conds))
     .orderBy(campaigns.name);
 
-  // Exclui as que já estão no grupo de origem (o filtro casa origem OU recipient,
-  // então basta oferecê-las uma vez, no grupo de origem).
-  const originIds = new Set(originCampaigns.map((c) => c.id));
-  const recipientCampaigns = recipientCampaignsRaw.filter((c) => !originIds.has(c.id));
+  // Exclui as que já são campanha de algum card (o filtro casa card OU disparo,
+  // então basta oferecê-las uma vez, no grupo "Campanha do card").
+  const cardIds = new Set(cardCampaigns.map((c) => c.id));
+  const recipientCampaigns = recipientCampaignsRaw.filter((c) => !cardIds.has(c.id));
 
   const stages: BoardResponse['stages'] = {
     lead_no_comercial: [],
@@ -273,25 +261,18 @@ export async function listBoard(input: {
     totals[pub.stage].valueSum += pub.proposalValue ?? 0;
   }
 
-  return { stages, totals, originCampaigns, recipientCampaigns };
+  return { stages, totals, cardCampaigns, recipientCampaigns };
 }
 
-// Filtro por campanha: casa o card cujo lead ORIGINOU da campanha
-// (conversations.origin_campaign_id, alinhado ao badge do card) OU recebeu um
-// disparo dela (campaign_recipients com sent_at). Cobre tanto o grupo "Campanha
-// de origem" quanto o "Recebeu disparo" do multi-select — selecionar qualquer
-// campanha mostra todo card tocado por ela. Retorna null quando não há filtro.
-// Usado por listBoard e listHistory.
+// Filtro por campanha: casa o card DA campanha (deals.campaign_id, o selo do
+// card) OU cujo lead recebeu disparo dela (campaign_recipients com sent_at).
+// Cobre os grupos "Campanha do card" e "Recebeu disparo". Retorna null quando
+// não há filtro. Usado por listBoard e listHistory.
 function campaignAssociationFilter(campaignIds: string[] | undefined): SQL | null {
   if (!campaignIds || campaignIds.length === 0) return null;
   const ids = sql.join(campaignIds.map((id) => sql`${id}`), sql`, `);
   return sql`(
-    EXISTS (
-      SELECT 1 FROM conversations cv
-      WHERE cv.lead_id = ${deals.leadId}
-        AND cv.origin_kind = 'campaign'
-        AND cv.origin_campaign_id IN (${ids})
-    )
+    ${deals.campaignId} IN (${ids})
     OR EXISTS (
       SELECT 1 FROM campaign_recipients cr
       WHERE cr.lead_id = ${deals.leadId}
@@ -319,8 +300,13 @@ export async function listHistory(input: {
   const page = Math.max(1, input.page ?? 1);
   const conds: SQL[] = [];
 
+  // Terminais fora da janela do Kanban — e os fechados por campanha encerrada,
+  // que nunca passam pelo Kanban.
   conds.push(
-    sql`${deals.stage} IN ('ganho', 'perdido') AND ${deals.closedAt} <= now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'`,
+    sql`${deals.stage} IN ('ganho', 'perdido') AND (
+      ${deals.closedAt} <= now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'
+      OR ${deals.lossReason} = 'campanha_encerrada'
+    )`,
   );
 
   if (input.ownerFilter === 'mine') {
@@ -362,7 +348,7 @@ export async function listHistory(input: {
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -394,7 +380,7 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -437,7 +423,7 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))

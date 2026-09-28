@@ -482,10 +482,10 @@ export interface PublicDeal {
   enteredCurrentStageAt: string;
   aiSummary: string | null;
   campaigns: LeadCampaignSummary[];
-  // Campanha que ORIGINOU o contato — mesma fonte que o badge da conversa
-  // (conversations.origin_campaign_id). null quando o deal não veio de campanha.
-  originCampaignId: string | null;
-  originCampaignName: string | null;
+  // Campanha DO CARD (deals.campaign_id). null = card sem campanha: orgânico,
+  // manual, ou qualificado fora da vigência.
+  campaignId: string | null;
+  campaignName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -507,13 +507,13 @@ export interface DealStageTotal {
 export interface BoardResponse {
   stages: Record<DealStage, PublicDeal[]>;
   totals: Record<DealStage, DealStageTotal>;
-  // Campanhas que originaram ao menos um card no escopo atual (owner+busca,
-  // ignorando o próprio filtro de campanha) — grupo "Campanha de origem" do
-  // multi-select do Kanban.
-  originCampaigns: Array<{ id: string; name: string }>;
+  // Campanhas dos cards no escopo atual (owner+busca, ignorando o próprio
+  // filtro de campanha) — grupo "Campanha do card" do multi-select do Kanban.
+  cardCampaigns: Array<{ id: string; name: string }>;
   // Campanhas que dispararam (recipient enviado) para algum card do escopo mas
-  // NÃO são a campanha de origem — grupo "Recebeu disparo" do multi-select.
-  // Cobre re-disparos (ex.: uma lista nova sobre uma base já contatada).
+  // NÃO são a campanha de nenhum card do escopo — grupo "Recebeu disparo" do
+  // multi-select. Cobre re-disparos (ex.: uma lista nova sobre uma base já
+  // contatada).
   recipientCampaigns: Array<{ id: string; name: string }>;
 }
 
