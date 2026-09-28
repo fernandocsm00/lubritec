@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { macroFunnel } from '../services/dashboardService';
-import { createUser, createLead, createDeal, createCampaign, createCampaignRecipient } from './helpers';
+import { getCampaignFunnel } from '../services/campaignsService';
+import {
+  createUser, createLead, createDeal, createCampaign, createCampaignRecipient,
+  createConversation, createMessage,
+} from './helpers';
 
 const app = createApp();
 
@@ -97,19 +101,98 @@ describe('macroFunnel service', () => {
     expect(r.stages.won.count).toBe(1);
   });
 
-  it('filtro por campanha escopa aos leads da campanha e ignora o período', async () => {
-    const owner = await createUser({ email: 'mf-owner@x.com', role: 'comercial' });
-    const veryOld = new Date('2020-01-01'); // fora de qualquer período recente
-    const inCamp = await createLead({ flowStage: 'engaged', phone: '5511999990000', createdAt: veryOld });
-    await createLead({ flowStage: 'engaged', createdAt: veryOld }); // fora da campanha
-    const camp = await createCampaign({ createdByUserId: owner.id });
-    await createCampaignRecipient({ campaignId: camp.id, leadId: inCamp.id, phone: '5511999990000', status: 'sent', sentAt: veryOld });
+});
 
-    const scoped = await macroFunnel({ period: 'today', campaignIds: [camp.id] });
-    // Só o lead da campanha entra (mesmo sendo de 2020 — período ignorado).
-    expect(scoped.stages.complete.count).toBe(1);
-    expect(scoped.stages.engaged.count).toBe(1);
-    expect(scoped.period.label).toBe('Campanha selecionada');
+// Com campanha selecionada, o funil conta só o que a campanha gerou — as mesmas
+// regras do funil da tela da campanha (getCampaignFunnel). Até 28/09/2026 cada
+// etapa olhava o estado atual do lead, viesse de onde viesse: um lead que ganhou
+// na campanha A aparecia como "Ganho" no funil da campanha B.
+describe('macroFunnel com filtro de campanha — regras da campanha', () => {
+  const DAY = 86_400_000;
+  let seq = 0;
+
+  async function scenario() {
+    seq += 1;
+    const owner = await createUser({ email: `mf-camp-${seq}@x.com`, role: 'comercial' });
+    const camp = await createCampaign({ name: `Campanha ${seq}`, createdByUserId: owner.id, status: 'completed' });
+    return { owner, camp };
+  }
+
+  async function recipient(campaignId: string, opts: { sentAt?: Date; status?: 'sent' | 'failed'; replyAt?: Date } = {}) {
+    seq += 1;
+    const phone = `55549880${String(seq).padStart(5, '0')}`;
+    const lead = await createLead({ phone, flowStage: 'engaged', createdAt: new Date('2020-01-01') });
+    const sentAt = opts.status === 'failed' ? null : (opts.sentAt ?? new Date(Date.now() - 2 * DAY));
+    await createCampaignRecipient({ campaignId, leadId: lead.id, phone, status: opts.status ?? 'sent', sentAt });
+    if (opts.replyAt) {
+      const conv = await createConversation({ phone, leadId: lead.id });
+      await createMessage({ conversationId: conv.id, direction: 'in', body: 'oi', sentAt: opts.replyAt });
+    }
+    return lead;
+  }
+
+  it('escopa aos destinatários da campanha e ignora o período', async () => {
+    const { camp } = await scenario();
+    await recipient(camp.id, { sentAt: new Date('2020-01-02'), replyAt: new Date('2020-01-03') });
+    await createLead({ flowStage: 'engaged', createdAt: new Date('2020-01-01') }); // fora da campanha
+
+    const r = await macroFunnel({ period: 'today', campaignIds: [camp.id] });
+
+    expect(r.stages.complete.count).toBe(1);
+    expect(r.stages.dispatched.count).toBe(1);
+    expect(r.stages.engaged.count).toBe(1);
+    expect(r.period.label).toBe('Campanha selecionada');
+  });
+
+  it('"Respondidos" só conta quem respondeu DEPOIS do disparo', async () => {
+    const { camp } = await scenario();
+    // Lead em 'engaged' por conversa antiga: respondeu antes deste disparo.
+    await recipient(camp.id, { sentAt: new Date(Date.now() - DAY), replyAt: new Date(Date.now() - 10 * DAY) });
+    // Disparo que falhou entra no topo, mas não em "Disparados".
+    await recipient(camp.id, { status: 'failed' });
+
+    const r = await macroFunnel({ period: 'today', campaignIds: [camp.id] });
+
+    expect(r.stages.complete.count).toBe(2);
+    expect(r.stages.dispatched.count).toBe(1);
+    expect(r.stages.engaged.count).toBe(0);
+  });
+
+  it('"No Comercial" conta card da campanha aberto, ganho ou perdido; "Perdidos" é card perdido da campanha', async () => {
+    const { camp } = await scenario();
+    const aberto = await recipient(camp.id);
+    const ganho = await recipient(camp.id);
+    const perdido = await recipient(camp.id);
+    await recipient(camp.id); // recebeu e não virou card
+    await createDeal({ leadId: aberto.id, stage: 'em_negociacao', campaignId: camp.id });
+    await createDeal({ leadId: ganho.id, stage: 'ganho', proposalValue: 900, closedAt: new Date(), campaignId: camp.id });
+    await createDeal({ leadId: perdido.id, stage: 'perdido', lossReason: 'preco', closedAt: new Date(), campaignId: camp.id });
+
+    const r = await macroFunnel({ period: 'today', campaignIds: [camp.id] });
+
+    expect(r.stages.handedOff.count).toBe(3);
+    expect(r.stages.won.count).toBe(1);
+    expect(r.sidelines.lost.count).toBe(1);
+    expect(r.sidelines.incomplete.count).toBe(0);
+  });
+
+  it('lead que ganhou na campanha A não conta como ganho no funil da B (bate com o funil da campanha)', async () => {
+    const { owner, camp: a } = await scenario();
+    const b = await createCampaign({ name: 'Teste Andrei III', createdByUserId: owner.id, status: 'completed' });
+    const samuel = await recipient(a.id, { sentAt: new Date(Date.now() - 10 * DAY) });
+    await createCampaignRecipient({ campaignId: b.id, leadId: samuel.id, status: 'sent', sentAt: new Date(Date.now() - DAY) });
+    await createDeal({ leadId: samuel.id, stage: 'ganho', proposalValue: 700, closedAt: new Date(Date.now() - 2 * DAY), campaignId: a.id });
+    await createDeal({ leadId: samuel.id, stage: 'lead_no_comercial', campaignId: b.id });
+
+    const dash = await macroFunnel({ period: 'today', campaignIds: [b.id] });
+    const camp = await getCampaignFunnel(b.id);
+
+    expect(dash.stages.won.count).toBe(0);
+    expect(dash.stages.won.count).toBe(camp.won);
+    expect(dash.stages.handedOff.count).toBe(camp.inDeal + camp.won + camp.lost);
+    expect(dash.stages.dispatched.count).toBe(camp.sent);
+    expect(dash.stages.engaged.count).toBe(camp.replied);
+    expect(dash.stages.complete.count).toBe(camp.totalRecipients);
   });
 });
 

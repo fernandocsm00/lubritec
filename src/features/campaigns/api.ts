@@ -169,6 +169,8 @@ export interface DryRunArgs {
   filters: AudienceFilters;
   page?: number;
   pageSize?: number;
+  /** Busca do diálogo "Audiência" (nome, telefone ou CPF/CNPJ). */
+  q?: string;
 }
 
 export function useDryRun() {
@@ -184,6 +186,7 @@ export function useDryRun() {
       const qs = new URLSearchParams();
       if (args.page) qs.set('page', String(args.page));
       if (args.pageSize) qs.set('pageSize', String(args.pageSize));
+      if (args.q?.trim()) qs.set('q', args.q.trim());
       const url = qs.toString() ? `/campaigns/dry-run?${qs}` : '/campaigns/dry-run';
       return api<CampaignDryRunResponse>(url, {
         method: 'POST', body: JSON.stringify(args.filters),

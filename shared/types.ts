@@ -657,8 +657,14 @@ export interface CampaignDryRunResponse {
   page: number;
   /** Tamanho da pagina. */
   pageSize: number;
-  /** Total de paginas (max(1, ceil(totalComPhone / pageSize))). */
+  /** Total de paginas (max(1, ceil(matchCount / pageSize))). */
   pageCount: number;
+  /**
+   * Linhas da lista que casam com a busca (`q`) — é sobre elas que a paginação
+   * corre. Sem busca, é a lista inteira. As contagens do topo (total, eligible,
+   * blocked, eligibleIds) ignoram a busca de propósito.
+   */
+  matchCount: number;
   /**
    * Quantos telefones do CSV ainda NAO existem como lead e serao criados no
    * momento em que a campanha for criada. Ja contabilizados em `total` e

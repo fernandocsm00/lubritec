@@ -248,6 +248,7 @@ export async function getHandler(req: Request, res: Response, next: NextFunction
 const dryRunOptsSchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(200).optional(),
+  q: z.string().max(100).optional(),
 });
 
 export async function dryRunHandler(req: Request, res: Response, next: NextFunction) {

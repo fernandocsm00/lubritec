@@ -3,11 +3,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, AlertCircle, ChevronLeft, ChevronRight, CheckSquare, Square } from 'lucide-react';
+import { Clock, AlertCircle, ChevronLeft, ChevronRight, CheckSquare, Square, Search, X } from 'lucide-react';
 import { useDryRun } from './api';
 import type { AudienceFilters, CampaignDryRunResponse } from './types';
 import { formatCnpj } from '@/lib/utils';
@@ -21,6 +22,8 @@ interface Props {
 }
 
 const PAGE_SIZE = 50;
+// Espera depois da última tecla antes de buscar — não dispara uma prévia por letra.
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Preview da audiencia da campanha — mostra elegiveis E bloqueados (cooldown
@@ -33,6 +36,11 @@ const PAGE_SIZE = 50;
  *  - "Marcar pagina" / "Desmarcar pagina" (so visivel quando ha multi-pagina):
  *    opera so nos elegiveis da pagina atual.
  *  - Pagination com Anterior / N de M / Proximo no rodape.
+ *
+ * Busca (2026-09-28): filtra a lista no servidor (nome sem acento/maiúscula,
+ * ou trecho de telefone/CPF/CNPJ) antes da paginação. Marcar/desmarcar
+ * página passa a valer pros resultados; os números do topo e "Marcar todos
+ * elegíveis" continuam sendo da audiência inteira.
  */
 export function AudiencePreviewTable({ open, onClose, filters, excluded, onExcludedChange }: Props) {
   const dryRun = useDryRun();
@@ -40,6 +48,8 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [q, setQ] = useState('');
 
   // Filtros para o preview: NUNCA enviar excludeLeadIds, senão os leads
   // desmarcados somem da tabela e o usuário não consegue remarcá-los.
@@ -47,11 +57,24 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
   const previewFilters: AudienceFilters = { ...filters, excludeLeadIds: undefined };
   const previewFiltersKey = JSON.stringify(previewFilters);
 
-  // Resetar pagina quando abrir ou filtros mudarem
+  // Resetar pagina e busca quando abrir ou filtros mudarem
   useEffect(() => {
-    if (open) setPage(1);
+    if (open) {
+      setPage(1);
+      setSearchInput('');
+      setQ('');
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, previewFiltersKey]);
+
+  // Busca nova começa da primeira página de resultados. q e página mudam juntos
+  // (mesmo render) pra não disparar uma prévia na página antiga no meio.
+  useEffect(() => {
+    const next = searchInput.trim();
+    if (next === q) return;
+    const t = setTimeout(() => { setQ(next); setPage(1); }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchInput, q]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +82,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
     setLoading(true);
     setError(null);
     dryRun.mutate(
-      { filters: previewFilters, page, pageSize: PAGE_SIZE },
+      { filters: previewFilters, page, pageSize: PAGE_SIZE, q: q || undefined },
       {
         onSuccess: (r) => { if (!cancelled) { setData(r); setLoading(false); } },
         onError: (e) => {
@@ -72,7 +95,7 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
     );
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, previewFiltersKey, page]);
+  }, [open, previewFiltersKey, page, q]);
 
   function toggle(id: string) {
     onExcludedChange(
@@ -118,6 +141,9 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
   const items = data?.preview ?? [];
   const totalBlocked = (data?.blocked.recentOutbound ?? 0) + (data?.blocked.pendingOtherCampaign ?? 0);
   const multipage = (data?.pageCount ?? 1) > 1;
+  const searching = q.length > 0;
+  // Com busca, marcar/desmarcar vale pros resultados — mesmo cabendo numa página.
+  const showPageActions = multipage || searching;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -138,6 +164,11 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
                   {data.blocked.recentOutbound > 0 && ` (${data.blocked.recentOutbound} em cooldown 24h)`}
                   {data.blocked.pendingOtherCampaign > 0 && ` (${data.blocked.pendingOtherCampaign} em outra campanha)`}
                 </>
+              )}
+              {searching && (
+                <span className="ml-1">
+                  · {data.matchCount} {data.matchCount === 1 ? 'resultado' : 'resultados'} para “{q}”
+                </span>
               )}
               {multipage && (
                 <span className="ml-1">· página {data.page} de {data.pageCount}</span>
@@ -171,16 +202,39 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
               Desmarcar todos
             </Button>
 
-            {multipage && (
+            {showPageActions && (
               <>
                 <div className="h-5 w-px bg-border mx-1" aria-hidden="true" />
                 <Button type="button" variant="ghost" size="sm" onClick={markPage}>
-                  Marcar página
+                  {searching && !multipage ? 'Marcar resultados' : 'Marcar página'}
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={unmarkPage}>
-                  Desmarcar página
+                  {searching && !multipage ? 'Desmarcar resultados' : 'Desmarcar página'}
                 </Button>
               </>
+            )}
+          </div>
+        )}
+
+        {data && data.total > 0 && (
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, telefone ou CPF/CNPJ…"
+              className="pl-8 pr-8 h-9 text-sm"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              aria-label="Buscar contato na audiência"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Limpar busca"
+              >
+                <X className="h-4 w-4" />
+              </button>
             )}
           </div>
         )}
@@ -199,6 +253,13 @@ export function AudiencePreviewTable({ open, onClose, filters, excluded, onExclu
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {searching && items.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-sm text-muted-foreground text-center py-6">
+                      Nenhum contato encontrado para “{q}”.
+                    </TableCell>
+                  </TableRow>
+                )}
                 {items.map((l) => {
                   const blocked = l.blockReason != null;
                   // Leads novos (do CSV, ainda não criados) entram sempre — não
