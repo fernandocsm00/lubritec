@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { db } from '../db/client';
 import { deals } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createConversation, createDeal, createCampaign } from './helpers';
+import { createUser, createLead, createConversation, createDeal, createCampaign, createCampaignRecipient } from './helpers';
 import { maybeAddDealFromConversation } from '../services/pipelineIntegration';
+
+const DAY = 86_400_000;
 
 describe('maybeAddDealFromConversation', () => {
   it('ignora se kind != image', async () => {
@@ -100,6 +102,23 @@ describe('maybeAddDealFromConversation', () => {
     const all = await db.select().from(deals).where(eq(deals.leadId, lead.id));
     expect(all).toHaveLength(1);
     expect(all[0].stage).toBe('em_negociacao');  // não mudou
+  });
+
+  it('lead sem card, disparo de campanha vigente: card novo nasce com a campanha', async () => {
+    const u = await createUser({ email: 'p7@x.com', role: 'comercial' });
+    const camp = await createCampaign({
+      name: 'Teste Andrei III', createdByUserId: u.id,
+      validityStart: new Date(Date.now() - DAY), validityEnd: new Date(Date.now() + 6 * DAY),
+    });
+    const lead = await createLead({ phone: '11000100060' });
+    const conv = await createConversation({ phone: '11000100060', leadId: lead.id, queue: 'comercial' });
+    await createCampaignRecipient({ campaignId: camp.id, leadId: lead.id, status: 'sent', sentAt: new Date(Date.now() - DAY) });
+
+    await maybeAddDealFromConversation({ conversationId: conv.id, messageKind: 'image', userId: u.id });
+
+    const [d] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
+    expect(d).toBeDefined();
+    expect(d.campaignId).toBe(camp.id);
   });
 
   it('reativa se deal está em ganho/perdido', async () => {
