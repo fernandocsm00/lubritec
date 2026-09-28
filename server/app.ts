@@ -72,6 +72,11 @@ export function createApp() {
     metaWebhookRouter,
   );
 
+  // Campanhas mandam listas de leads no corpo (exclusões da audiência, leads
+  // importados por CNPJ): 6956 exclusões = ~270 KB, acima do padrão de 100 KB,
+  // e a prévia/criação falhavam. 2 MB cobre ~50 mil UUIDs. Só aqui — o resto do
+  // app segue com o padrão. O parser global abaixo pula corpo já lido.
+  app.use('/api/campaigns', express.json({ limit: '2mb' }));
   app.use(express.json());
   app.use(cookieParser());
 
