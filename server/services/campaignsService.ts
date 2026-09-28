@@ -26,6 +26,12 @@ import type { HsmComponent } from '@shared/types';
 const LIST_PAGE_SIZE = 50;
 const RECIPIENTS_PAGE_SIZE = 50;
 
+/** Contagem zerada por motivo de perda — derivada de LOSS_REASONS pra nenhum
+ * motivo novo ficar de fora do relatório. */
+function emptyLostByReason(): Record<LossReason, number> {
+  return Object.fromEntries(LOSS_REASONS.map((r) => [r, 0])) as Record<LossReason, number>;
+}
+
 /**
  * Contagens de status derivadas AO VIVO das linhas de campaign_recipients
  * (fonte única de verdade). Os contadores desnormalizados na tabela campaigns
@@ -683,12 +689,7 @@ export async function getCampaignsAggregateStats(input: AggregateStatsInput): Pr
       ${leadDealFilter}
     GROUP BY 1
   `);
-  const lostByReason: Record<LossReason, number> = {
-    condicoes_comerciais: 0,
-    preco: 0,
-    sem_retorno: 0,
-    fora_do_perfil: 0,
-  };
+  const lostByReason: Record<LossReason, number> = emptyLostByReason();
   for (const r of lostReasonsRows.rows as { reason: string; n: number }[]) {
     if (LOSS_REASONS.includes(r.reason as LossReason)) {
       lostByReason[r.reason as LossReason] = r.n;
@@ -949,12 +950,7 @@ export async function getCampaignFunnel(id: string): Promise<CampaignFunnel> {
   let won = 0;
   let lost = 0;
   let totalWonValue = 0;
-  const lostByReason: Record<LossReason, number> = {
-    condicoes_comerciais: 0,
-    preco: 0,
-    sem_retorno: 0,
-    fora_do_perfil: 0,
-  };
+  const lostByReason: Record<LossReason, number> = emptyLostByReason();
 
   for (const d of dealsRows) {
     if (d.stage === 'lead_no_comercial' || d.stage === 'proposta_enviada' || d.stage === 'em_negociacao') inDeal++;
@@ -997,7 +993,7 @@ function emptyFunnel(): CampaignFunnel {
     failed: 0, skipped: 0,
     skippedByCooldown: 0, skippedOther: 0,
     replied: 0, inDeal: 0, won: 0, lost: 0,
-    lostByReason: { condicoes_comerciais: 0, preco: 0, sem_retorno: 0, fora_do_perfil: 0 },
+    lostByReason: emptyLostByReason(),
     totalWonValue: 0,
   };
 }

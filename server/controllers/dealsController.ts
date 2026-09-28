@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { DEAL_STAGES, LOSS_REASONS, LEAD_QUALITY_FEEDBACK } from '../../shared/types';
+import { DEAL_STAGES, LOSS_REASONS, MANUAL_LOSS_REASONS, LEAD_QUALITY_FEEDBACK } from '../../shared/types';
 import {
   listBoard,
   listHistory,
@@ -108,7 +108,8 @@ const patchBody = z
 
 const stageBody = z.object({
   stage: z.enum(DEAL_STAGES),
-  lossReason: z.enum(LOSS_REASONS).optional(),
+  // campanha_encerrada é gravado só pelo sistema (campaignClosure.ts).
+  lossReason: z.enum(MANUAL_LOSS_REASONS).optional(),
   leadQualityFeedback: z.enum(LEAD_QUALITY_FEEDBACK).optional(),
 });
 

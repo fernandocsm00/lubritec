@@ -421,8 +421,18 @@ export const LOSS_REASONS = [
   'preco',
   'sem_retorno',
   'fora_do_perfil',
+  // Só o sistema grava: a campanha do card encerrou com ele aberto (migration 048).
+  'campanha_encerrada',
 ] as const;
 export type LossReason = (typeof LOSS_REASONS)[number];
+
+/** Motivos que um vendedor escolhe ao marcar perdido — sem os do sistema. */
+export const MANUAL_LOSS_REASONS = [
+  'condicoes_comerciais',
+  'preco',
+  'sem_retorno',
+  'fora_do_perfil',
+] as const satisfies readonly LossReason[];
 
 export const DEAL_ACTIVITY_KINDS = [
   'created',

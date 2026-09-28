@@ -204,6 +204,7 @@ export async function createDeal(opts: {
   lossReason?: LossReason | null;
   notes?: string | null;
   ownerUserId?: string | null;
+  campaignId?: string | null;
   closedAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -218,6 +219,7 @@ export async function createDeal(opts: {
       lossReason: opts.lossReason ?? null,
       notes: opts.notes ?? null,
       ownerUserId: opts.ownerUserId ?? null,
+      campaignId: opts.campaignId ?? null,
       closedAt: opts.closedAt ?? null,
       createdAt: opts.createdAt ?? new Date(),
       updatedAt: opts.updatedAt ?? new Date(),
@@ -318,6 +320,9 @@ export async function createCampaign(opts: {
   hsmTemplateId?: string | null;
   hsmVariables?: unknown[];
   isContinuous?: boolean;
+  validityStart?: Date | null;
+  validityEnd?: Date | null;
+  cardsClosedAt?: Date | null;
 }) {
   const instanceId = opts.instanceId ?? await getOrCreateDefaultInstance();
   const [c] = await db.insert(campaigns).values({
@@ -342,6 +347,9 @@ export async function createCampaign(opts: {
     hsmTemplateId: opts.hsmTemplateId ?? null,
     hsmVariables: opts.hsmVariables ?? [],
     ...(opts.isContinuous ? { isContinuous: true } : {}),
+    validityStart: opts.validityStart ?? null,
+    validityEnd: opts.validityEnd ?? null,
+    cardsClosedAt: opts.cardsClosedAt ?? null,
   }).returning();
   return c;
 }
