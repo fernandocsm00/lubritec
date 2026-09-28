@@ -69,7 +69,7 @@ Por que não acontece hoje:
   3. troca o índice único (dados legados já têm ≤ 1 aberto por lead, então o
      índice novo é satisfeito);
   4. índice em `deals(campaign_id)`;
-  5. **`cards_closed_at = now()` nas campanhas cuja vigência já acabou** no momento
+  5. **`cards_closed_at = now()` nas campanhas cuja vigência já acabou** (`validity_end < now()`) no momento
      do deploy. É o que implementa "não mexer nos atuais": a varredura automática
      não fecha nada na subida. Essas campanhas só fecham cards pelo botão.
 
@@ -79,17 +79,21 @@ Função única `resolveQualificationCampaign(leadId)`: a campanha do **último 
 recebido pelo lead** (`campaign_recipients.sent_at` mais recente, `<= now()`), se
 ela estiver **vigente**. Vigente =
 
-- campanha comum: `validity_end > now()`;
+- campanha comum: `validity_end >= now()` (o instante exato do fim ainda vale — a
+  mesma regra do selo de vigência, `campaignValidityState`);
 - campanha **contínua** (`is_continuous`): sempre vigente, porque dispara sem parar
   e não tem vigência (ver "Pontos para revisão").
 
 Campanhas comuns antigas, sem vigência (anteriores a 31/08), **não** contam como
 vigentes para cards novos. Sem campanha vigente → `NULL`.
 
-Usada em dois lugares:
-- criação do card pela IA e por imagem no Comercial;
-- `campaignIdForLog` da IA (registros `ai_call_logs`), no lugar da campanha de
-  origem da conversa. Registros antigos não são reescritos.
+Usada na criação do card pela IA e por imagem no Comercial.
+
+Os registros da IA (`ai_call_logs.campaign_id`, usados na calibração, na fila
+cega e em "Não qualificados") usam uma variante **sem** o filtro de vigência,
+`lastDispatchedCampaign(leadId, origem)`: o último disparo recebido pelo lead; sem
+disparo, a campanha que abriu a conversa (comportamento de hoje). Resposta tardia
+continua contando pra campanha que a provocou. Registros antigos não são reescritos.
 
 ### 4. Criação do card (`createDeal`)
 
@@ -116,7 +120,7 @@ card de campanha e agora qualifica organicamente ganha card novo sem campanha.
 - depois do commit: uma notificação por dono (ver 7).
 
 **Automático:** worker `campaignClosureWorker`, no padrão de `slaWatchdog`, a cada
-15 min: campanhas comuns com `validity_end <= now()` e `cards_closed_at IS NULL` →
+15 min: campanhas comuns com `validity_end < now()` e `cards_closed_at IS NULL` →
 `closeCampaignCards(id, null)`. Contínuas nunca entram.
 
 **Botão "Encerrar campanha"** (`POST /api/campaigns/:id/end`, admin e comercial,
@@ -172,6 +176,10 @@ filtrado pela campanha e pelo motivo. Cards sem dono não geram notificação.
   (`campaignReportService`): cards contados por `deals.campaign_id = campanha`, não
   mais por "lead recebeu a campanha". Campanhas passadas mostram menos
   em negociação/ganho/perdido do que hoje.
+- Relatório agregado de campanhas (`getCampaignsAggregateStats`,
+  `getTopCampaigns`, `getCampaignsTimeseries`): mesma troca — card "vindo de
+  campanha" é card com `campaign_id`, e cada card conta só na campanha dele. Sem
+  isso, o ranking e os totais discordariam do funil de cada campanha.
 - Dashboard: perdidos por campanha encerrada contam como perdidos, com motivo
   próprio. O funil por lead (`leads.flow_stage`) não muda — fechar card não mexe na
   etapa do lead.
