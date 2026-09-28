@@ -16,6 +16,7 @@ import type {
   PublicLead,
 } from '@shared/types';
 import { DEAL_STAGES } from '@shared/types';
+import { resolveQualificationCampaign } from './dealCampaign';
 
 const HISTORY_PAGE_SIZE = 50;
 const STALE_DAYS = 3;
@@ -477,33 +478,51 @@ export async function createDeal(input: {
   ownerUserId: string | null;       // aceita null (Pull model)
   source: 'manual' | 'auto_image' | 'ai_qualified';
 }): Promise<PublicDeal> {
-  // Idempotência do ATIVO: se já há um card ABERTO (não terminal) pra esse lead,
-  // devolve ele — nunca cria um 2º card ativo (invariante do índice parcial).
-  const [active] = await db
-    .select({ id: deals.id })
-    .from(deals)
-    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
-    .limit(1);
-  if (active) return getDealById(active.id);
+  const openStage = sql`${deals.stage} NOT IN ('ganho', 'perdido')`;
 
-  // Sem card ativo. O lead já teve algum deal (todos fechados)? = recompra.
-  const [lastDeal] = await db
-    .select({ id: deals.id })
-    .from(deals)
-    .where(eq(deals.leadId, input.leadId))
-    .orderBy(desc(deals.createdAt))
-    .limit(1);
-  const isRepeat = !!lastDeal;
-
-  // Recompra só vira NOVO ciclo no gatilho MANUAL (vendedor). IA/auto NÃO
-  // recriam ciclo sozinhas — devolvem o último card (evita card fantasma).
-  if (isRepeat && input.source !== 'manual') {
-    return getDealById(lastDeal.id);
+  // Manual (vendedor): lead com card aberto → devolve o mais recente. Na mão
+  // nunca nasce um segundo card; card manual é sempre sem campanha.
+  if (input.source === 'manual') {
+    const [open] = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(and(eq(deals.leadId, input.leadId), openStage))
+      .orderBy(desc(deals.createdAt))
+      .limit(1);
+    if (open) return getDealById(open.id);
   }
 
-  // Estágio inicial: recompra (cliente conhecido) entra direto em
-  // 'em_negociacao'; primeiro deal do lead entra em 'lead_no_comercial'.
-  const initialStage = isRepeat ? 'em_negociacao' : 'lead_no_comercial';
+  // Automático (IA, imagem): o card é da campanha do último disparo vigente.
+  // Um card aberto por (lead, campanha); "sem campanha" é um balde próprio.
+  const campaignId = input.source === 'manual'
+    ? null
+    : await resolveQualificationCampaign(input.leadId);
+  const sameBucket = and(
+    eq(deals.leadId, input.leadId),
+    campaignId === null ? isNull(deals.campaignId) : eq(deals.campaignId, campaignId),
+  );
+
+  const [active] = await db.select({ id: deals.id }).from(deals).where(and(sameBucket, openStage)).limit(1);
+  if (active) return getDealById(active.id);
+
+  let initialStage: DealStage = 'lead_no_comercial';
+  if (input.source === 'manual') {
+    // Recompra: lead que já teve card (todos fechados) é cliente conhecido e
+    // entra direto em negociação.
+    const [anyDeal] = await db.select({ id: deals.id }).from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
+    if (anyDeal) initialStage = 'em_negociacao';
+  } else {
+    // IA/imagem não reabrem ciclo no MESMO balde: card fechado desta campanha
+    // (ou sem campanha) volta como está — evita card fantasma. Balde diferente
+    // (campanha nova) abre card novo: é o card por campanha.
+    const [closed] = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(sameBucket)
+      .orderBy(desc(deals.createdAt))
+      .limit(1);
+    if (closed) return getDealById(closed.id);
+  }
 
   // Captura stage anterior do lead pra audit trail.
   const [leadBefore] = await db
@@ -512,30 +531,42 @@ export async function createDeal(input: {
     .where(eq(leads.id, input.leadId))
     .limit(1);
 
-  const dealId = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(deals)
-      .values({
-        leadId: input.leadId,
-        stage: initialStage,
-        proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
-        ownerUserId: input.ownerUserId,       // pode ser null agora
-      })
-      .returning({ id: deals.id });
-    await logActivity(tx, {
-      dealId: created.id,
-      kind: 'created',
-      // Sem actor humano quando source e automatizada (ai_qualified, auto_image)
-      actorUserId: input.source === 'manual' ? input.ownerUserId : null,
-      metadata: { source: input.source },
+  let dealId: string;
+  try {
+    dealId = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(deals)
+        .values({
+          leadId: input.leadId,
+          stage: initialStage,
+          proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
+          ownerUserId: input.ownerUserId,       // pode ser null agora
+          campaignId,
+        })
+        .returning({ id: deals.id });
+      await logActivity(tx, {
+        dealId: created.id,
+        kind: 'created',
+        // Sem actor humano quando source e automatizada (ai_qualified, auto_image)
+        actorUserId: input.source === 'manual' ? input.ownerUserId : null,
+        metadata: { source: input.source, campaignId },
+      });
+      // Promove lead pra handed_off quando deal é criado (não regride 'lost').
+      await tx
+        .update(leads)
+        .set({ flowStage: 'handed_off', updatedAt: new Date() })
+        .where(and(eq(leads.id, input.leadId), sql`${leads.flowStage} <> 'lost'`));
+      return created.id;
     });
-    // Promove lead pra handed_off quando deal é criado (não regride 'lost').
-    await tx
-      .update(leads)
-      .set({ flowStage: 'handed_off', updatedAt: new Date() })
-      .where(and(eq(leads.id, input.leadId), sql`${leads.flowStage} <> 'lost'`));
-    return created.id;
-  });
+  } catch (err) {
+    // Duas qualificações simultâneas do mesmo lead na mesma campanha: o índice
+    // único barra a segunda — devolve o card que a primeira criou.
+    const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
+    if (pgErr?.code !== '23505') throw err;
+    const [winner] = await db.select({ id: deals.id }).from(deals).where(and(sameBucket, openStage)).limit(1);
+    if (!winner) throw err;
+    return getDealById(winner.id);
+  }
 
   // Audit trail fora do tx.
   if (leadBefore && leadBefore.flowStage !== 'handed_off' && leadBefore.flowStage !== 'lost') {

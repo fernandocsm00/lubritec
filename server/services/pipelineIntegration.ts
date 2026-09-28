@@ -1,6 +1,6 @@
 import { db } from '../db/client';
 import { conversations, deals } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { MessageKind } from '@shared/types';
 import { createDeal, reactivateDeal } from './dealsService';
 
@@ -18,17 +18,29 @@ export async function maybeAddDealFromConversation(opts: {
     .limit(1);
   if (!conv || conv.queue !== 'comercial') return;
 
-  const [existing] = await db.select().from(deals).where(eq(deals.leadId, conv.leadId)).limit(1);
+  // Lead com qualquer card aberto (de qualquer campanha) → nada a fazer.
+  const [open] = await db
+    .select({ id: deals.id })
+    .from(deals)
+    .where(and(eq(deals.leadId, conv.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
+    .limit(1);
+  if (open) return;
 
-  if (!existing) {
+  const [latest] = await db
+    .select({ id: deals.id })
+    .from(deals)
+    .where(eq(deals.leadId, conv.leadId))
+    .orderBy(desc(deals.createdAt))
+    .limit(1);
+
+  if (!latest) {
     await createDeal({
       leadId: conv.leadId,
       // O card segue o dono da conversa, não quem mandou a imagem.
       ownerUserId: conv.assignedTo ?? opts.userId,
       source: 'auto_image',
     });
-  } else if (existing.stage === 'ganho' || existing.stage === 'perdido') {
-    await reactivateDeal({ dealId: existing.id, actorUserId: opts.userId });
+  } else {
+    await reactivateDeal({ dealId: latest.id, actorUserId: opts.userId });
   }
-  // else: deal ativo já existe — no-op
 }

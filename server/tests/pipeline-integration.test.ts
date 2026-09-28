@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { db } from '../db/client';
 import { deals } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createUser, createLead, createConversation, createDeal } from './helpers';
+import { createUser, createLead, createConversation, createDeal, createCampaign } from './helpers';
 import { maybeAddDealFromConversation } from '../services/pipelineIntegration';
 
 describe('maybeAddDealFromConversation', () => {
@@ -69,6 +69,20 @@ describe('maybeAddDealFromConversation', () => {
 
     const [d] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
     expect(d.ownerUserId).toBe(julia.id);
+  });
+
+  it('lead com card aberto de outra campanha: imagem não cria nem reativa nada', async () => {
+    const u = await createUser({ email: 'p6@x.com', role: 'comercial' });
+    const camp = await createCampaign({ name: 'Teste Andrei III', createdByUserId: u.id });
+    const lead = await createLead({ phone: '11000100050' });
+    const conv = await createConversation({ phone: '11000100050', leadId: lead.id, queue: 'comercial' });
+    await createDeal({ leadId: lead.id, stage: 'perdido', lossReason: 'preco', closedAt: new Date() });
+    await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', campaignId: camp.id });
+
+    await maybeAddDealFromConversation({ conversationId: conv.id, messageKind: 'image', userId: u.id });
+
+    const all = await db.select().from(deals).where(eq(deals.leadId, lead.id));
+    expect(all.map((d) => d.stage).sort()).toEqual(['lead_no_comercial', 'perdido']);
   });
 
   it('no-op se já existe deal ativo', async () => {

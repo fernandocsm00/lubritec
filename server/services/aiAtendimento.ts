@@ -11,6 +11,7 @@ import { emitNotification } from './notifications';
 import { notifyVendoresWhatsapp } from './whatsappNotify';
 import { isAiBusinessHours } from '../lib/businessHours';
 import { isAiQueue } from '../lib/aiQueues';
+import { lastDispatchedCampaign } from './dealCampaign';
 import type { OrgSettings } from '../db/schema';
 
 // Bump esta string a cada mudanca material no system prompt (buildSystemPrompt).
@@ -505,7 +506,10 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
     .limit(1);
   const qualificationPath: 'campaign_direct' | 'conversation' =
     (isFirstInbound && convFull?.originKind === 'campaign') ? 'campaign_direct' : 'conversation';
-  const campaignIdForLog = convFull?.originCampaignId ?? null;
+  // Registros da IA vão pra campanha do último disparo ao lead: num re-disparo
+  // a qualificação é da campanha nova, não da que abriu a conversa. Sem
+  // disparo, a de origem, como antes. Ver dealCampaign.ts.
+  const campaignIdForLog = await lastDispatchedCampaign(input.leadId, convFull?.originCampaignId ?? null);
 
   // Carrega nome do lead pra contexto.
   const [leadRow] = await db
