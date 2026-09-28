@@ -1066,6 +1066,7 @@ export const NOTIFICATION_KINDS = [
   'pending_reply',          // cliente esperando resposta nossa além do prazo
   'ai_fallback',            // IA falhou repetidamente — conversa movida pra recepção
   'new_message',            // nova mensagem inbound no WhatsApp (conversa passou a ter não-lida)
+  'campaign_cards_closed',  // campanha encerrou e fechou cards do dono
   'system',                 // generic
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

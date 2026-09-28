@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, Inbox, ShieldCheck, Search, Send, Wifi, Clock, AlarmClock, BotOff, MessageCircle } from 'lucide-react';
+import { Bell, CheckCheck, Inbox, ShieldCheck, Search, Send, Wifi, Clock, AlarmClock, BotOff, MessageCircle, Archive } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +26,7 @@ const KIND_ICON: Record<NotificationKind, typeof Bell> = {
   pending_reply:           Clock,
   ai_fallback:             BotOff,
   new_message:             MessageCircle,
+  campaign_cards_closed:   Archive,
   system:                  Bell,
 };
 
@@ -40,6 +41,7 @@ const KIND_TONE: Record<NotificationKind, string> = {
   pending_reply:           'text-amber-600 dark:text-amber-400',
   ai_fallback:             'text-amber-600 dark:text-amber-400',
   new_message:             'text-emerald-600 dark:text-emerald-400',
+  campaign_cards_closed:   'text-slate-500',
   system:                  'text-slate-500',
 };
 
