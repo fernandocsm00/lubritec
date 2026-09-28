@@ -114,8 +114,10 @@ export default function CampaignNewPage() {
       await dispatch.mutateAsync(created.id);
       toast.success(scheduledAt ? 'Campanha agendada.' : 'Campanha disparada — acompanhe abaixo.');
       navigate(`/campanhas/${created.id}`);
-    } catch {
-      toast.error('Falha ao criar campanha.');
+    } catch (e) {
+      // Mostra o motivo que o servidor deu (ex.: seleção grande demais) em vez
+      // de um "falha" que não diz o que corrigir.
+      toast.error(e instanceof Error && e.message ? `Falha ao criar campanha: ${e.message}` : 'Falha ao criar campanha.');
     }
   }
 
