@@ -10,6 +10,7 @@ import {
   stageHandler,
   deleteHandler,
   byLeadHandler,
+  openByLeadHandler,
 } from '../controllers/dealsController';
 
 const router = Router();
@@ -19,6 +20,7 @@ const adminOnly = [authGuard, requireRole('admin')];
 
 router.get('/history', ...guard, historyHandler);
 router.get('/by-lead/:leadId', ...guard, byLeadHandler);
+router.get('/by-lead/:leadId/open', ...guard, openByLeadHandler);
 router.get('/', ...guard, boardHandler);
 router.get('/:id', ...guard, getHandler);
 router.post('/', ...guard, createHandler);

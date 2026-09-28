@@ -53,6 +53,7 @@ export interface HistoryFilters {
   from?: string;
   to?: string;
   page?: number;
+  campaignIds?: string[];
 }
 
 export interface HistoryResult {
@@ -70,6 +71,7 @@ function buildHistoryQuery(f: HistoryFilters): string {
   if (f.lossReason) u.set('lossReason', f.lossReason);
   if (f.from) u.set('from', f.from);
   if (f.to) u.set('to', f.to);
+  if (f.campaignIds && f.campaignIds.length > 0) u.set('campaignIds', f.campaignIds.join(','));
   if (f.page && f.page > 1) u.set('page', String(f.page));
   const s = u.toString();
   return s ? `?${s}` : '';
@@ -109,6 +111,18 @@ export function useDealByLead(leadId: string | null) {
     // A leitura do print de orçamento roda em background depois do envio e
     // escreve valor + etapa direto no card. Sem polling o vendedor mandaria o
     // orçamento e o painel continuaria mostrando o estado velho.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Cards ABERTOS do lead, mais recente primeiro (card por campanha). */
+export function useOpenDealsByLead(leadId: string | null) {
+  return useQuery({
+    queryKey: ['deals', 'by-lead', leadId, 'open'],
+    queryFn: () => api<PublicDeal[]>(`/deals/by-lead/${leadId}/open`),
+    enabled: !!leadId,
+    // Mesmo motivo do useDealByLead: a leitura do print escreve no card em background.
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });

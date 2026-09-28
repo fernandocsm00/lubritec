@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { LOSS_REASON_LABELS } from './helpers';
-import { LOSS_REASONS } from '@shared/types';
+import { MANUAL_LOSS_REASONS } from '@shared/types';
 import type { LossReason, LeadQualityFeedback } from '@shared/types';
 
 interface Props {
@@ -34,7 +34,7 @@ export function LossReasonDialog({ open, onConfirm, onCancel }: Props) {
             <Select value={reason} onValueChange={(v) => setReason(v as LossReason)}>
               <SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger>
               <SelectContent>
-                {LOSS_REASONS.map((r) => (
+                {MANUAL_LOSS_REASONS.map((r) => (
                   <SelectItem key={r} value={r}>{LOSS_REASON_LABELS[r]}</SelectItem>
                 ))}
               </SelectContent>

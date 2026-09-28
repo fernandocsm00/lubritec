@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/select';
 import { useAuthStore } from '@/features/auth/store';
 import {
-  useCreateDeal, useChangeStage, useDealByLead, usePatchDeal,
+  useCreateDeal, useChangeStage, useDealByLead, usePatchDeal, useOpenDealsByLead,
 } from '@/features/inside-sales/api';
 import { STAGE_LABELS } from '@/features/inside-sales/helpers';
 import { GanhoValueDialog } from '@/features/inside-sales/GanhoValueDialog';
@@ -19,6 +19,7 @@ import { BudgetDetectionCard } from './BudgetDetectionCard';
 import { DealValueField } from './DealValueField';
 import { useConversations } from './api';
 import { avatarInitials, formatPhoneBR } from './helpers';
+import { pickSidebarDeal, dealOptionLabel } from './sidebarDeal';
 import { formatCnpj } from '@/lib/utils';
 import { useLead } from '@/features/leads/api';
 import { LeadDialog } from '@/features/leads/LeadDialog';
@@ -127,7 +128,12 @@ function PipelineSection({ leadId }: { leadId: string }) {
 const PHASE_NONE = '__any__' as const;
 
 function PipelinePhasePicker({ leadId }: { leadId: string }) {
-  const { data: deal, isLoading } = useDealByLead(leadId);
+  const { data: latestDeal, isLoading } = useDealByLead(leadId);
+  const { data: openDeals } = useOpenDealsByLead(leadId);
+  // Lead com card em mais de uma campanha: o vendedor escolhe qual está vendo.
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const deal = pickSidebarDeal(openDeals ?? [], selectedDealId, latestDeal ?? null);
+
   const create = useCreateDeal();
   const change = useChangeStage();
   const patch = usePatchDeal();
@@ -208,6 +214,23 @@ function PipelinePhasePicker({ leadId }: { leadId: string }) {
 
   return (
     <div className="space-y-2">
+      {openDeals && openDeals.length > 1 && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">
+            {openDeals.length} negócios abertos
+          </p>
+          <Select value={deal?.id} onValueChange={setSelectedDealId}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {openDeals.map((d) => (
+                <SelectItem key={d.id} value={d.id}>{dealOptionLabel(d)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <Select
         value={currentStage}
         onValueChange={(v) => handleSelect(v as DealStage | typeof PHASE_NONE)}

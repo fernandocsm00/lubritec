@@ -30,8 +30,8 @@ describe('getCampaignFunnelsBatch', () => {
     const conv = await createConversation({ phone: l1.phone ?? undefined, leadId: l1.id });
     await createMessage({ conversationId: conv.id, direction: 'in', body: 'oi', sentAt: new Date() });
 
-    await createDeal({ leadId: l1.id, stage: 'ganho', proposalValue: 1500 });
-    await createDeal({ leadId: l2.id, stage: 'perdido', lossReason: 'preco' });
+    await createDeal({ leadId: l1.id, stage: 'ganho', proposalValue: 1500, campaignId: a.id });
+    await createDeal({ leadId: l2.id, stage: 'perdido', lossReason: 'preco', campaignId: a.id });
 
     // Campanha B: só pendentes, para cobrir o caso sem envio
     const b = await createCampaign({ createdByUserId: u.id, name: 'B' });

@@ -5,14 +5,14 @@ import { eq } from 'drizzle-orm';
 process.env.AI_REPLY_MIN_MS = '0';
 
 import { db } from '../db/client';
-import { conversations, messages, leads, notifications, orgSettings, deals } from '../db/schema';
+import { conversations, messages, leads, notifications, orgSettings, deals, aiCallLogs } from '../db/schema';
 import {
   detectHumanIntent,
   buildSystemPrompt,
   parseQualificationTag,
   processInboundWithAi,
 } from '../services/aiAtendimento';
-import { createLead, createConversation, createMessage, createUser } from './helpers';
+import { createLead, createConversation, createMessage, createUser, createCampaign, createCampaignRecipient } from './helpers';
 
 vi.mock('../services/geminiClient', () => ({
   generateReply: vi.fn(),
@@ -407,6 +407,46 @@ describe('processInboundWithAi', () => {
 
     const [deal] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
     expect(deal.ownerUserId).toBe(julia.id);
+  });
+
+  it('re-disparo vigente: lead com card antigo aberto ganha um SEGUNDO card, da campanha nova', async () => {
+    await enableAi();
+    mockGeminiText('Perfeito, vou conectar você com nosso comercial agora. [QUALIFICADO]');
+    mockSendOk('uazapi-ai-redisparo');
+
+    const u = await createUser({ email: 'mkt@x.com', role: 'admin' });
+    const antiga = await createCampaign({ name: 'Campanha Teste', createdByUserId: u.id, status: 'completed' });
+    const nova = await createCampaign({
+      name: 'Teste Andrei III', createdByUserId: u.id, status: 'completed',
+      validityStart: new Date(Date.now() - 60_000), validityEnd: new Date(Date.now() + 7 * 86_400_000),
+    });
+    const lead = await createLead({ phone: '5554991921858', flowStage: 'engaged' });
+    const conv = await createConversation({
+      phone: '5554991921858', leadId: lead.id, queue: 'ia',
+      originKind: 'campaign', originCampaignId: antiga.id,
+    });
+    await createCampaignRecipient({ campaignId: antiga.id, leadId: lead.id, status: 'sent', sentAt: new Date('2026-05-20T12:00:00Z') });
+    await createCampaignRecipient({ campaignId: nova.id, leadId: lead.id, status: 'sent', sentAt: new Date(Date.now() - 60_000) });
+    const [velho] = await db.insert(deals)
+      .values({ leadId: lead.id, stage: 'lead_no_comercial', campaignId: antiga.id })
+      .returning();
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id,
+      leadId: lead.id,
+      phone: '5554991921858',
+      inboundText: 'quero fazer um pedido',
+    });
+    expect(r.status).toBe('qualified_and_replied');
+
+    const cards = await db.select().from(deals).where(eq(deals.leadId, lead.id));
+    expect(cards).toHaveLength(2);
+    const novo = cards.find((d) => d.id !== velho.id)!;
+    expect(novo.campaignId).toBe(nova.id);
+    expect(novo.stage).toBe('lead_no_comercial');
+    // A qualificação conta pra campanha do re-disparo, não pra que abriu a conversa.
+    const [log] = await db.select().from(aiCallLogs).where(eq(aiCallLogs.conversationId, conv.id));
+    expect(log.campaignId).toBe(nova.id);
   });
 
   it('responde na linha DA conversa — Meta Cloud sai pelo provider da Meta, não pelo UazAPI', async () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -25,6 +25,13 @@ export function HistoryTable() {
   const ownerFilter = (searchParams.get('owner') as 'mine' | 'all') || 'all';
   const q = searchParams.get('q') ?? '';
   const page = Number(searchParams.get('page') ?? '1');
+  // Link da notificação de "campanha encerrada" chega com campaignIds na URL
+  // (spec §7): filtra o histórico pela campanha, igual o KanbanBoard já faz.
+  const campaignIdsParam = searchParams.get('campaignIds') ?? '';
+  const campaignIds = useMemo(
+    () => campaignIdsParam.split(',').filter(Boolean),
+    [campaignIdsParam],
+  );
   const [searchInput, setSearchInput] = useState(q);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -46,6 +53,7 @@ export function HistoryTable() {
     from: fromFilter ? new Date(fromFilter).toISOString() : undefined,
     to: toFilter ? new Date(toFilter).toISOString() : undefined,
     page,
+    campaignIds: campaignIds.length ? campaignIds : undefined,
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;

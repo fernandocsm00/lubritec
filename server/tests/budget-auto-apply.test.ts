@@ -20,6 +20,7 @@ import {
   createMessage,
   createUser,
   createDeal,
+  createCampaign,
 } from './helpers';
 import type { DealStage } from '@shared/types';
 
@@ -174,5 +175,21 @@ describe('aplicacao automatica do orcamento no card', () => {
     const kinds = acts.map((a) => a.kind);
     expect(kinds).toContain('value_changed');
     expect(kinds).toContain('stage_changed');
+  });
+
+  it('lead com dois cards abertos: o valor vai pro mais recente', async () => {
+    vi.mocked(extractBudgetFromImage).mockResolvedValue({ total: 4200, rotulo: 'Valor total' });
+    const { lead, msg, seller } = await scenario({ stage: 'lead_no_comercial' });
+    const camp = await createCampaign({ name: 'Teste Andrei III', createdByUserId: seller.id });
+    const antigo = (await db.select().from(deals).where(eq(deals.leadId, lead.id)))[0];
+    await db.update(deals).set({ createdAt: new Date(Date.now() - 90 * 86_400_000) }).where(eq(deals.id, antigo.id));
+    const novo = await createDeal({ leadId: lead.id, stage: 'lead_no_comercial', campaignId: camp.id });
+
+    await detectBudgetFromMessage(msg.id);
+
+    const [n] = await db.select().from(deals).where(eq(deals.id, novo.id));
+    const [a] = await db.select().from(deals).where(eq(deals.id, antigo.id));
+    expect(Number(n.proposalValue)).toBe(4200);
+    expect(a.proposalValue).toBeNull();
   });
 });

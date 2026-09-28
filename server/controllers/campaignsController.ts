@@ -22,6 +22,7 @@ import {
   pauseCampaign,
   resumeCampaign,
   cancelCampaign,
+  endCampaign,
   retryFailedRecipients,
   deleteCampaign,
   listRecipients,
@@ -338,10 +339,17 @@ export async function cancelHandler(req: Request, res: Response, next: NextFunct
   } catch (e) { next(e); }
 }
 
+export async function endHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = idParams.parse(req.params);
+    res.json(await endCampaign(id, req.user!.userId));
+  } catch (e) { next(e); }
+}
+
 export async function deleteHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = idParams.parse(req.params);
-    await deleteCampaign(id);
+    await deleteCampaign(id, req.user!.userId);
     res.status(204).end();
   } catch (e) { next(e); }
 }

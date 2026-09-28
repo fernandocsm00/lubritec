@@ -75,15 +75,15 @@ export function DealCard({ deal, currentUserId, onClick }: Props) {
         </span>
       </div>
 
-      {/* Campanha de origem — mesma fonte/estilo do badge da conversa. */}
-      {deal.originCampaignName && (
+      {/* Campanha do card (deals.campaign_id). */}
+      {deal.campaignName && (
         <div className="mb-2">
           <span
             className="inline-flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground max-w-full"
-            title={`Campanha de origem: ${deal.originCampaignName}`}
+            title={`Campanha: ${deal.campaignName}`}
           >
             <Megaphone className="h-2.5 w-2.5 shrink-0" />
-            <span className="truncate">{deal.originCampaignName}</span>
+            <span className="truncate">{deal.campaignName}</span>
           </span>
         </div>
       )}

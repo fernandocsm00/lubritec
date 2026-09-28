@@ -16,6 +16,7 @@ import type {
   PublicLead,
 } from '@shared/types';
 import { DEAL_STAGES } from '@shared/types';
+import { resolveQualificationCampaign } from './dealCampaign';
 
 const HISTORY_PAGE_SIZE = 50;
 const STALE_DAYS = 3;
@@ -33,7 +34,7 @@ interface RawDealRow {
   isStale: boolean;
   aiSummary: string | null;
   campaigns: Array<{ id: string; name: string; sentAt: string }>;
-  originCampaign: { id: string; name: string } | null;
+  cardCampaign: { id: string; name: string } | null;
 }
 
 function toPublic(row: RawDealRow): PublicDeal {
@@ -59,8 +60,8 @@ function toPublic(row: RawDealRow): PublicDeal {
     enteredCurrentStageAt: new Date(row.enteredCurrentStageAt).toISOString(),
     aiSummary: row.aiSummary,
     campaigns: row.campaigns ?? [],
-    originCampaignId: row.originCampaign?.id ?? null,
-    originCampaignName: row.originCampaign?.name ?? null,
+    campaignId: row.cardCampaign?.id ?? null,
+    campaignName: row.cardCampaign?.name ?? null,
     createdAt: row.deal.createdAt.toISOString(),
     updatedAt: row.deal.updatedAt.toISOString(),
   };
@@ -83,19 +84,12 @@ const campaignsSql = sql<Array<{ id: string; name: string; sentAt: string }>>`CO
   '[]'::json
 )`;
 
-// Campanha que ORIGINOU o contato — mesma fonte que o badge da conversa
-// (conversations.origin_campaign_id). Pega a conversa originada de campanha mais
-// recente do lead. Mesmo cuidado de qualificação do campaignsSql: usa
-// sql.raw('deals.lead_id') porque cv.lead_id colidiria com lead_id não-qualificado.
-const originCampaignSql = sql<{ id: string; name: string } | null>`(
+// Campanha DO CARD (deals.campaign_id, migration 049). sql.raw pelo mesmo
+// motivo do campaignsSql: o Drizzle renderizaria a coluna sem qualificar.
+const cardCampaignSql = sql<{ id: string; name: string } | null>`(
   SELECT json_build_object('id', ca.id, 'name', ca.name)
-  FROM conversations cv
-  JOIN campaigns ca ON ca.id = cv.origin_campaign_id
-  WHERE cv.lead_id = ${sql.raw('deals.lead_id')}
-    AND cv.origin_kind = 'campaign'
-    AND cv.origin_campaign_id IS NOT NULL
-  ORDER BY cv.created_at DESC
-  LIMIT 1
+  FROM campaigns ca
+  WHERE ca.id = ${sql.raw('deals.campaign_id')}
 )`;
 
 // Resumo mais recente da IA para o lead do deal (varre conversas do lead e
@@ -164,13 +158,16 @@ export async function listBoard(input: {
     conds.push(eq(deals.ownerUserId, input.ownerFilter));
   }
 
-  // Show: active stages OR (terminal AND closed_at within last 7 days)
+  // Show: active stages OR (terminal AND closed_at within last 7 days). Perdido
+  // por campanha encerrada vai direto pro Histórico: encerrar uma campanha grande
+  // não pode inundar a coluna Perdido.
   conds.push(
     sql`(
       ${deals.stage} IN ('lead_no_comercial', 'proposta_enviada', 'em_negociacao')
       OR (
         ${deals.stage} IN ('ganho', 'perdido')
         AND ${deals.closedAt} > now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'
+        AND ${deals.lossReason} IS DISTINCT FROM 'campanha_encerrada'
       )
     )`,
   );
@@ -198,7 +195,7 @@ export async function listBoard(input: {
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -206,29 +203,21 @@ export async function listBoard(input: {
     .where(where)
     .orderBy(desc(deals.updatedAt));
 
-  // Opções de campanha de origem: distintas entre os deals do escopo atual
+  // Opções "Campanha do card": campanhas dos cards do escopo atual
   // (owner/busca/stage), SEM aplicar o filtro de campanha.
-  const originCampaigns = await db
+  const cardCampaigns = await db
     .selectDistinct({ id: campaigns.id, name: campaigns.name })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
-    .innerJoin(
-      conversations,
-      and(
-        eq(conversations.leadId, deals.leadId),
-        eq(conversations.originKind, 'campaign'),
-        sql`${conversations.originCampaignId} IS NOT NULL`,
-      ),
-    )
-    .innerJoin(campaigns, eq(campaigns.id, conversations.originCampaignId))
+    .innerJoin(campaigns, eq(campaigns.id, deals.campaignId))
     .where(and(...conds))
     .orderBy(campaigns.name);
 
   // Campanhas que DISPARARAM (recipient enviado) pra algum card do escopo, mas
-  // que não são a campanha de origem — grupo "Recebeu disparo". Cobre o caso do
+  // que não são a campanha do card — grupo "Recebeu disparo". Cobre o caso do
   // re-disparo: uma lista nova sobre uma base já contatada não sobrescreve a
-  // origem (conversations.origin_campaign_id é gravado uma vez só), então nunca
-  // apareceria no grupo de origem. Aqui ela vira selecionável.
+  // campanha do card, então nunca apareceria no grupo "Campanha do card". Aqui
+  // ela vira selecionável.
   const recipientCampaignsRaw = await db
     .selectDistinct({ id: campaigns.id, name: campaigns.name })
     .from(deals)
@@ -245,10 +234,10 @@ export async function listBoard(input: {
     .where(and(...conds))
     .orderBy(campaigns.name);
 
-  // Exclui as que já estão no grupo de origem (o filtro casa origem OU recipient,
-  // então basta oferecê-las uma vez, no grupo de origem).
-  const originIds = new Set(originCampaigns.map((c) => c.id));
-  const recipientCampaigns = recipientCampaignsRaw.filter((c) => !originIds.has(c.id));
+  // Exclui as que já são campanha de algum card (o filtro casa card OU disparo,
+  // então basta oferecê-las uma vez, no grupo "Campanha do card").
+  const cardIds = new Set(cardCampaigns.map((c) => c.id));
+  const recipientCampaigns = recipientCampaignsRaw.filter((c) => !cardIds.has(c.id));
 
   const stages: BoardResponse['stages'] = {
     lead_no_comercial: [],
@@ -272,25 +261,18 @@ export async function listBoard(input: {
     totals[pub.stage].valueSum += pub.proposalValue ?? 0;
   }
 
-  return { stages, totals, originCampaigns, recipientCampaigns };
+  return { stages, totals, cardCampaigns, recipientCampaigns };
 }
 
-// Filtro por campanha: casa o card cujo lead ORIGINOU da campanha
-// (conversations.origin_campaign_id, alinhado ao badge do card) OU recebeu um
-// disparo dela (campaign_recipients com sent_at). Cobre tanto o grupo "Campanha
-// de origem" quanto o "Recebeu disparo" do multi-select — selecionar qualquer
-// campanha mostra todo card tocado por ela. Retorna null quando não há filtro.
-// Usado por listBoard e listHistory.
+// Filtro por campanha: casa o card DA campanha (deals.campaign_id, o selo do
+// card) OU cujo lead recebeu disparo dela (campaign_recipients com sent_at).
+// Cobre os grupos "Campanha do card" e "Recebeu disparo". Retorna null quando
+// não há filtro. Usado por listBoard e listHistory.
 function campaignAssociationFilter(campaignIds: string[] | undefined): SQL | null {
   if (!campaignIds || campaignIds.length === 0) return null;
   const ids = sql.join(campaignIds.map((id) => sql`${id}`), sql`, `);
   return sql`(
-    EXISTS (
-      SELECT 1 FROM conversations cv
-      WHERE cv.lead_id = ${deals.leadId}
-        AND cv.origin_kind = 'campaign'
-        AND cv.origin_campaign_id IN (${ids})
-    )
+    ${deals.campaignId} IN (${ids})
     OR EXISTS (
       SELECT 1 FROM campaign_recipients cr
       WHERE cr.lead_id = ${deals.leadId}
@@ -318,8 +300,13 @@ export async function listHistory(input: {
   const page = Math.max(1, input.page ?? 1);
   const conds: SQL[] = [];
 
+  // Terminais fora da janela do Kanban — e os fechados por campanha encerrada,
+  // que nunca passam pelo Kanban.
   conds.push(
-    sql`${deals.stage} IN ('ganho', 'perdido') AND ${deals.closedAt} <= now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'`,
+    sql`${deals.stage} IN ('ganho', 'perdido') AND (
+      ${deals.closedAt} <= now() - interval '${sql.raw(String(KANBAN_TERMINAL_VISIBLE_DAYS))} days'
+      OR ${deals.lossReason} = 'campanha_encerrada'
+    )`,
   );
 
   if (input.ownerFilter === 'mine') {
@@ -361,7 +348,7 @@ export async function listHistory(input: {
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -393,7 +380,7 @@ export async function getDealById(id: string): Promise<PublicDeal & { activities
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
@@ -436,20 +423,47 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
       isStale: isStaleSql,
       aiSummary: aiSummarySql,
       campaigns: campaignsSql,
-      originCampaign: originCampaignSql,
+      cardCampaign: cardCampaignSql,
     })
     .from(deals)
     .leftJoin(leads, eq(deals.leadId, leads.id))
     .leftJoin(users, eq(deals.ownerUserId, users.id))
     .where(eq(deals.leadId, leadId))
-    // Com múltiplos deals por lead (recompra): prefere o card ATIVO (não
-    // terminal); se todos fechados, o mais recente. `false` ordena antes de
-    // `true`, então NOT-terminal (false) vem primeiro.
-    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.updatedAt))
+    // Com card por campanha, um lead pode ter mais de um aberto: prefere o
+    // ABERTO mais recente; se todos fechados, o FECHADO mais recentemente (não
+    // o criado mais recentemente — um card antigo reaberto e fechado de novo
+    // tarde é mais atual que um card novo fechado cedo). `false` ordena antes
+    // de `true`, então NOT-terminal (false) vem primeiro.
+    .orderBy(
+      sql`(${deals.stage} IN ('ganho', 'perdido'))`,
+      desc(sql`CASE WHEN ${deals.stage} IN ('ganho', 'perdido') THEN ${deals.closedAt} ELSE ${deals.createdAt} END`),
+    )
     .limit(1);
 
   if (!row) return null;
   return toPublic(row);
+}
+
+// Cards ABERTOS do lead, mais recente primeiro. A barra lateral da Inbox usa
+// pra alternar quando o lead tem card em mais de uma campanha.
+export async function listOpenDealsByLead(leadId: string): Promise<PublicDeal[]> {
+  const rows = await db
+    .select({
+      deal: deals,
+      lead: leads,
+      owner: users,
+      enteredCurrentStageAt: enteredStageSql,
+      isStale: isStaleSql,
+      aiSummary: aiSummarySql,
+      campaigns: campaignsSql,
+      cardCampaign: cardCampaignSql,
+    })
+    .from(deals)
+    .leftJoin(leads, eq(deals.leadId, leads.id))
+    .leftJoin(users, eq(deals.ownerUserId, users.id))
+    .where(and(eq(deals.leadId, leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
+    .orderBy(desc(deals.createdAt));
+  return rows.map(toPublic);
 }
 
 // ---------------------------------------------------------------------------
@@ -477,33 +491,51 @@ export async function createDeal(input: {
   ownerUserId: string | null;       // aceita null (Pull model)
   source: 'manual' | 'auto_image' | 'ai_qualified';
 }): Promise<PublicDeal> {
-  // Idempotência do ATIVO: se já há um card ABERTO (não terminal) pra esse lead,
-  // devolve ele — nunca cria um 2º card ativo (invariante do índice parcial).
-  const [active] = await db
-    .select({ id: deals.id })
-    .from(deals)
-    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
-    .limit(1);
-  if (active) return getDealById(active.id);
+  const openStage = sql`${deals.stage} NOT IN ('ganho', 'perdido')`;
 
-  // Sem card ativo. O lead já teve algum deal (todos fechados)? = recompra.
-  const [lastDeal] = await db
-    .select({ id: deals.id })
-    .from(deals)
-    .where(eq(deals.leadId, input.leadId))
-    .orderBy(desc(deals.createdAt))
-    .limit(1);
-  const isRepeat = !!lastDeal;
-
-  // Recompra só vira NOVO ciclo no gatilho MANUAL (vendedor). IA/auto NÃO
-  // recriam ciclo sozinhas — devolvem o último card (evita card fantasma).
-  if (isRepeat && input.source !== 'manual') {
-    return getDealById(lastDeal.id);
+  // Manual (vendedor): lead com card aberto → devolve o mais recente. Na mão
+  // nunca nasce um segundo card; card manual é sempre sem campanha.
+  if (input.source === 'manual') {
+    const [open] = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(and(eq(deals.leadId, input.leadId), openStage))
+      .orderBy(desc(deals.createdAt))
+      .limit(1);
+    if (open) return getDealById(open.id);
   }
 
-  // Estágio inicial: recompra (cliente conhecido) entra direto em
-  // 'em_negociacao'; primeiro deal do lead entra em 'lead_no_comercial'.
-  const initialStage = isRepeat ? 'em_negociacao' : 'lead_no_comercial';
+  // Automático (IA, imagem): o card é da campanha do último disparo vigente.
+  // Um card aberto por (lead, campanha); "sem campanha" é um balde próprio.
+  const campaignId = input.source === 'manual'
+    ? null
+    : await resolveQualificationCampaign(input.leadId);
+  const sameBucket = and(
+    eq(deals.leadId, input.leadId),
+    campaignId === null ? isNull(deals.campaignId) : eq(deals.campaignId, campaignId),
+  );
+
+  const [active] = await db.select({ id: deals.id }).from(deals).where(and(sameBucket, openStage)).limit(1);
+  if (active) return getDealById(active.id);
+
+  let initialStage: DealStage = 'lead_no_comercial';
+  if (input.source === 'manual') {
+    // Recompra: lead que já teve card (todos fechados) é cliente conhecido e
+    // entra direto em negociação.
+    const [anyDeal] = await db.select({ id: deals.id }).from(deals).where(eq(deals.leadId, input.leadId)).limit(1);
+    if (anyDeal) initialStage = 'em_negociacao';
+  } else {
+    // IA/imagem não reabrem ciclo no MESMO balde: card fechado desta campanha
+    // (ou sem campanha) volta como está — evita card fantasma. Balde diferente
+    // (campanha nova) abre card novo: é o card por campanha.
+    const [closed] = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(sameBucket)
+      .orderBy(desc(deals.createdAt))
+      .limit(1);
+    if (closed) return getDealById(closed.id);
+  }
 
   // Captura stage anterior do lead pra audit trail.
   const [leadBefore] = await db
@@ -512,30 +544,42 @@ export async function createDeal(input: {
     .where(eq(leads.id, input.leadId))
     .limit(1);
 
-  const dealId = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(deals)
-      .values({
-        leadId: input.leadId,
-        stage: initialStage,
-        proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
-        ownerUserId: input.ownerUserId,       // pode ser null agora
-      })
-      .returning({ id: deals.id });
-    await logActivity(tx, {
-      dealId: created.id,
-      kind: 'created',
-      // Sem actor humano quando source e automatizada (ai_qualified, auto_image)
-      actorUserId: input.source === 'manual' ? input.ownerUserId : null,
-      metadata: { source: input.source },
+  let dealId: string;
+  try {
+    dealId = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(deals)
+        .values({
+          leadId: input.leadId,
+          stage: initialStage,
+          proposalValue: input.proposalValue == null ? null : String(input.proposalValue),
+          ownerUserId: input.ownerUserId,       // pode ser null agora
+          campaignId,
+        })
+        .returning({ id: deals.id });
+      await logActivity(tx, {
+        dealId: created.id,
+        kind: 'created',
+        // Sem actor humano quando source e automatizada (ai_qualified, auto_image)
+        actorUserId: input.source === 'manual' ? input.ownerUserId : null,
+        metadata: { source: input.source, campaignId },
+      });
+      // Promove lead pra handed_off quando deal é criado (não regride 'lost').
+      await tx
+        .update(leads)
+        .set({ flowStage: 'handed_off', updatedAt: new Date() })
+        .where(and(eq(leads.id, input.leadId), sql`${leads.flowStage} <> 'lost'`));
+      return created.id;
     });
-    // Promove lead pra handed_off quando deal é criado (não regride 'lost').
-    await tx
-      .update(leads)
-      .set({ flowStage: 'handed_off', updatedAt: new Date() })
-      .where(and(eq(leads.id, input.leadId), sql`${leads.flowStage} <> 'lost'`));
-    return created.id;
-  });
+  } catch (err) {
+    // Duas qualificações simultâneas do mesmo lead na mesma campanha: o índice
+    // único barra a segunda — devolve o card que a primeira criou.
+    const pgErr = ((err as { cause?: unknown })?.cause ?? err) as { code?: string };
+    if (pgErr?.code !== '23505') throw err;
+    const [winner] = await db.select({ id: deals.id }).from(deals).where(and(sameBucket, openStage)).limit(1);
+    if (!winner) throw err;
+    return getDealById(winner.id);
+  }
 
   // Audit trail fora do tx.
   if (leadBefore && leadBefore.flowStage !== 'handed_off' && leadBefore.flowStage !== 'lost') {
@@ -632,33 +676,37 @@ export async function syncDealOwnerWithConversation(input: {
   toOwnerId: string;
   actorUserId: string | null;
 }): Promise<void> {
-  const [card] = await db
+  // Com card por campanha o lead pode ter mais de um card aberto: a regra vale
+  // pra cada um, independentemente.
+  const cards = await db
     .select({ id: deals.id, ownerUserId: deals.ownerUserId })
     .from(deals)
-    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
-    .limit(1);
-  if (!card || card.ownerUserId === input.toOwnerId) return;
-  if (card.ownerUserId !== null && card.ownerUserId !== input.fromOwnerId) return;
+    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`));
 
-  await db.transaction(async (tx) => {
-    // Compare-and-set: se alguém mudou o dono do card entre a leitura e aqui,
-    // não sobrescreve.
-    const [updated] = await tx
-      .update(deals)
-      .set({ ownerUserId: input.toOwnerId, updatedAt: new Date() })
-      .where(and(
-        eq(deals.id, card.id),
-        card.ownerUserId === null ? isNull(deals.ownerUserId) : eq(deals.ownerUserId, card.ownerUserId),
-      ))
-      .returning({ id: deals.id });
-    if (!updated) return;
-    await logActivity(tx, {
-      dealId: card.id,
-      kind: 'owner_changed',
-      actorUserId: input.actorUserId,
-      metadata: { fromUserId: card.ownerUserId, toUserId: input.toOwnerId, via: 'conversation' },
+  for (const card of cards) {
+    if (card.ownerUserId === input.toOwnerId) continue;
+    if (card.ownerUserId !== null && card.ownerUserId !== input.fromOwnerId) continue;
+
+    await db.transaction(async (tx) => {
+      // Compare-and-set: se alguém mudou o dono do card entre a leitura e aqui,
+      // não sobrescreve.
+      const [updated] = await tx
+        .update(deals)
+        .set({ ownerUserId: input.toOwnerId, updatedAt: new Date() })
+        .where(and(
+          eq(deals.id, card.id),
+          card.ownerUserId === null ? isNull(deals.ownerUserId) : eq(deals.ownerUserId, card.ownerUserId),
+        ))
+        .returning({ id: deals.id });
+      if (!updated) return;
+      await logActivity(tx, {
+        dealId: card.id,
+        kind: 'owner_changed',
+        actorUserId: input.actorUserId,
+        metadata: { fromUserId: card.ownerUserId, toUserId: input.toOwnerId, via: 'conversation' },
+      });
     });
-  });
+  }
 }
 
 export async function changeStage(input: {
@@ -692,21 +740,22 @@ export async function changeStage(input: {
     input.stage === 'em_negociacao';
   const reactivating = isTerminalNow && movingToActive;
 
-  // Invariante "1 card ativo por lead": reabrir um card fechado quando o lead já
-  // tem outro card ATIVO (ex.: recompra) violaria o índice parcial. Barra com
-  // erro amigável em vez de deixar estourar unique_violation (500).
+  // Invariante "1 card ativo por (lead, campanha)": reabrir um card fechado
+  // quando já há outro ATIVO da mesma campanha (ou do balde sem campanha)
+  // violaria o índice parcial. Barra com erro amigável em vez de 500.
   if (reactivating) {
     const [otherActive] = await db
       .select({ id: deals.id })
       .from(deals)
       .where(and(
         eq(deals.leadId, current.leadId),
+        current.campaignId === null ? isNull(deals.campaignId) : eq(deals.campaignId, current.campaignId),
         sql`${deals.id} <> ${input.id}`,
         sql`${deals.stage} NOT IN ('ganho', 'perdido')`,
       ))
       .limit(1);
     if (otherActive) {
-      throw new HttpError(409, 'Este lead já tem um negócio ativo. Use o card ativo ou feche-o antes de reabrir este.');
+      throw new HttpError(409, 'Este lead já tem um negócio ativo desta campanha. Use o card ativo ou feche-o antes de reabrir este.');
     }
   }
 

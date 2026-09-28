@@ -421,8 +421,18 @@ export const LOSS_REASONS = [
   'preco',
   'sem_retorno',
   'fora_do_perfil',
+  // Só o sistema grava: a campanha do card encerrou com ele aberto (migration 048).
+  'campanha_encerrada',
 ] as const;
 export type LossReason = (typeof LOSS_REASONS)[number];
+
+/** Motivos que um vendedor escolhe ao marcar perdido — sem os do sistema. */
+export const MANUAL_LOSS_REASONS = [
+  'condicoes_comerciais',
+  'preco',
+  'sem_retorno',
+  'fora_do_perfil',
+] as const satisfies readonly LossReason[];
 
 export const DEAL_ACTIVITY_KINDS = [
   'created',
@@ -472,10 +482,10 @@ export interface PublicDeal {
   enteredCurrentStageAt: string;
   aiSummary: string | null;
   campaigns: LeadCampaignSummary[];
-  // Campanha que ORIGINOU o contato — mesma fonte que o badge da conversa
-  // (conversations.origin_campaign_id). null quando o deal não veio de campanha.
-  originCampaignId: string | null;
-  originCampaignName: string | null;
+  // Campanha DO CARD (deals.campaign_id). null = card sem campanha: orgânico,
+  // manual, ou qualificado fora da vigência.
+  campaignId: string | null;
+  campaignName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -497,13 +507,13 @@ export interface DealStageTotal {
 export interface BoardResponse {
   stages: Record<DealStage, PublicDeal[]>;
   totals: Record<DealStage, DealStageTotal>;
-  // Campanhas que originaram ao menos um card no escopo atual (owner+busca,
-  // ignorando o próprio filtro de campanha) — grupo "Campanha de origem" do
-  // multi-select do Kanban.
-  originCampaigns: Array<{ id: string; name: string }>;
+  // Campanhas dos cards no escopo atual (owner+busca, ignorando o próprio
+  // filtro de campanha) — grupo "Campanha do card" do multi-select do Kanban.
+  cardCampaigns: Array<{ id: string; name: string }>;
   // Campanhas que dispararam (recipient enviado) para algum card do escopo mas
-  // NÃO são a campanha de origem — grupo "Recebeu disparo" do multi-select.
-  // Cobre re-disparos (ex.: uma lista nova sobre uma base já contatada).
+  // NÃO são a campanha de nenhum card do escopo — grupo "Recebeu disparo" do
+  // multi-select. Cobre re-disparos (ex.: uma lista nova sobre uma base já
+  // contatada).
   recipientCampaigns: Array<{ id: string; name: string }>;
 }
 
@@ -705,6 +715,9 @@ export interface PublicCampaign {
   validityStart: string | null;
   /** Fim da vigência comercial. Passado dele, a campanha está expirada. */
   validityEnd: string | null;
+  /** Cards abertos da campanha — só no detalhe (getCampaignById), pro
+   * "Encerrar campanha" dizer quantos vão fechar. */
+  openCardsCount?: number;
   sentCount: number;
   failedCount: number;
   skippedCount: number;
@@ -1056,6 +1069,7 @@ export const NOTIFICATION_KINDS = [
   'pending_reply',          // cliente esperando resposta nossa além do prazo
   'ai_fallback',            // IA falhou repetidamente — conversa movida pra recepção
   'new_message',            // nova mensagem inbound no WhatsApp (conversa passou a ter não-lida)
+  'campaign_cards_closed',  // campanha encerrou e fechou cards do dono
   'system',                 // generic
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

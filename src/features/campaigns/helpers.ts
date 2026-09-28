@@ -39,6 +39,7 @@ export const LOSS_REASON_LABELS: Record<LossReason, string> = {
   preco: 'Preço',
   sem_retorno: 'Sem retorno',
   fora_do_perfil: 'Fora do perfil',
+  campanha_encerrada: 'Campanha encerrada',
 };
 
 export function formatCurrency(value: number): string {

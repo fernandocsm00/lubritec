@@ -27,19 +27,19 @@ describe('buildCampaignReport', () => {
     await createCampaignRecipient({ campaignId: c.id, leadId: ganhador.id, status: 'sent', sentAt });
     const convG = await createConversation({ phone: ganhador.phone!, leadId: ganhador.id });
     await createMessage({ conversationId: convG.id, direction: 'in', body: 'quero', sentAt: new Date() });
-    await createDeal({ leadId: ganhador.id, stage: 'ganho', proposalValue: 1500 });
+    await createDeal({ leadId: ganhador.id, stage: 'ganho', proposalValue: 1500, campaignId: c.id });
 
     // Enviado, respondeu, perdeu
     const perdedor = await createLead({ name: 'Perdedor', phone: '5511970000002' });
     await createCampaignRecipient({ campaignId: c.id, leadId: perdedor.id, status: 'sent', sentAt });
     const convP = await createConversation({ phone: perdedor.phone!, leadId: perdedor.id });
     await createMessage({ conversationId: convP.id, direction: 'in', body: 'caro', sentAt: new Date() });
-    await createDeal({ leadId: perdedor.id, stage: 'perdido', lossReason: 'preco' });
+    await createDeal({ leadId: perdedor.id, stage: 'perdido', lossReason: 'preco', campaignId: c.id });
 
     // Enviado, NÃO respondeu, mas está em negociação (entrou pelo comercial)
     const negociando = await createLead({ name: 'Negociando', phone: '5511970000003' });
     await createCampaignRecipient({ campaignId: c.id, leadId: negociando.id, status: 'sent', sentAt });
-    await createDeal({ leadId: negociando.id, stage: 'em_negociacao', proposalValue: 800 });
+    await createDeal({ leadId: negociando.id, stage: 'em_negociacao', proposalValue: 800, campaignId: c.id });
 
     const falhou = await createLead({ name: 'Falhou', phone: '5511970000004' });
     await createCampaignRecipient({
@@ -188,7 +188,7 @@ describe('campaignReportWorkbook', () => {
     await createCampaignRecipient({ campaignId: c.id, leadId: g.id, phone: g.phone!, status: 'sent', sentAt });
     const conv = await createConversation({ phone: g.phone!, leadId: g.id });
     await createMessage({ conversationId: conv.id, direction: 'in', sentAt: new Date('2026-06-10T13:00:00Z') });
-    await createDeal({ leadId: g.id, stage: 'ganho', proposalValue: 2400.5 });
+    await createDeal({ leadId: g.id, stage: 'ganho', proposalValue: 2400.5, campaignId: c.id });
 
     const f = await createLead({ name: 'Posto Beta', phone: '5511960000002' });
     await createCampaignRecipient({
@@ -197,7 +197,7 @@ describe('campaignReportWorkbook', () => {
 
     const p = await createLead({ name: 'Loja Gama', phone: '5511960000003' });
     await createCampaignRecipient({ campaignId: c.id, leadId: p.id, phone: p.phone!, status: 'sent', sentAt });
-    await createDeal({ leadId: p.id, stage: 'perdido', lossReason: 'preco' });
+    await createDeal({ leadId: p.id, stage: 'perdido', lossReason: 'preco', campaignId: c.id });
 
     return c.id;
   }

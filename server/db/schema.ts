@@ -183,6 +183,9 @@ export const deals = pgTable('deals', {
   lossReason: text('loss_reason', { enum: LOSS_REASONS }),
   notes: text('notes'),
   ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'restrict' }),
+  // Campanha do card (migration 049). null = sem campanha: orgânico, manual, ou
+  // qualificado fora da vigência.
+  campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   leadQualityFeedback: text('lead_quality_feedback', { enum: ['good', 'bad'] }),
   leadQualityFeedbackAt: timestamp('lead_quality_feedback_at', { withTimezone: true }),
@@ -190,10 +193,10 @@ export const deals = pgTable('deals', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  // Múltiplos deals por lead (recompra), mas no máximo 1 ATIVO por lead.
-  // Deals terminais (ganho/perdido) acumulam como histórico. Ver migration 036.
-  oneActivePerLead: uniqueIndex('uidx_deals_one_active_per_lead')
-    .on(t.leadId)
+  // No máximo 1 card ABERTO por lead POR CAMPANHA; "sem campanha" é um balde
+  // próprio (uuid zero). Terminais acumulam como histórico. Migrations 036 e 049.
+  oneActivePerLeadCampaign: uniqueIndex('uidx_deals_one_active_per_lead_campaign')
+    .on(t.leadId, sql`COALESCE(${t.campaignId}, '00000000-0000-0000-0000-000000000000'::uuid)`)
     .where(sql`stage NOT IN ('ganho', 'perdido')`),
 }));
 
@@ -328,6 +331,9 @@ export const campaigns = pgTable('campaigns', {
   // acontece. Nula nas campanhas anteriores à migration 045.
   validityStart: timestamp('validity_start', { withTimezone: true }),
   validityEnd: timestamp('validity_end', { withTimezone: true }),
+  // Varredura de encerramento já rodou (migration 049): os cards abertos da
+  // campanha foram fechados uma vez. Garante que a rotina não refeche reativados.
+  cardsClosedAt: timestamp('cards_closed_at', { withTimezone: true }),
   sentCount: integer('sent_count').notNull().default(0),
   failedCount: integer('failed_count').notNull().default(0),
   skippedCount: integer('skipped_count').notNull().default(0),

@@ -53,15 +53,15 @@ describe('getCampaignFunnel', () => {
 
     const l1 = await createLead({ phone: '5511000202001' });
     await createCampaignRecipient({ campaignId: c.id, leadId: l1.id, status: 'sent', sentAt: new Date() });
-    await createDeal({ leadId: l1.id, stage: 'em_negociacao', proposalValue: 200, ownerUserId: u.id });
+    await createDeal({ leadId: l1.id, stage: 'em_negociacao', proposalValue: 200, ownerUserId: u.id, campaignId: c.id });
 
     const l2 = await createLead({ phone: '5511000202002' });
     await createCampaignRecipient({ campaignId: c.id, leadId: l2.id, status: 'sent', sentAt: new Date() });
-    await createDeal({ leadId: l2.id, stage: 'ganho', proposalValue: 500, ownerUserId: u.id });
+    await createDeal({ leadId: l2.id, stage: 'ganho', proposalValue: 500, ownerUserId: u.id, campaignId: c.id });
 
     const l3 = await createLead({ phone: '5511000202003' });
     await createCampaignRecipient({ campaignId: c.id, leadId: l3.id, status: 'sent', sentAt: new Date() });
-    await createDeal({ leadId: l3.id, stage: 'perdido', lossReason: 'preco', proposalValue: 300, ownerUserId: u.id });
+    await createDeal({ leadId: l3.id, stage: 'perdido', lossReason: 'preco', proposalValue: 300, ownerUserId: u.id, campaignId: c.id });
 
     const f = await getCampaignFunnel(c.id);
     expect(f.inDeal).toBe(1);

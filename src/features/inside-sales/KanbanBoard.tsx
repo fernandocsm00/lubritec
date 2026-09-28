@@ -87,10 +87,10 @@ export function KanbanBoard() {
 
   // Opções de campanha (vêm do board, já calculadas ignorando o filtro de
   // campanha pra a lista não encolher):
-  //  - origem: campanha que abriu a conversa do card (badge do card);
-  //  - "recebeu disparo": campanhas que dispararam pro lead do card mas não são
-  //    a de origem (ex.: re-disparo de uma lista nova sobre base já contatada).
-  const campaignOptions = data?.originCampaigns ?? [];
+  //  - "campanha do card": a campanha gravada no card (selo do card);
+  //  - "recebeu disparo": campanhas que dispararam pro lead mas não são a de
+  //    nenhum card (ex.: re-disparo em que o lead não foi qualificado).
+  const campaignOptions = data?.cardCampaigns ?? [];
   const recipientCampaignOptions = data?.recipientCampaigns ?? [];
   const hasCampaignOptions = campaignOptions.length > 0 || recipientCampaignOptions.length > 0;
   function toggleCampaign(id: string) {
@@ -216,7 +216,7 @@ export function KanbanBoard() {
                   {campaignOptions.length > 0 && (
                     <>
                       <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        Campanha de origem
+                        Campanha do card
                       </DropdownMenuLabel>
                       {campaignOptions.map((c) => (
                         <DropdownMenuCheckboxItem

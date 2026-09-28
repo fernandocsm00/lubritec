@@ -4,6 +4,7 @@ import { startDispatcher } from './services/campaignsDispatcher';
 import { startEnrichmentWorker } from './services/enrichmentWorker';
 import { startAiPendingWorker } from './services/aiPendingWorker';
 import { startSlaWatchdog } from './services/slaWatchdog';
+import { startCampaignClosureWorker } from './services/campaignClosureWorker';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -48,6 +49,9 @@ async function start() {
 
   startSlaWatchdog();
   console.log('[sla] watchdog started (tick every 60s — escalonamento fila Comercial)');
+
+  startCampaignClosureWorker();
+  console.log('[campaign-closure] worker started (tick every 15min — fecha cards de campanha encerrada)');
 }
 
 start().catch((err) => {
