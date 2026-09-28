@@ -174,6 +174,8 @@ export function useSendMessage(conversationId: string) {
       }),
     onSuccess: (msg) => {
       qc.invalidateQueries({ queryKey: ['messages', conversationId] });
+      // Responder pode dar dono ao card do lead (segue o dono da conversa).
+      qc.invalidateQueries({ queryKey: ['deals'] });
       // Patch local em vez de invalidar TODAS as listas de conversas — o
       // refetch completo a cada mensagem enviada causava flicker e perda de
       // scroll na sidebar. Atualiza preview/timestamp da conversa em cache;
@@ -213,16 +215,22 @@ export function useSendConversationTemplate(conversationId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['messages', conversationId] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
     },
   });
 }
 
+// Pegar/atribuir a conversa leva o card do Inside Sales junto — por isso
+// invalida ['deals'] além das conversas.
 export function useClaimConversation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
       api<PublicConversation>(`/conversations/${id}/claim`, { method: 'POST' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
   });
 }
 
@@ -249,7 +257,10 @@ export function useAssignConversation() {
         method: 'POST',
         body: JSON.stringify({ userId }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
   });
 }
 

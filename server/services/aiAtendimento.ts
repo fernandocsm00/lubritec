@@ -646,7 +646,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
 
   const sentAt = new Date();
 
-  await db.transaction(async (tx) => {
+  const convOwnerId = await db.transaction(async (tx) => {
     await tx.insert(messages).values({
       conversationId: input.conversationId,
       direction: 'out',
@@ -685,7 +685,11 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       }
     }
 
-    await tx.update(conversations).set(convPatch).where(eq(conversations.id, input.conversationId));
+    const [updatedConv] = await tx
+      .update(conversations)
+      .set(convPatch)
+      .where(eq(conversations.id, input.conversationId))
+      .returning({ assignedTo: conversations.assignedTo });
 
     if (shouldHandoff) {
       // NOTE (Sprint Calibracao IA — B4): flowStage='qualified' eh ESTADO TRANSITORIO.
@@ -697,6 +701,7 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
         .set({ flowStage: 'qualified', updatedAt: new Date() })
         .where(eq(leads.id, input.leadId));
     }
+    return updatedConv?.assignedTo ?? null;
   });
 
   // Audit trail + métricas de IA fora do tx. Só cria deal/transição se de fato
@@ -710,12 +715,14 @@ export async function processInboundWithAi(input: ProcessInput): Promise<Process
       metadata: { conversationId: input.conversationId },
     });
 
-    // Qualificacao criou flowStage='qualified'. Agora cria deal sem owner (Pull model).
+    // Qualificacao criou flowStage='qualified'. Agora cria o deal com o dono da
+    // conversa; sem dono na conversa, nasce sem owner (Pull: vendedor puxa do
+    // Kanban "Nao atribuido") e ganha dono quando alguem assumir a conversa.
     // Idempotente — se ja existir deal (re-qualificacao), no-op via createDeal interno.
     const { createDeal } = await import('./dealsService');
     await createDeal({
       leadId: input.leadId,
-      ownerUserId: null,        // Pull: vendedor puxa do Kanban "Nao atribuido"
+      ownerUserId: convOwnerId,
       source: 'ai_qualified',
     });
 

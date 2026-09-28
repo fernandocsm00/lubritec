@@ -53,6 +53,24 @@ describe('maybeAddDealFromConversation', () => {
     expect(d.ownerUserId).toBe(u.id);
   });
 
+  it('imagem enviada por outra pessoa em conversa com dono: card nasce com o dono da conversa', async () => {
+    const julia = await createUser({ email: 'julia@x.com', role: 'comercial' });
+    const pedro = await createUser({ email: 'pedro@x.com', role: 'comercial' });
+    const lead = await createLead({ phone: '11000100025' });
+    const conv = await createConversation({
+      phone: '11000100025', leadId: lead.id, queue: 'comercial', assignedTo: julia.id,
+    });
+
+    await maybeAddDealFromConversation({
+      conversationId: conv.id,
+      messageKind: 'image',
+      userId: pedro.id,
+    });
+
+    const [d] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
+    expect(d.ownerUserId).toBe(julia.id);
+  });
+
   it('no-op se já existe deal ativo', async () => {
     const u = await createUser({ email: 'p4@x.com', role: 'comercial' });
     const lead = await createLead({ phone: '11000100030' });

@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 process.env.AI_REPLY_MIN_MS = '0';
 
 import { db } from '../db/client';
-import { conversations, messages, leads, notifications, orgSettings } from '../db/schema';
+import { conversations, messages, leads, notifications, orgSettings, deals } from '../db/schema';
 import {
   detectHumanIntent,
   buildSystemPrompt,
@@ -381,6 +381,32 @@ describe('processInboundWithAi', () => {
     // B4: createDeal chamado automaticamente apos qualificacao → flowStage vira 'handed_off'
     const [updatedLead] = await db.select().from(leads).where(eq(leads.id, lead.id));
     expect(updatedLead.flowStage).toBe('handed_off');
+    // Conversa sem dono → card nasce sem dono (vendedor puxa no Inside Sales).
+    const [deal] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
+    expect(deal.ownerUserId).toBeNull();
+  });
+
+  it('qualificação em conversa que já tem dono: o card nasce com o dono da conversa', async () => {
+    await enableAi();
+    mockGeminiText('Perfeito, vou conectar você com nosso comercial agora. [QUALIFICADO]');
+    mockSendOk('uazapi-ai-owner');
+
+    const julia = await createUser({ email: 'julia@x.com', name: 'Julia Bacchi', role: 'comercial' });
+    const lead = await createLead({ phone: '5511900000009', flowStage: 'engaged' });
+    const conv = await createConversation({
+      phone: '5511900000009', leadId: lead.id, queue: 'ia', assignedTo: julia.id,
+    });
+
+    const r = await processInboundWithAi({
+      conversationId: conv.id,
+      leadId: lead.id,
+      phone: '5511900000009',
+      inboundText: 'quero fazer um pedido',
+    });
+    expect(r.status).toBe('qualified_and_replied');
+
+    const [deal] = await db.select().from(deals).where(eq(deals.leadId, lead.id));
+    expect(deal.ownerUserId).toBe(julia.id);
   });
 
   it('responde na linha DA conversa — Meta Cloud sai pelo provider da Meta, não pelo UazAPI', async () => {

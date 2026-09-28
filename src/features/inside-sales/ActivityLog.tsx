@@ -27,7 +27,9 @@ function describe(a: PublicDealActivity): string {
     case 'reactivated':
       return `${actor} reativou (estava em ${STAGE_LABELS[md.from as DealStage]})`;
     case 'owner_changed':
-      return `${actor} mudou o dono`;
+      return md.via === 'conversation'
+        ? `${actor} mudou o dono (acompanhando a conversa)`
+        : `${actor} mudou o dono`;
     case 'quality_feedback': {
       const fb = md.feedback as LeadQualityFeedback | undefined;
       const label = fb ? LEAD_QUALITY_FEEDBACK_LABELS[fb] : '?';

@@ -7,6 +7,7 @@ import { getTemplateById, resolveHsmVariables, hsmBodyText } from './hsmTemplate
 import { awaitingUsSql } from '../lib/pendingReply';
 import { businessConfigFromSettings, businessMinutesBetween, type BusinessHoursConfig } from '../lib/businessHours';
 import { getOrgSettings } from './orgSettingsService';
+import { syncDealOwnerWithConversation } from './dealsService';
 import type {
   PublicConversation,
   ConversationCounts,
@@ -430,16 +431,27 @@ export async function claimConversation(
   id: string,
   userId: string,
 ): Promise<PublicConversation> {
-  const [updated] = await db
+  const [conv] = await db
+    .select({ leadId: conversations.leadId, assignedTo: conversations.assignedTo })
+    .from(conversations)
+    .where(eq(conversations.id, id))
+    .limit(1);
+  if (!conv) throw new HttpError(404, 'Conversation not found');
+
+  await db
     .update(conversations)
     .set({
       assignedTo: userId,
       status: 'em_atendimento',
       updatedAt: new Date(),
     })
-    .where(eq(conversations.id, id))
-    .returning({ id: conversations.id });
-  if (!updated) throw new HttpError(404, 'Conversation not found');
+    .where(eq(conversations.id, id));
+  await syncDealOwnerWithConversation({
+    leadId: conv.leadId,
+    fromOwnerId: conv.assignedTo,
+    toOwnerId: userId,
+    actorUserId: userId,
+  });
   return loadAndReturn(id, userId);
 }
 
@@ -470,7 +482,7 @@ export async function assignConversation(
   }
 
   const [conv] = await db
-    .select({ status: conversations.status })
+    .select({ status: conversations.status, leadId: conversations.leadId, assignedTo: conversations.assignedTo })
     .from(conversations)
     .where(eq(conversations.id, id))
     .limit(1);
@@ -491,6 +503,15 @@ export async function assignConversation(
       updatedAt: new Date(),
     })
     .where(eq(conversations.id, id));
+
+  if (targetUserId) {
+    await syncDealOwnerWithConversation({
+      leadId: conv.leadId,
+      fromOwnerId: conv.assignedTo,
+      toOwnerId: targetUserId,
+      actorUserId: currentUserId,
+    });
+  }
 
   return loadAndReturn(id, currentUserId);
 }
@@ -774,6 +795,20 @@ export async function sendMessage(input: SendInput): Promise<PublicMessage> {
 
     return [inserted];
   });
+
+  // Responder assume a conversa — o card do lead vai junto. Roda em toda
+  // resposta (não só na primeira): card que ficou sem dono com a conversa já
+  // atribuída se acerta aqui. Best-effort: a mensagem já saiu.
+  try {
+    await syncDealOwnerWithConversation({
+      leadId: conv.leadId,
+      fromOwnerId: conv.assignedTo,
+      toOwnerId: conv.assignedTo ?? input.userId,
+      actorUserId: input.userId,
+    });
+  } catch (err) {
+    console.warn('[pipeline] syncDealOwnerWithConversation failed:', err);
+  }
 
   // Pipeline Inside Sales: imagem em conversa Comercial pode criar/reativar deal.
   // Best-effort — falha aqui não derruba o envio.
@@ -1309,6 +1344,18 @@ async function sendHsmTemplate(args: {
 
     return [m];
   });
+
+  // Mesmo que no sendMessage: o card acompanha quem assumiu. Best-effort.
+  try {
+    await syncDealOwnerWithConversation({
+      leadId: args.leadId,
+      fromOwnerId: conv?.assignedTo ?? null,
+      toOwnerId: conv?.assignedTo ?? args.userId,
+      actorUserId: args.userId,
+    });
+  } catch (err) {
+    console.warn('[pipeline] syncDealOwnerWithConversation failed:', err);
+  }
 
   return loadPublicMessage(inserted.id);
 }
