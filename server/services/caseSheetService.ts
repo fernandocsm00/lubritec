@@ -2,7 +2,7 @@ import { db } from '../db/client';
 import {
   aiCallLogs, leads, deals, campaigns, conversations, messages,
 } from '../db/schema';
-import { eq, and, ne, desc, asc } from 'drizzle-orm';
+import { eq, and, ne, desc, asc, sql } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
 import type {
   PublicCaseSheet, QualificationPath, QuestionAnswer,
@@ -59,8 +59,13 @@ export async function getCaseSheet(leadId: string): Promise<PublicCaseSheet> {
     firstInboundReply = firstIn?.body ?? null;
   }
 
-  // Deal (se houver)
-  const [deal] = await db.select().from(deals).where(eq(deals.leadId, leadId)).limit(1);
+  // Deal: o aberto mais recente; sem aberto, o fechado mais recente.
+  const [deal] = await db
+    .select()
+    .from(deals)
+    .where(eq(deals.leadId, leadId))
+    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.createdAt))
+    .limit(1);
 
   return {
     leadId,

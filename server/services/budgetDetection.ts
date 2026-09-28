@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { budgetDetections, conversations, deals, messages } from '../db/schema';
 import { extractBudgetFromImage } from './geminiClient';
@@ -112,6 +112,8 @@ async function applyToPipeline(input: {
       eq(deals.leadId, input.leadId),
       sql`${deals.stage} NOT IN ('ganho', 'perdido')`,
     ))
+    // Lead com card em mais de uma campanha: o orçamento é do ciclo mais recente.
+    .orderBy(desc(deals.createdAt))
     .limit(1);
 
   if (!deal) return;

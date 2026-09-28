@@ -429,14 +429,36 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
     .leftJoin(leads, eq(deals.leadId, leads.id))
     .leftJoin(users, eq(deals.ownerUserId, users.id))
     .where(eq(deals.leadId, leadId))
-    // Com múltiplos deals por lead (recompra): prefere o card ATIVO (não
-    // terminal); se todos fechados, o mais recente. `false` ordena antes de
-    // `true`, então NOT-terminal (false) vem primeiro.
-    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.updatedAt))
+    // Com card por campanha, um lead pode ter mais de um aberto: prefere o
+    // ABERTO mais recente; se todos fechados, o mais recente. `false` ordena
+    // antes de `true`, então NOT-terminal (false) vem primeiro.
+    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.createdAt))
     .limit(1);
 
   if (!row) return null;
   return toPublic(row);
+}
+
+// Cards ABERTOS do lead, mais recente primeiro. A barra lateral da Inbox usa
+// pra alternar quando o lead tem card em mais de uma campanha.
+export async function listOpenDealsByLead(leadId: string): Promise<PublicDeal[]> {
+  const rows = await db
+    .select({
+      deal: deals,
+      lead: leads,
+      owner: users,
+      enteredCurrentStageAt: enteredStageSql,
+      isStale: isStaleSql,
+      aiSummary: aiSummarySql,
+      campaigns: campaignsSql,
+      cardCampaign: cardCampaignSql,
+    })
+    .from(deals)
+    .leftJoin(leads, eq(deals.leadId, leads.id))
+    .leftJoin(users, eq(deals.ownerUserId, users.id))
+    .where(and(eq(deals.leadId, leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
+    .orderBy(desc(deals.createdAt));
+  return rows.map(toPublic);
 }
 
 // ---------------------------------------------------------------------------
@@ -649,33 +671,37 @@ export async function syncDealOwnerWithConversation(input: {
   toOwnerId: string;
   actorUserId: string | null;
 }): Promise<void> {
-  const [card] = await db
+  // Com card por campanha o lead pode ter mais de um card aberto: a regra vale
+  // pra cada um, independentemente.
+  const cards = await db
     .select({ id: deals.id, ownerUserId: deals.ownerUserId })
     .from(deals)
-    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
-    .limit(1);
-  if (!card || card.ownerUserId === input.toOwnerId) return;
-  if (card.ownerUserId !== null && card.ownerUserId !== input.fromOwnerId) return;
+    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`));
 
-  await db.transaction(async (tx) => {
-    // Compare-and-set: se alguém mudou o dono do card entre a leitura e aqui,
-    // não sobrescreve.
-    const [updated] = await tx
-      .update(deals)
-      .set({ ownerUserId: input.toOwnerId, updatedAt: new Date() })
-      .where(and(
-        eq(deals.id, card.id),
-        card.ownerUserId === null ? isNull(deals.ownerUserId) : eq(deals.ownerUserId, card.ownerUserId),
-      ))
-      .returning({ id: deals.id });
-    if (!updated) return;
-    await logActivity(tx, {
-      dealId: card.id,
-      kind: 'owner_changed',
-      actorUserId: input.actorUserId,
-      metadata: { fromUserId: card.ownerUserId, toUserId: input.toOwnerId, via: 'conversation' },
+  for (const card of cards) {
+    if (card.ownerUserId === input.toOwnerId) continue;
+    if (card.ownerUserId !== null && card.ownerUserId !== input.fromOwnerId) continue;
+
+    await db.transaction(async (tx) => {
+      // Compare-and-set: se alguém mudou o dono do card entre a leitura e aqui,
+      // não sobrescreve.
+      const [updated] = await tx
+        .update(deals)
+        .set({ ownerUserId: input.toOwnerId, updatedAt: new Date() })
+        .where(and(
+          eq(deals.id, card.id),
+          card.ownerUserId === null ? isNull(deals.ownerUserId) : eq(deals.ownerUserId, card.ownerUserId),
+        ))
+        .returning({ id: deals.id });
+      if (!updated) return;
+      await logActivity(tx, {
+        dealId: card.id,
+        kind: 'owner_changed',
+        actorUserId: input.actorUserId,
+        metadata: { fromUserId: card.ownerUserId, toUserId: input.toOwnerId, via: 'conversation' },
+      });
     });
-  });
+  }
 }
 
 export async function changeStage(input: {
@@ -709,21 +735,22 @@ export async function changeStage(input: {
     input.stage === 'em_negociacao';
   const reactivating = isTerminalNow && movingToActive;
 
-  // Invariante "1 card ativo por lead": reabrir um card fechado quando o lead já
-  // tem outro card ATIVO (ex.: recompra) violaria o índice parcial. Barra com
-  // erro amigável em vez de deixar estourar unique_violation (500).
+  // Invariante "1 card ativo por (lead, campanha)": reabrir um card fechado
+  // quando já há outro ATIVO da mesma campanha (ou do balde sem campanha)
+  // violaria o índice parcial. Barra com erro amigável em vez de 500.
   if (reactivating) {
     const [otherActive] = await db
       .select({ id: deals.id })
       .from(deals)
       .where(and(
         eq(deals.leadId, current.leadId),
+        current.campaignId === null ? isNull(deals.campaignId) : eq(deals.campaignId, current.campaignId),
         sql`${deals.id} <> ${input.id}`,
         sql`${deals.stage} NOT IN ('ganho', 'perdido')`,
       ))
       .limit(1);
     if (otherActive) {
-      throw new HttpError(409, 'Este lead já tem um negócio ativo. Use o card ativo ou feche-o antes de reabrir este.');
+      throw new HttpError(409, 'Este lead já tem um negócio ativo desta campanha. Use o card ativo ou feche-o antes de reabrir este.');
     }
   }
 

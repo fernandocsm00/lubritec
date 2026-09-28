@@ -6,6 +6,7 @@ import {
   listHistory,
   getDealById,
   getDealByLeadId,
+  listOpenDealsByLead,
 } from '../services/dealsService';
 
 const idParams = z.object({ id: z.string().uuid() });
@@ -171,5 +172,12 @@ export async function byLeadHandler(req: Request, res: Response, next: NextFunct
     const { leadId } = byLeadParams.parse(req.params);
     const deal = await getDealByLeadId(leadId);
     res.json(deal);
+  } catch (e) { next(e); }
+}
+
+export async function openByLeadHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { leadId } = byLeadParams.parse(req.params);
+    res.json(await listOpenDealsByLead(leadId));
   } catch (e) { next(e); }
 }
