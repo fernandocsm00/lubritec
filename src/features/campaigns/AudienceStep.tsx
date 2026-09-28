@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import type { AudienceFilters } from './types';
 import { useDryRun } from './api';
 import { AudienceCsvImport } from './AudienceCsvImport';
 import { AudiencePreviewTable } from './AudiencePreviewTable';
+import { mergeImportExclusions } from './audienceExclusions';
 
 interface Props {
   filters: AudienceFilters;
@@ -18,12 +19,19 @@ interface Props {
 export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }: Props) {
   const dryRun = useDryRun();
   const [optOutOpen, setOptOutOpen] = useState(false);
+  // Exclusões que vieram da importação por CNPJ — trocadas a cada importação
+  // sem apagar as que o vendedor desmarcou à mão (ver mergeImportExclusions).
+  const importExcludedRef = useRef<string[]>([]);
 
-  // Recalcula dry-run quando filtros mudam (debounced via useEffect cleanup)
+  // Recalcula dry-run quando filtros mudam (debounced via useEffect cleanup).
+  // O número da etapa é o do DISPARO: elegíveis, já sem excluídos e sem os
+  // bloqueados por cooldown. Prévia que falha zera o número (e trava o
+  // "Próximo") em vez de deixar o último total na tela.
   useEffect(() => {
     const h = setTimeout(() => {
       dryRun.mutate(filters, {
-        onSuccess: (r) => onTotalChange(r.total),
+        onSuccess: (r) => onTotalChange(r.eligible),
+        onError: () => onTotalChange(0),
       });
     }, 400);
     return () => clearTimeout(h);
@@ -111,11 +119,17 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
         <Label>Importar audiência por CNPJ</Label>
         <div className="mt-1">
           <AudienceCsvImport
-            onChange={(importedLeadIds, excludeLeadIds) => onFiltersChange({
-              ...filters,
-              importedLeadIds: importedLeadIds.length ? importedLeadIds : undefined,
-              excludeLeadIds: excludeLeadIds.length ? excludeLeadIds : undefined,
-            })}
+            onChange={(importedLeadIds, importExcluded) => {
+              const merged = mergeImportExclusions(
+                filters.excludeLeadIds ?? [], importExcludedRef.current, importExcluded,
+              );
+              importExcludedRef.current = importExcluded;
+              onFiltersChange({
+                ...filters,
+                importedLeadIds: importedLeadIds.length ? importedLeadIds : undefined,
+                excludeLeadIds: merged.length ? merged : undefined,
+              });
+            }}
           />
         </div>
       </div>
@@ -123,7 +137,18 @@ export function AudienceStep({ filters, onFiltersChange, total, onTotalChange }:
       <div className="border-t pt-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-semibold">{total} lead(s) impactado(s)</div>
+            <div className="text-sm font-semibold">
+              {total} lead(s) vão receber o disparo
+              {dryRun.isPending && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">recalculando…</span>
+              )}
+            </div>
+            {dryRun.isError && (
+              <div className="text-xs text-destructive">
+                Não consegui calcular a audiência
+                {dryRun.error instanceof Error ? `: ${dryRun.error.message}` : ''}. Ajuste a seleção e tente de novo.
+              </div>
+            )}
             {(dryRun.data?.newFromCsv ?? 0) > 0 && (
               <div className="text-xs text-emerald-600">
                 {dryRun.data!.newFromCsv} novo(s) lead(s) serão criados a partir do CSV
