@@ -74,6 +74,31 @@ function csvCanonicalSet(filter: AudienceFilters): Set<string> | null {
 export interface DryRunOpts {
   page?: number;
   pageSize?: number;
+  /** Busca do diálogo "Audiência": filtra só a lista, antes da paginação. */
+  q?: string;
+}
+
+function foldText(s: string): string {
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+/**
+ * Busca da prévia da audiência. Com letra na busca, casa o nome ignorando
+ * maiúsculas e acentos ("debora" acha "Débora"). Só dígitos (com ou sem
+ * pontuação), casa trecho do telefone ou do CPF/CNPJ. Vazia ou só pontuação
+ * não filtra.
+ */
+export function matchesAudienceSearch(
+  row: { name: string; phone: string; cnpj: string | null },
+  query: string,
+): boolean {
+  const q = query.trim();
+  if (!q) return true;
+  if (/\p{L}/u.test(q)) return foldText(row.name).includes(foldText(q));
+  const digits = q.replace(/\D/g, '');
+  if (!digits) return true;
+  return row.phone.replace(/\D/g, '').includes(digits)
+    || (row.cnpj ?? '').replace(/\D/g, '').includes(digits);
 }
 
 export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Promise<CampaignDryRunResponse> {
@@ -159,10 +184,16 @@ export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Pr
     return a.eligible ? -1 : 1; // elegiveis primeiro
   });
 
+  // A busca filtra só a lista exibida; as contagens abaixo seguem valendo pra
+  // audiência inteira ("Marcar todos elegíveis" não depende do que está na tela).
+  const listedRows = opts.q
+    ? sortedRows.filter((r) => matchesAudienceSearch(r, opts.q!))
+    : sortedRows;
+
   const pageSize = Math.min(PREVIEW_PAGE_SIZE_MAX, Math.max(1, opts.pageSize ?? PREVIEW_PAGE_SIZE_DEFAULT));
-  const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(listedRows.length / pageSize));
   const page = Math.min(pageCount, Math.max(1, opts.page ?? 1));
-  const previewRows = sortedRows.slice((page - 1) * pageSize, page * pageSize);
+  const previewRows = listedRows.slice((page - 1) * pageSize, page * pageSize);
 
   const blockedCounts = blocked.reduce(
     (acc, b) => {
@@ -189,6 +220,7 @@ export async function dryRun(filter: AudienceFilters, opts: DryRunOpts = {}): Pr
     page,
     pageSize,
     pageCount,
+    matchCount: listedRows.length,
     newFromCsv,
     invalidFromCsv,
     preview: previewRows.map((r) => ({

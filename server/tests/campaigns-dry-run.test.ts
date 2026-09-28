@@ -191,6 +191,81 @@ describe('campaignsAudience.dryRun', () => {
   });
 });
 
+// Busca da prévia da audiência (diálogo "Audiência" da campanha): filtra a
+// LISTA antes da paginação, sem mexer nas contagens do topo — "Marcar todos
+// elegíveis" continua valendo pra audiência inteira.
+describe('campaignsAudience.dryRun — busca (q)', () => {
+  async function seed() {
+    const debora = await createLead({ name: 'Débora Leal', phone: '5554996191753', status: 'frio', cnpj: '11222333000181' });
+    await createLead({ name: 'Diego Lubritec', phone: '5555997217728', status: 'frio' });
+    await createLead({ name: 'Fabio Mota', phone: '5575982569103', status: 'frio' });
+    return { debora };
+  }
+
+  it('nome ignora maiúsculas e acentos', async () => {
+    await seed();
+    const r = await dryRun({ status: ['frio'] }, { q: 'DEBORA' });
+    expect(r.preview.map((p) => p.name)).toEqual(['Débora Leal']);
+    expect(r.matchCount).toBe(1);
+  });
+
+  it('telefone por trecho de dígitos, com ou sem pontuação', async () => {
+    await seed();
+    const semPontuacao = await dryRun({ status: ['frio'] }, { q: '5499619' });
+    const comPontuacao = await dryRun({ status: ['frio'] }, { q: '(54) 99619-1753' });
+    expect(semPontuacao.preview.map((p) => p.name)).toEqual(['Débora Leal']);
+    expect(comPontuacao.preview.map((p) => p.name)).toEqual(['Débora Leal']);
+  });
+
+  it('CPF/CNPJ com e sem pontuação', async () => {
+    await seed();
+    const formatado = await dryRun({ status: ['frio'] }, { q: '11.222.333/0001-81' });
+    const trecho = await dryRun({ status: ['frio'] }, { q: '11222333' });
+    expect(formatado.preview.map((p) => p.name)).toEqual(['Débora Leal']);
+    expect(trecho.preview.map((p) => p.name)).toEqual(['Débora Leal']);
+  });
+
+  it('contagens do topo e eligibleIds não mudam com a busca', async () => {
+    await seed();
+    const sem = await dryRun({ status: ['frio'] });
+    const com = await dryRun({ status: ['frio'] }, { q: 'debora' });
+    expect(com.total).toBe(sem.total);
+    expect(com.eligible).toBe(sem.eligible);
+    expect(com.eligibleIds.sort()).toEqual(sem.eligibleIds.sort());
+    expect(sem.matchCount).toBe(3);
+    expect(com.matchCount).toBe(1);
+  });
+
+  it('paginação vale sobre os resultados da busca', async () => {
+    for (let i = 1; i <= 7; i++) {
+      await createLead({ name: `Oficina ${i}`, phone: `5511000070${String(i).padStart(3, '0')}`, status: 'frio' });
+    }
+    await createLead({ name: 'Posto Beta', phone: '5511000071001', status: 'frio' });
+
+    const p1 = await dryRun({ status: ['frio'] }, { q: 'oficina', page: 1, pageSize: 5 });
+    const p2 = await dryRun({ status: ['frio'] }, { q: 'oficina', page: 2, pageSize: 5 });
+
+    expect(p1.matchCount).toBe(7);
+    expect(p1.pageCount).toBe(2);
+    expect(p1.preview).toHaveLength(5);
+    expect(p2.preview).toHaveLength(2);
+    expect([...p1.preview, ...p2.preview].every((p) => p.name.startsWith('Oficina'))).toBe(true);
+  });
+
+  it('contato novo do CSV aparece pelo telefone', async () => {
+    const r = await dryRun({ phoneCsv: ['5511987650009', '5511987650010'] }, { q: '87650009' });
+    expect(r.preview).toHaveLength(1);
+    expect(r.preview[0].isNew).toBe(true);
+    expect(r.preview[0].phone).toBe('5511987650009');
+  });
+
+  it('busca vazia ou só com espaços/pontuação não filtra', async () => {
+    await seed();
+    expect((await dryRun({ status: ['frio'] }, { q: '   ' })).preview).toHaveLength(3);
+    expect((await dryRun({ status: ['frio'] }, { q: '-.' })).preview).toHaveLength(3);
+  });
+});
+
 describe('campaignsAudience.materializeCsvLeads', () => {
   it('cria leads pros telefones novos e deixa a audiência disparável', async () => {
     await createLead({ phone: '5511987651001', status: 'frio' });

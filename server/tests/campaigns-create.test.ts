@@ -34,6 +34,20 @@ describe('POST /api/campaigns/dry-run', () => {
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(2);
   });
+
+  it('aceita busca (q) na query string e filtra só a lista', async () => {
+    await createLead({ name: 'Débora Leal', phone: '5511000080011', status: 'frio' });
+    await createLead({ name: 'Fabio Mota', phone: '5511000080012', status: 'frio' });
+    const token = await loginAdmin();
+    const res = await request(app)
+      .post('/api/campaigns/dry-run?q=debora')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: ['frio'] });
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+    expect(res.body.matchCount).toBe(1);
+    expect(res.body.preview.map((p: { name: string }) => p.name)).toEqual(['Débora Leal']);
+  });
 });
 
 describe('POST /api/campaigns', () => {
