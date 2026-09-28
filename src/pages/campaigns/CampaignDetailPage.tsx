@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ChevronLeft, Pause, Play, X, Trash2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Pause, Play, X, Trash2, RotateCcw, Flag } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,9 +12,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   useCampaign, usePauseCampaign, useResumeCampaign,
-  useCancelCampaign, useDeleteCampaign, useRetryFailedCampaign,
+  useCancelCampaign, useDeleteCampaign, useRetryFailedCampaign, useEndCampaign,
 } from '@/features/campaigns/api';
 import { retryFailedConfirmText, retryFailedResultMessage } from '@/features/campaigns/retryFailed';
+import { canEndCampaign, endCampaignConfirmText, endCampaignResultMessage } from '@/features/campaigns/endCampaign';
 import { campaignValidityState } from '@/features/campaigns/validity';
 import { useAuthStore } from '@/features/auth/store';
 import { StatusBadge } from '@/features/campaigns/StatusBadge';
@@ -38,8 +39,10 @@ export default function CampaignDetailPage() {
   const cancel = useCancelCampaign();
   const del = useDeleteCampaign();
   const retryFailed = useRetryFailedCampaign();
+  const endCampaign = useEndCampaign();
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmRetryOpen, setConfirmRetryOpen] = useState(false);
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
 
   if (isLoading || !data) {
     return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -106,6 +109,11 @@ export default function CampaignDetailPage() {
               })}
             >
               <X className="h-4 w-4 mr-1" /> Cancelar
+            </Button>
+          )}
+          {canEndCampaign(data) && (
+            <Button size="sm" variant="outline" onClick={() => setConfirmEndOpen(true)}>
+              <Flag className="h-4 w-4 mr-1" /> Encerrar campanha
             </Button>
           )}
           {isAdmin && (
@@ -197,6 +205,29 @@ export default function CampaignDetailPage() {
               })}
             >
               Reenviar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Encerrar a campanha?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {endCampaignConfirmText(data.openCardsCount ?? 0)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground"
+              onClick={() => endCampaign.mutate(id, {
+                onSuccess: (r) => toast.success(endCampaignResultMessage(r.closedCards)),
+                onError: onActionError,
+              })}
+            >
+              Encerrar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

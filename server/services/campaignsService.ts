@@ -21,6 +21,7 @@ import { resolveAudience, materializeCsvLeads } from './campaignsAudience';
 import { filterEligibleLeads } from './campaignsCooldown';
 import { getTemplateById, countBodyVariables, hsmBodyText } from './hsmTemplateService';
 import { INTERRUPTED_MID_SEND_REASON } from './campaignsDispatcher';
+import { closeCampaignCards } from './campaignClosure';
 import type { HsmComponent } from '@shared/types';
 
 const LIST_PAGE_SIZE = 50;
@@ -209,6 +210,12 @@ export async function getCampaignById(id: string): Promise<PublicCampaign> {
       pub.dispatchedMediaUrl = tpl.headerMediaUrl ?? null;
     }
   }
+
+  const [{ openCards }] = await db
+    .select({ openCards: sql<number>`count(*)::int` })
+    .from(deals)
+    .where(and(eq(deals.campaignId, id), sql`${deals.stage} NOT IN ('ganho', 'perdido')`));
+  pub.openCardsCount = openCards;
   return pub;
 }
 
@@ -402,6 +409,37 @@ export async function cancelCampaign(id: string): Promise<PublicCampaign> {
   });
 
   return getCampaignById(id);
+}
+
+/**
+ * "Encerrar campanha": a vigência termina agora e os cards abertos da campanha
+ * viram perdidos ("Campanha encerrada"). Só depois do disparo terminado — fechar
+ * cards de campanha que ainda envia não faz sentido; cancela antes. Contínua não
+ * se encerra: não tem vigência e dispara sem parar.
+ *
+ * Varre mesmo campanha já marcada como varrida: é ação humana explícita, e é
+ * assim que se limpam os cards das campanhas antigas (migration 049).
+ */
+export async function endCampaign(id: string, actorUserId: string): Promise<{ closedCards: number }> {
+  const [row] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  if (!row) throw new HttpError(404, 'Campaign not found');
+  if (row.isContinuous) {
+    throw new HttpError(400, 'Campanha contínua não se encerra: os cards dela fecham na mão.');
+  }
+  if (row.status !== 'completed' && row.status !== 'cancelled') {
+    throw new HttpError(400, 'Só dá pra encerrar depois que o disparo terminou. Cancele o disparo antes.');
+  }
+
+  const now = new Date();
+  await db.update(campaigns).set({
+    validityEnd: now,
+    // CHECK validity_end >= validity_start: início ainda no futuro vira agora.
+    ...(row.validityStart && row.validityStart > now ? { validityStart: now } : {}),
+    updatedAt: now,
+  }).where(eq(campaigns.id, id));
+
+  const { closed } = await closeCampaignCards(id, actorUserId);
+  return { closedCards: closed };
 }
 
 export interface RetryFailedResult {

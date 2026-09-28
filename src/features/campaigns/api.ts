@@ -255,6 +255,19 @@ export function useCancelCampaign() {
   });
 }
 
+export function useEndCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ closedCards: number }>(`/campaigns/${id}/end`, { method: 'POST' }),
+    onSuccess: () => {
+      invalidate(qc);
+      // Os cards da campanha saíram do Kanban pro Histórico.
+      qc.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useRetryFailedCampaign() {
   const qc = useQueryClient();
   return useMutation({

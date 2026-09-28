@@ -715,6 +715,9 @@ export interface PublicCampaign {
   validityStart: string | null;
   /** Fim da vigência comercial. Passado dele, a campanha está expirada. */
   validityEnd: string | null;
+  /** Cards abertos da campanha — só no detalhe (getCampaignById), pro
+   * "Encerrar campanha" dizer quantos vão fechar. */
+  openCardsCount?: number;
   sentCount: number;
   failedCount: number;
   skippedCount: number;
