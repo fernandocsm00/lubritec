@@ -3,7 +3,7 @@ import { db } from '../db/client';
 import { campaigns, dealActivities, deals } from '../db/schema';
 import { emitNotification } from './notifications';
 
-const HISTORY_URL = '/inside-sales?tab=history&stage=perdido&reason=campanha_encerrada&owner=mine';
+const HISTORY_URL_BASE = '/inside-sales?tab=history&stage=perdido&reason=campanha_encerrada&owner=mine';
 
 /**
  * Fecha os cards ABERTOS de uma campanha: perdido, motivo "campanha_encerrada".
@@ -66,13 +66,17 @@ export async function closeCampaignCards(
   for (const c of closedCards) {
     if (c.ownerUserId) byOwner.set(c.ownerUserId, (byOwner.get(c.ownerUserId) ?? 0) + 1);
   }
+  // Link filtrado pela campanha (spec §7: "filtrado pela campanha e pelo
+  // motivo") — senão o dono cai no Histórico inteiro e precisa procurar entre
+  // os perdidos de todas as campanhas.
+  const actionUrl = `${HISTORY_URL_BASE}&campaignIds=${campaignId}`;
   for (const [userId, n] of byOwner) {
     await emitNotification({
       userIds: [userId],
       kind: 'campaign_cards_closed',
       title: 'Campanha encerrada',
       body: `${n} ${n === 1 ? 'card seu foi fechado' : 'cards seus foram fechados'}: campanha ${campaign.name} encerrou.`,
-      actionUrl: HISTORY_URL,
+      actionUrl,
       metadata: { campaignId, closed: n },
     });
   }

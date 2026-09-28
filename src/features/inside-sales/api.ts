@@ -53,6 +53,7 @@ export interface HistoryFilters {
   from?: string;
   to?: string;
   page?: number;
+  campaignIds?: string[];
 }
 
 export interface HistoryResult {
@@ -70,6 +71,7 @@ function buildHistoryQuery(f: HistoryFilters): string {
   if (f.lossReason) u.set('lossReason', f.lossReason);
   if (f.from) u.set('from', f.from);
   if (f.to) u.set('to', f.to);
+  if (f.campaignIds && f.campaignIds.length > 0) u.set('campaignIds', f.campaignIds.join(','));
   if (f.page && f.page > 1) u.set('page', String(f.page));
   const s = u.toString();
   return s ? `?${s}` : '';

@@ -70,7 +70,7 @@ describe('closeCampaignCards', () => {
     const daJulia = notifs.find((n) => n.userId === julia.id)!;
     expect(daJulia.body).toContain('2 cards seus foram fechados');
     expect(daJulia.body).toContain('Teste Andrei III');
-    expect(daJulia.actionUrl).toBe('/inside-sales?tab=history&stage=perdido&reason=campanha_encerrada&owner=mine');
+    expect(daJulia.actionUrl).toBe(`/inside-sales?tab=history&stage=perdido&reason=campanha_encerrada&owner=mine&campaignIds=${camp.id}`);
     expect(notifs.find((n) => n.userId === pedro.id)!.body).toContain('1 card seu foi fechado');
   });
 });
