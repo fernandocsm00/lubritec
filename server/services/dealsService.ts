@@ -430,9 +430,14 @@ export async function getDealByLeadId(leadId: string): Promise<PublicDeal | null
     .leftJoin(users, eq(deals.ownerUserId, users.id))
     .where(eq(deals.leadId, leadId))
     // Com card por campanha, um lead pode ter mais de um aberto: prefere o
-    // ABERTO mais recente; se todos fechados, o mais recente. `false` ordena
-    // antes de `true`, então NOT-terminal (false) vem primeiro.
-    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.createdAt))
+    // ABERTO mais recente; se todos fechados, o FECHADO mais recentemente (não
+    // o criado mais recentemente — um card antigo reaberto e fechado de novo
+    // tarde é mais atual que um card novo fechado cedo). `false` ordena antes
+    // de `true`, então NOT-terminal (false) vem primeiro.
+    .orderBy(
+      sql`(${deals.stage} IN ('ganho', 'perdido'))`,
+      desc(sql`CASE WHEN ${deals.stage} IN ('ganho', 'perdido') THEN ${deals.closedAt} ELSE ${deals.createdAt} END`),
+    )
     .limit(1);
 
   if (!row) return null;

@@ -45,6 +45,25 @@ describe('lead com mais de um card aberto', () => {
     expect((await getDealByLeadId(lead.id))!.id).toBe(novo.id);
   });
 
+  it('sem card aberto, devolve o fechado mais recentemente (não o criado mais recentemente)', async () => {
+    const u = await createUser({ email: 'mk4@x.com' });
+    const lead = await createLead({ phone: '5554950099001' });
+    const campA = await createCampaign({ name: 'Campanha A', createdByUserId: u.id });
+    const campB = await createCampaign({ name: 'Campanha B', createdByUserId: u.id });
+    // Criado ANTES, mas fechado DEPOIS (foi reaberto e voltou a fechar tarde).
+    const criadoAntesFechadoDepois = await createDeal({
+      leadId: lead.id, stage: 'ganho', proposalValue: 100, campaignId: campA.id,
+      createdAt: new Date(Date.now() - 10 * DAY), closedAt: new Date(Date.now() - DAY),
+    });
+    // Criado DEPOIS, mas fechado ANTES.
+    await createDeal({
+      leadId: lead.id, stage: 'perdido', lossReason: 'preco', campaignId: campB.id,
+      createdAt: new Date(Date.now() - 5 * DAY), closedAt: new Date(Date.now() - 8 * DAY),
+    });
+
+    expect((await getDealByLeadId(lead.id))!.id).toBe(criadoAntesFechadoDepois.id);
+  });
+
   it('GET /deals/by-lead/:leadId/open lista os abertos, mais recente primeiro', async () => {
     const { token, userId } = await login('v1@x.com');
     const { lead, velho, novo } = await twoOpenCards(userId);

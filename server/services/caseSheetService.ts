@@ -59,12 +59,16 @@ export async function getCaseSheet(leadId: string): Promise<PublicCaseSheet> {
     firstInboundReply = firstIn?.body ?? null;
   }
 
-  // Deal: o aberto mais recente; sem aberto, o fechado mais recente.
+  // Deal: o aberto mais recente; sem aberto, o fechado mais RECENTEMENTE (não
+  // o criado mais recentemente — mesma regra de getDealByLeadId em dealsService).
   const [deal] = await db
     .select()
     .from(deals)
     .where(eq(deals.leadId, leadId))
-    .orderBy(sql`(${deals.stage} IN ('ganho', 'perdido'))`, desc(deals.createdAt))
+    .orderBy(
+      sql`(${deals.stage} IN ('ganho', 'perdido'))`,
+      desc(sql`CASE WHEN ${deals.stage} IN ('ganho', 'perdido') THEN ${deals.closedAt} ELSE ${deals.createdAt} END`),
+    )
     .limit(1);
 
   return {
