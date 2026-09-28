@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { campaigns, dealActivities, deals } from '../db/schema';
 import { emitNotification } from './notifications';
@@ -99,11 +99,18 @@ export async function closeEndedCampaigns(
       eq(campaigns.isContinuous, false),
       isNull(campaigns.cardsClosedAt),
       lt(campaigns.validityEnd, now),
-    ));
+    ))
+    .orderBy(asc(campaigns.validityEnd));
 
   let cards = 0;
   for (const c of due) {
-    cards += (await closeCampaignCards(c.id, null)).closed;
+    // Campanha com erro não pode travar as outras — cada uma é independente:
+    // segue pro próximo tick sozinha, o resto da varredura continua.
+    try {
+      cards += (await closeCampaignCards(c.id, null)).closed;
+    } catch (err) {
+      console.error(`[campaign-closure] campanha ${c.id} falhou:`, err);
+    }
   }
   return { campaigns: due.length, cards };
 }
