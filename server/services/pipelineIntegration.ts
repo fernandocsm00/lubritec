@@ -23,7 +23,8 @@ export async function maybeAddDealFromConversation(opts: {
   if (!existing) {
     await createDeal({
       leadId: conv.leadId,
-      ownerUserId: opts.userId,
+      // O card segue o dono da conversa, não quem mandou a imagem.
+      ownerUserId: conv.assignedTo ?? opts.userId,
       source: 'auto_image',
     });
   } else if (existing.stage === 'ganho' || existing.stage === 'perdido') {

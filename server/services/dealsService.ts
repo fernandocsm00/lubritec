@@ -1,7 +1,7 @@
 import { db } from '../db/client';
 import { deals, dealActivities, leads, users, conversations, campaigns, campaignRecipients } from '../db/schema';
 import {
-  eq, and, or, ilike, desc, sql, inArray, gte, lte,
+  eq, and, or, ilike, desc, sql, inArray, gte, lte, isNull,
   type SQL,
 } from 'drizzle-orm';
 import { HttpError } from '../middleware/errorHandler';
@@ -611,6 +611,54 @@ export async function updateDeal(input: {
   });
 
   return getDealById(input.id);
+}
+
+/**
+ * O card do Inside Sales segue o dono da conversa. Chamado toda vez que a
+ * conversa ganha ou troca de dono (pegar, atribuir, primeira resposta, template).
+ * Até 28/09/2026 os dois donos eram campos sem ligação: a IA criava o card sem
+ * dono, o vendedor assumia a conversa e o card ficava "Sem dono" pra sempre.
+ *
+ * - Só o card ABERTO do lead; ganho/perdido é histórico e não muda.
+ * - O card acompanha quando está sem dono ou com quem era dono da conversa até
+ *   agora. Se alguém deu o card a outra pessoa direto no Inside Sales, essa
+ *   escolha é respeitada.
+ * - Conversa ficando sem dono não chega aqui: o card mantém o dono.
+ */
+export async function syncDealOwnerWithConversation(input: {
+  leadId: string;
+  /** Dono da conversa ANTES da mudança (null = não tinha). */
+  fromOwnerId: string | null;
+  toOwnerId: string;
+  actorUserId: string | null;
+}): Promise<void> {
+  const [card] = await db
+    .select({ id: deals.id, ownerUserId: deals.ownerUserId })
+    .from(deals)
+    .where(and(eq(deals.leadId, input.leadId), sql`${deals.stage} NOT IN ('ganho', 'perdido')`))
+    .limit(1);
+  if (!card || card.ownerUserId === input.toOwnerId) return;
+  if (card.ownerUserId !== null && card.ownerUserId !== input.fromOwnerId) return;
+
+  await db.transaction(async (tx) => {
+    // Compare-and-set: se alguém mudou o dono do card entre a leitura e aqui,
+    // não sobrescreve.
+    const [updated] = await tx
+      .update(deals)
+      .set({ ownerUserId: input.toOwnerId, updatedAt: new Date() })
+      .where(and(
+        eq(deals.id, card.id),
+        card.ownerUserId === null ? isNull(deals.ownerUserId) : eq(deals.ownerUserId, card.ownerUserId),
+      ))
+      .returning({ id: deals.id });
+    if (!updated) return;
+    await logActivity(tx, {
+      dealId: card.id,
+      kind: 'owner_changed',
+      actorUserId: input.actorUserId,
+      metadata: { fromUserId: card.ownerUserId, toUserId: input.toOwnerId, via: 'conversation' },
+    });
+  });
 }
 
 export async function changeStage(input: {
